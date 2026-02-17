@@ -70,7 +70,7 @@ const HUB = {
       carnet: "./assets/emilybejarano.png",
       links: {}
     },
-    "laurasanchez@gmail.com": {
+    "lorenaduarte.404@gmail.com": {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
       links: {}
