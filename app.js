@@ -3,12 +3,12 @@
    - Hub exclusivo para Docentes (lista blanca por correo)
    - Links generales + links personalizados por usuario (Carnet / Horario / etc.)
    - Carnet abre modal (imagen en /assets/*.png)
+   - Drawer lateral (si existe en el HTML): perfil + accesos rápidos + logout
 */
-const BUILD = "2026-02-17.1";
+const BUILD = "2026-02-17.2";
 
 /* ===========
    1) Firebase Config (YA LISTO)
-   Nota: si este hub va en OTRO proyecto Firebase, cambia esto.
 =========== */
 const firebaseConfig = {
   apiKey: "AIzaSyC06dLl2Lig3-kD4OVmh4C9LpFW9AeTyOc",
@@ -21,16 +21,11 @@ const firebaseConfig = {
 
 /* ===========
    2) Config Docentes Hub
-   - GENERAL_LINKS: le sale a TODOS los autorizados
-   - USERS: lista blanca por correo + perfil (label, carnet, links personalizados)
-   - BUTTONS: catálogo de botones (id debe existir en links o tener handler especial)
 =========== */
 const HUB = {
   name: "Docentes · Musicala",
 
-  // Links generales para docentes (los que no tengan URL quedan “Pendiente”)
   GENERAL_LINKS: {
-    // 🧾 Institucional / info
     salones: "https://musicala.github.io/asignaciondesalones/",
     nomina: "https://docs.google.com/forms/d/e/1FAIpQLSeMOhoY9d8JOf1Oq8DnD_aSEDkBmOXmzYJtlCCU-7CNVYjnLA/viewform",
     observacion: "https://docs.google.com/forms/d/1z8TEQACP6L8d0vTWEpSl2RQJ198PwQwzH4-UKqq9EQA/viewform?edit_requested=true",
@@ -46,62 +41,54 @@ const HUB = {
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
 
-    // 🗓️ Pendientes (pégalas cuando las tengan)
-    calendario: "",             // Calendario Académico
-    apuntes: "",                // Apuntes y tareas pendientes
-    bitacoraAcademica: "",      // Bitácora de tareas académicas
-    documentosContratacion: "", // Carpeta o página con documentos de contratación
-    horarioAnual: "",           // Horario anual 2026 (si es general)
-    bitacoraClases: ""          // Registro de bitácora de clases (me dejaste un link duplicado en el mensaje)
+    calendario: "",
+    apuntes: "",
+    bitacoraAcademica: "",
+    documentosContratacion: "",
+    horarioAnual: "",
+    bitacoraClases: ""
   },
 
-  // Lista blanca (DOCENTES)
-  // carnet: ruta a imagen en /assets/*.png
-  // links: overrides por usuario (si alguien tiene un horario personal, por ejemplo)
   USERS: {
     "alekcaballeromusic@gmail.com": {
       label: "Alek Caballero",
       carnet: "./assets/alekcaballero.png",
-      links: { /* horarioAnual: "https://..." */ }
+      links: {}
     },
     "catalina.medina.leal@gmail.com": {
       label: "Catalina Medina",
       carnet: "./assets/catalinamedina.png",
-      links: { }
+      links: {}
     },
     "angiecamilar4@gmail.com": {
       label: "Angie (Camila) Rodríguez",
       carnet: "./assets/angienitola.png",
-      links: { }
+      links: {}
     },
     "emilybejarano@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
-      links: { }
+      links: {}
     },
     "laurasanchez@gmail.com": {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
-      links: { }
+      links: {}
     }
   },
 
-  // Catálogo de botones (con secciones)
   BUTTONS: [
-    // ===== MI TRABAJO HOY =====
     { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Mi trabajo hoy" },
     { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Mi trabajo hoy" },
     { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Mi trabajo hoy" },
     { id: "infoEstudiantes", icon: "🧒", title: "Info estudiantes", subtitle: "Verificación", section: "Mi trabajo hoy" },
     { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "General o personal", section: "Mi trabajo hoy" },
 
-    // ===== GESTIÓN DOCENTE =====
     { id: "apuntes", icon: "📝", title: "Apuntes y tareas pendientes", subtitle: "Organización", section: "Gestión docente" },
     { id: "observacion", icon: "👀", title: "Formulario observación docente", subtitle: "Registro", section: "Gestión docente" },
     { id: "bitacoraClases", icon: "📒", title: "Bitácora de clases", subtitle: "Seguimiento", section: "Gestión docente" },
     { id: "bitacoraAcademica", icon: "✅", title: "Bitácora tareas académicas", subtitle: "Pendientes", section: "Gestión docente" },
 
-    // ===== RECURSOS PEDAGÓGICOS =====
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
     { id: "muestras", icon: "🎭", title: "Info Muestras de proceso", subtitle: "Planeación", section: "Recursos" },
@@ -109,7 +96,6 @@ const HUB = {
     { id: "explicacionArtes", icon: "🧩", title: "Explicación de las artes", subtitle: "Oferta", section: "Recursos" },
     { id: "edades", icon: "📏", title: "Rangos de edades", subtitle: "Guía rápida", section: "Recursos" },
 
-    // ===== INSTITUCIONAL =====
     { id: "nomina", icon: "💰", title: "Novedades nómina", subtitle: "General", section: "Institucional" },
     { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional" },
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
@@ -139,6 +125,7 @@ import {
    Helpers UI
 =========== */
 const $ = (sel, el = document) => el.querySelector(sel);
+const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
 
 function escapeHtml(str) {
   return String(str ?? "")
@@ -213,6 +200,28 @@ function show(which) {
 }
 
 /* ===========
+   URL safety
+=========== */
+function normalizeUrl(raw) {
+  const url = String(raw || "").trim();
+  if (!url) return "";
+  // Bloqueo básico de esquemas peligrosos
+  if (/^\s*javascript:/i.test(url)) return "";
+  if (/^\s*data:/i.test(url)) return "";
+  // Si ya trae protocolo o //, ok
+  if (/^(https?:)?\/\//i.test(url)) return url;
+  // Si parece un dominio/URL sin protocolo
+  return "https://" + url;
+}
+
+function openExternal(rawUrl) {
+  const safe = normalizeUrl(rawUrl);
+  if (!safe) return false;
+  window.open(safe, "_blank", "noopener,noreferrer");
+  return true;
+}
+
+/* ===========
    PWA: install + SW + Update banner button
 =========== */
 let __deferredInstallPrompt = null;
@@ -254,7 +263,6 @@ function wireUpdateBanner() {
     if (!ok) toast("No hay actualización lista aún 🙃");
   });
 
-  // Solo mostramos el banner si hay waiting SW
   const maybeShow = async () => {
     try {
       const reg = await navigator.serviceWorker.getRegistration("./");
@@ -265,7 +273,6 @@ function wireUpdateBanner() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e?.data?.type === "SW_ACTIVATED") {
-        // cuando el nuevo SW se activa, ocultamos banner
         wrap.hidden = true;
       }
     });
@@ -279,7 +286,6 @@ async function registerServiceWorker() {
   const promptUpdate = (reg) => {
     if (!reg || !reg.waiting) return;
 
-    // también mostramos banner si existe
     const wrap = document.getElementById("pwa-update");
     if (wrap) wrap.hidden = false;
 
@@ -371,6 +377,132 @@ function setupInstallPrompt() {
 }
 
 /* ===========
+   Drawer (si existe en el HTML)
+=========== */
+let __drawerBound = false;
+
+function drawerEls() {
+  return {
+    btnMenu: document.getElementById("btn-menu"),
+    overlay: document.getElementById("drawer-overlay"),
+    drawer: document.getElementById("app-drawer"),
+    btnClose: document.getElementById("drawer-close"),
+    userName: document.getElementById("drawer-user-name"),
+    userEmail: document.getElementById("drawer-user-email"),
+    buildTag: document.getElementById("drawer-build")
+  };
+}
+
+function isDrawerOpen() {
+  const { overlay, drawer } = drawerEls();
+  if (!overlay || !drawer) return false;
+  return !overlay.hidden && !drawer.hidden;
+}
+
+function openDrawer() {
+  const { overlay, drawer, btnClose } = drawerEls();
+  if (!overlay || !drawer) return;
+
+  overlay.hidden = false;
+  drawer.hidden = false;
+
+  // bloqueo scroll del body (la app ya tiene scroll interno, pero esto evita “doble scroll” en mobile)
+  document.body.style.overflow = "hidden";
+
+  // foco al cerrar (mejor UX)
+  setTimeout(() => {
+    (btnClose || drawer).focus?.();
+  }, 0);
+}
+
+function closeDrawer() {
+  const { overlay, drawer, btnMenu } = drawerEls();
+  if (!overlay || !drawer) return;
+
+  overlay.hidden = true;
+  drawer.hidden = true;
+  document.body.style.overflow = "";
+
+  // devolver foco al menú
+  setTimeout(() => btnMenu?.focus?.(), 0);
+}
+
+function toggleDrawer() {
+  if (isDrawerOpen()) closeDrawer();
+  else openDrawer();
+}
+
+function setDrawerProfile(profile, user) {
+  const { userName, userEmail, buildTag } = drawerEls();
+  if (userName) userName.textContent = profile?.label || user?.displayName || "Docente";
+  if (userEmail) userEmail.textContent = String(user?.email || "").trim() || "—";
+  if (buildTag) buildTag.textContent = `BUILD ${BUILD}`;
+}
+
+function wireDrawerHandlers(auth) {
+  if (__drawerBound) return;
+  __drawerBound = true;
+
+  const { btnMenu, overlay, drawer, btnClose } = drawerEls();
+  if (!overlay || !drawer) return; // si no existe, no hay nada que hacer
+
+  btnMenu?.addEventListener("click", () => toggleDrawer());
+  btnClose?.addEventListener("click", () => closeDrawer());
+  overlay.addEventListener("click", () => closeDrawer());
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isDrawerOpen()) closeDrawer();
+  });
+
+  // Delegación: .drawerItem[data-action="..."]
+  drawer.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+
+    const action = String(btn.getAttribute("data-action") || "").trim();
+    if (!action) return;
+
+    // Cierra de una para que se sienta rápido
+    closeDrawer();
+
+    if (action === "logout") {
+      await doLogout(auth);
+      return;
+    }
+
+    if (action === "install") {
+      // dispara el mismo handler que los botones de instalar
+      const b = document.getElementById("btn-install-2") || document.getElementById("btn-install");
+      b?.click?.();
+      return;
+    }
+
+    // open:<id>
+    if (/^open:/i.test(action)) {
+      const id = action.split(":")[1] || "";
+      if (!id) return;
+      if (id === "carnet") {
+        openCarnet(ACTIVE_PROFILE);
+        return;
+      }
+      const url = String(ACTIVE_LINKS?.[id] || "").trim();
+      if (!url) {
+        toast(`Pendiente: falta pegar el link de “${id}”`);
+        return;
+      }
+      if (!openExternal(url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
+      return;
+    }
+
+    // url directa en data-href (por si algún día)
+    const href = btn.getAttribute("data-href");
+    if (href) {
+      if (!openExternal(href)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
+    }
+  }, { passive: true });
+}
+
+/* ===========
    Carnet modal (se crea dinámico, no depende del HTML)
 =========== */
 let __carnetModal = null;
@@ -385,7 +517,6 @@ function ensureCarnetModal() {
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-label", "Carnet docente");
 
-  // Inline minimal style (para que funcione aunque el CSS no tenga nada)
   modal.style.position = "fixed";
   modal.style.inset = "0";
   modal.style.background = "rgba(11,16,32,.55)";
@@ -513,12 +644,7 @@ function renderButtons(buttons, links, profile) {
   for (const [sec, items] of sections.entries()) {
     html += `
       <div class="secBlock" data-sec="${escapeHtml(sec)}" style="grid-column: 1 / -1;">
-        <div class="secTitle" style="
-          padding: 10px 4px 8px;
-          font-weight: 920;
-          letter-spacing: .1px;
-          color: rgba(11,16,32,.82);
-        ">${escapeHtml(sec)}</div>
+        <div class="secTitle">${escapeHtml(sec)}</div>
       </div>
     `;
 
@@ -556,7 +682,6 @@ function renderButtons(buttons, links, profile) {
 
       const id = btn.getAttribute("data-id");
 
-      // Handler especial: carnet
       if (id === "carnet") {
         openCarnet(ACTIVE_PROFILE);
         return;
@@ -568,9 +693,7 @@ function renderButtons(buttons, links, profile) {
         return;
       }
 
-      // Asegura protocolo (evita links sin https://)
-      const safeUrl = /^(https?:)?\/\//i.test(url) ? url : ("https://" + url);
-      window.open(safeUrl, "_blank", "noopener,noreferrer");
+      if (!openExternal(url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
     }, { passive: true });
   }
 }
@@ -617,6 +740,7 @@ async function doGoogleLogin(auth) {
 
 async function doLogout(auth) {
   try {
+    closeDrawer(); // por si está abierto
     await signOut(auth);
   } catch (err) {
     toast("No se pudo cerrar sesión");
@@ -666,7 +790,6 @@ function buildLinksForUser(email) {
 }
 
 async function mount() {
-  // Título coherente
   try { document.title = "Musicala Docentes Hub"; } catch (_) {}
 
   if (!assertConfig(firebaseConfig)) {
@@ -693,9 +816,13 @@ async function mount() {
   if (btnGoogle) btnGoogle.addEventListener("click", () => doGoogleLogin(auth));
   if (btnOut) btnOut.addEventListener("click", () => doLogout(auth));
 
+  // Drawer handlers (si existe)
+  wireDrawerHandlers(auth);
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       show("login");
+      closeDrawer();
       return;
     }
 
@@ -706,6 +833,7 @@ async function mount() {
       toast("Tu correo no está autorizado para este hub 🫠");
       try { await signOut(auth); } catch (_) {}
       show("login");
+      closeDrawer();
       return;
     }
 
@@ -715,6 +843,9 @@ async function mount() {
     if (userLine) {
       userLine.textContent = profile?.label || prettyName(user, email);
     }
+
+    // Drawer profile (si existe)
+    setDrawerProfile(profile, user);
 
     show("app");
     renderButtons(HUB.BUTTONS || [], mergedLinks, profile);
