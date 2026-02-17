@@ -65,7 +65,7 @@ const HUB = {
       carnet: "./assets/angienitola.png",
       links: {}
     },
-    "emilybejarano@gmail.com": {
+    "emilybg0102@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
       links: {}
