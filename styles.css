@@ -4,6 +4,7 @@
    - Sin tocar IDs ni JS
    - Mobile-first, PWA-friendly, accesible
    - Adaptado a index.html (appRoot + screen) + secciones + carnet modal + update banner
+   - + Drawer corporativo (menú lateral) + overlay + items
 ========================================================================== */
 
 :root{
@@ -75,6 +76,19 @@
   /* ===== Update banner ===== */
   --updateBg: rgba(255,255,255,.86);
   --updateLine: rgba(11,16,32,.14);
+
+  /* ===== Drawer (menú lateral) ===== */
+  --drawerW: 340px;
+  --drawerWmax: 420px;
+  --drawerBg: rgba(255,255,255,.92);
+  --drawerLine: rgba(11,16,32,.12);
+  --drawerOverlay: rgba(11,16,32,.32);
+  --drawerShadow: 0 26px 86px rgba(11,16,32,.22);
+  --drawerRadius: 26px;
+
+  /* ===== Little pro details ===== */
+  --hairline: rgba(11,16,32,.10);
+  --hairline2: rgba(11,16,32,.14);
 }
 
 /* ===== Reset ===== */
@@ -99,6 +113,21 @@ body{
     linear-gradient(180deg, var(--bg), var(--bg2));
 }
 
+/* (Opcional) clase por si luego usas skip link visible */
+.skip:focus{
+  position: fixed !important;
+  left: 14px !important;
+  top: 14px !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(11,16,32,.14) !important;
+  background: rgba(255,255,255,.92) !important;
+  box-shadow: var(--shadow2) !important;
+  z-index: 9999 !important;
+}
+
 /* ==========================================================================
    APP ROOT (reemplaza el “mockup” del teléfono)
 ========================================================================== */
@@ -109,7 +138,6 @@ body{
   justify-content:center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
 }
-
 
 /* “Pantalla” real: card grande centrada */
 .screen{
@@ -123,8 +151,7 @@ body{
   position: relative;
 
   /* Scroll container (mobile-first):
-     Esto arregla el “banner de actualizar” (sticky) en celulares,
-     porque sticky necesita un contenedor de scroll consistente. */
+     Sticky banners requieren contenedor de scroll consistente. */
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -133,11 +160,13 @@ body{
   max-height: calc(100svh - (28px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)));
 
   padding: 0;
+
+  /* Base offset */
+  --updateOffset: 0px;
 }
 @supports (height: 100dvh){
   .screen{ max-height: calc(100dvh - (28px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px))); }
 }
-
 
 /* Blobs internos sutiles (premium, no carnaval) */
 .screen::before{
@@ -174,9 +203,7 @@ body{
 
 /* Scrollbars (solo desktop) */
 @media (hover:hover) and (pointer:fine){
-  .screen{
-    max-height: calc(100vh - 28px);
-  }
+  .screen{ max-height: calc(100vh - 28px); }
   .screen::-webkit-scrollbar{ width: 10px; }
   .screen::-webkit-scrollbar-thumb{
     background: rgba(11,16,32,.12);
@@ -188,14 +215,11 @@ body{
 
 /* ==========================================================================
    Sticky offsets (Update banner + Header)
-   - En móvil el scroll vive dentro de .screen.
-   - Si el banner de update está visible, empujamos el header hacia abajo
-     para que no se pisen. (Sí, esto es CSS haciendo de adulto.)
 ========================================================================== */
-.screen{ --updateOffset: 0px; }
 @supports selector(.screen:has(#pwa-update)){
   .screen:has(#pwa-update:not([hidden])){ --updateOffset: 54px; }
 }
+
 /* ==========================================================================
    UPDATE BANNER (PWA)
 ========================================================================== */
@@ -349,7 +373,7 @@ body{
   align-items:center;
 }
 
-/* Ghost button (logout / install) */
+/* Ghost button (logout / install / menu) */
 .btnGhost{
   height: 36px;
   padding: 0 12px;
@@ -373,10 +397,21 @@ body{
 }
 .btnGhost:active{ transform: scale(var(--tapScale)); }
 
+/* Menú ☰ un poco más “icon button” */
+#btn-menu{
+  width: 40px;
+  padding: 0;
+  display:grid;
+  place-items:center;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
 /* En pantallas mini, compacta */
 @media (max-width: 380px){
   .brand{ padding: 12px 12px; }
   .btnGhost{ padding: 0 10px; }
+  #btn-menu{ width: 38px; padding:0; }
   .appTitle{ font-size: 14.5px; }
 }
 
@@ -529,9 +564,8 @@ body{
 }
 
 /* Secciones (insertadas por JS dentro de .grid) */
-.secBlock{
-  margin-top: var(--secGap);
-}
+.secBlock{ margin-top: var(--secGap); }
+
 .secTitle{
   font-size: var(--secTitleSize);
   color: var(--secTitleColor);
@@ -593,6 +627,27 @@ body{
   transform: translateX(-8%) translateY(-10%);
   pointer-events:none;
 }
+
+/* Pro underline accent (aparece suave al hover) */
+.tile::after{
+  content:"";
+  position:absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(12,65,196,.0), rgba(12,65,196,.22), rgba(104,13,191,.18), rgba(206,0,113,.14), rgba(206,0,113,0));
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--durMed) var(--easeSoft), transform var(--durMed) var(--easeSoft);
+  pointer-events:none;
+}
+.tile:hover::after{
+  opacity: .95;
+  transform: translateY(0px);
+}
+
 .tile > *{ position:relative; }
 
 .tile:hover{
@@ -797,6 +852,317 @@ button[data-id="vacaciones"] .ico{ background: rgba(104,13,191,.10); }
 button[data-id="musicalaFest"] .ico{ background: rgba(206,0,113,.10); }
 
 /* ==========================================================================
+   DRAWER (Menú lateral corporativo)
+   - HTML: #drawer-overlay + #app-drawer + botones .drawerItem
+========================================================================== */
+.drawerOverlay{
+  position: fixed;
+  inset: 0;
+  background: var(--drawerOverlay);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 120;
+  opacity: 0;
+  transition: opacity var(--durMed) var(--easeSoft);
+}
+
+/* Cuando NO está hidden (controlado por app.js) */
+.drawerOverlay:not([hidden]){ opacity: 1; }
+
+.drawer{
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+
+  width: min(var(--drawerW), calc(100vw - 24px));
+  max-width: var(--drawerWmax);
+
+  background: var(--drawerBg);
+  border: 1px solid var(--drawerLine);
+  border-radius: var(--drawerRadius);
+  box-shadow: var(--drawerShadow);
+
+  overflow: hidden;
+  z-index: 130;
+
+  display:flex;
+  flex-direction: column;
+
+  transform: translateX(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--durMed) var(--easeOut),
+    opacity var(--durMed) var(--easeSoft);
+}
+
+/* Cuando NO está hidden (controlado por app.js) */
+.drawer:not([hidden]){
+  transform: translateX(0px);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Glow sutil dentro del drawer */
+.drawer::before{
+  content:"";
+  position:absolute;
+  inset:-30%;
+  background:
+    radial-gradient(520px 360px at 15% 15%, rgba(12,65,196,.14), transparent 62%),
+    radial-gradient(520px 360px at 85% 15%, rgba(104,13,191,.12), transparent 62%),
+    radial-gradient(620px 420px at 50% 95%, rgba(206,0,113,.10), transparent 62%);
+  filter: blur(16px);
+  opacity: .75;
+  pointer-events:none;
+}
+.drawer > *{ position:relative; }
+
+/* Header */
+.drawerHead{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid rgba(11,16,32,.10);
+  background: rgba(255,255,255,.80);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+}
+.drawerBrand{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  min-width: 0;
+}
+.drawerLogo{
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
+  display:grid;
+  place-items:center;
+  background: linear-gradient(135deg, rgba(12,65,196,.14), rgba(104,13,191,.10));
+  border: 1px solid rgba(11,16,32,.10);
+  box-shadow: 0 12px 26px rgba(11,16,32,.10);
+  overflow:hidden;
+}
+.drawerLogo img{
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+.drawerTxt{ min-width: 0; }
+.drawerTitle{
+  font-weight: 980;
+  letter-spacing: .2px;
+  line-height: 1.05;
+}
+.drawerSub{
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(11,16,32,.62);
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+
+/* Close button */
+.drawerClose{
+  width: 40px;
+  padding: 0;
+  display:grid;
+  place-items:center;
+  font-weight: 950;
+}
+
+/* Body scroll */
+.drawerBody{
+  padding: 10px 12px 14px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Sections */
+.drawerSection{ padding: 10px 2px 2px; }
+.drawerLabel{
+  font-size: 11.5px;
+  font-weight: 950;
+  letter-spacing: .28px;
+  color: rgba(11,16,32,.66);
+  text-transform: uppercase;
+  padding: 8px 8px 6px;
+}
+
+/* Profile card */
+.drawerCard{
+  border-radius: 18px;
+  border: 1px solid rgba(11,16,32,.10);
+  background: rgba(255,255,255,.76);
+  box-shadow: 0 12px 30px rgba(11,16,32,.08);
+  padding: 12px;
+}
+.drawerUser{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+.drawerAvatar{
+  width: 40px;
+  height: 40px;
+  border-radius: 16px;
+  display:grid;
+  place-items:center;
+  background: rgba(12,65,196,.10);
+  border: 1px solid rgba(11,16,32,.10);
+  box-shadow: 0 12px 26px rgba(11,16,32,.10);
+}
+.drawerUserTxt{ min-width: 0; }
+.drawerUserName{
+  font-weight: 950;
+  letter-spacing: .1px;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.drawerUserMail{
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(11,16,32,.62);
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+
+/* Drawer items */
+.drawerItem{
+  width: 100%;
+  appearance:none;
+  border: 1px solid rgba(11,16,32,.10);
+  background: rgba(255,255,255,.74);
+  border-radius: 18px;
+  padding: 12px 12px;
+  margin: 8px 0 0;
+
+  display:flex;
+  align-items:center;
+  gap: 12px;
+
+  text-align:left;
+  cursor:pointer;
+  box-shadow: 0 12px 30px rgba(11,16,32,.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+
+  transition:
+    transform var(--durFast) var(--easeSoft),
+    box-shadow var(--durFast) var(--easeSoft),
+    border-color var(--durFast) var(--easeSoft),
+    background var(--durFast) var(--easeSoft);
+}
+.drawerItem:hover{
+  transform: translateY(-1px);
+  border-color: rgba(12,65,196,.18);
+  background: rgba(255,255,255,.84);
+  box-shadow: 0 18px 44px rgba(11,16,32,.12);
+}
+.drawerItem:active{ transform: translateY(0px) scale(var(--tapScale)); }
+
+.drawerItem:focus-visible{
+  box-shadow: var(--ring), 0 18px 44px rgba(11,16,32,.12);
+  border-color: rgba(12,65,196,.26);
+}
+
+.drawerItem .diIco{
+  width: 40px;
+  height: 40px;
+  border-radius: 16px;
+  display:grid;
+  place-items:center;
+  background: rgba(255,255,255,.58);
+  border: 1px solid rgba(11,16,32,.10);
+  box-shadow: 0 12px 26px rgba(11,16,32,.10);
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+.drawerItem .diTxt{
+  display:flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.drawerItem .diTitle{
+  font-weight: 950;
+  letter-spacing: .1px;
+  line-height: 1.1;
+}
+.drawerItem .diSub{
+  font-size: 12px;
+  color: rgba(11,16,32,.62);
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+
+/* Danger item */
+.drawerItem.danger{
+  border-color: rgba(206,0,113,.16);
+}
+.drawerItem.danger:hover{
+  border-color: rgba(206,0,113,.22);
+}
+.drawerItem.danger .diIco{
+  background: rgba(206,0,113,.08);
+}
+
+/* Meta box */
+.drawerMeta{
+  border-radius: 18px;
+  border: 1px solid rgba(11,16,32,.10);
+  background: rgba(255,255,255,.76);
+  box-shadow: 0 12px 30px rgba(11,16,32,.08);
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.drawerMetaRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+}
+.drawerMetaRow + .drawerMetaRow{
+  border-top: 1px dashed rgba(11,16,32,.12);
+}
+.dmKey{
+  font-size: 12px;
+  color: rgba(11,16,32,.62);
+  font-weight: 850;
+}
+.dmVal{
+  font-size: 12px;
+  color: rgba(11,16,32,.86);
+  font-weight: 950;
+}
+
+/* Footer */
+.drawerFoot{
+  padding: 12px;
+  border-top: 1px solid rgba(11,16,32,.10);
+  background: rgba(255,255,255,.80);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+}
+.drawerFootBtn{
+  width: 100%;
+  height: 44px;
+  border-radius: 16px;
+}
+
+/* ==========================================================================
    CARNET MODAL (si existe #carnetModal creado por JS)
 ========================================================================== */
 #carnetModal[hidden]{ display:none !important; }
@@ -806,18 +1172,10 @@ button[data-id="musicalaFest"] .ico{ background: rgba(206,0,113,.10); }
 }
 
 /* Estos nombres de clases existen en el HTML del modal que genera el JS */
-#carnetModal .carnetCard{
-  border-radius: 22px;
-}
-#carnetModal .carnetTop{
-  background: rgba(255,255,255,.88);
-}
-#carnetModal .carnetTitle{
-  font-weight: 980;
-}
-#carnetModal #carnetImg{
-  border-radius: 16px;
-}
+#carnetModal .carnetCard{ border-radius: 22px; }
+#carnetModal .carnetTop{ background: rgba(255,255,255,.88); }
+#carnetModal .carnetTitle{ font-weight: 980; }
+#carnetModal #carnetImg{ border-radius: 16px; }
 #carnetModal .btnGhost{
   height: 36px;
   border-radius: 12px;
@@ -871,7 +1229,7 @@ button[data-id="musicalaFest"] .ico{ background: rgba(206,0,113,.10); }
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   .grid .tile{ opacity: 1; animation: none; }
-  .tile, .ico, .btnGoogle, .btnGhost, .toast, .pwaUpdateBtn{ transition: none !important; }
+  .tile, .ico, .btnGoogle, .btnGhost, .toast, .pwaUpdateBtn, .drawer, .drawerOverlay, .drawerItem{ transition: none !important; }
 }
 
 /* ==========================================================================
@@ -936,12 +1294,13 @@ button[data-id="musicalaFest"] .ico{ background: rgba(206,0,113,.10); }
    ACCESSIBILITY focus
 ========================================================================== */
 :focus-visible{
-  box-shadow: var(--ring);
-  border-color: rgba(12,65,196,.28) !important;
+  outline: none;
 }
-.btnGhost:focus-visible{ box-shadow: var(--ring2); }
-.btnGoogle:focus-visible{ box-shadow: var(--ring); }
-.pwaUpdateBtn:focus-visible{ box-shadow: var(--ring3); }
+
+/* Preferimos anillos por tipo (no todo el universo a la vez) */
+.btnGhost:focus-visible{ box-shadow: var(--ring2); border-color: rgba(104,13,191,.18); }
+.btnGoogle:focus-visible{ box-shadow: var(--ring); border-color: rgba(12,65,196,.22); }
+.pwaUpdateBtn:focus-visible{ box-shadow: var(--ring3); border-color: rgba(206,0,113,.18); }
 
 /* ==========================================================================
    SMALL HEIGHT tweaks
@@ -960,4 +1319,12 @@ button[data-id="musicalaFest"] .ico{ background: rgba(206,0,113,.10); }
 @media (max-width: 420px){
   .wrap{ padding-left: 14px; padding-right: 14px; }
   .grid{ padding-left: 14px; padding-right: 14px; }
+}
+
+/* ==========================================================================
+   Drawer responsiveness (pequeños)
+========================================================================== */
+@media (max-width: 420px){
+  :root{ --drawerW: 320px; }
+  .drawer{ left: 12px; right: 12px; width: auto; }
 }
