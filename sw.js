@@ -6,7 +6,7 @@
    - Limpieza de cachés viejos + mensajes para UI (update ready / activated)
 */
 
-const BUILD = "2026-02-17.2";
+const BUILD = "2026-02-17.3";
 const VERSION = `v4-${BUILD}`;
 
 const CACHE_STATIC  = `musicala-static-${VERSION}`;
