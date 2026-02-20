@@ -1,26 +1,26 @@
-/* sw.js — Musicala Hub (PWA) — PRO
+/* sw.js — Musicala Hub (PWA) — PRO (auto-update-friendly)
    Estrategia:
-   - Precachéa core assets (resistente si falta alguno)
+   - Precachéa SOLO lo esencial (HTML + manifest + icons + logo)
+     (NO precachea app.js / styles.css para evitar “pegues” en iOS)
    - Navegación: Network-first con fallback offline a index.html
-   - Same-origin assets: Stale-While-Revalidate
-   - Limpieza de cachés viejos + mensajes para UI (update ready / activated)
+   - JS/CSS/manifest (same-origin): Network-first (para que se actualicen solos)
+   - Otros same-origin assets: Stale-While-Revalidate
+   - Limpieza de cachés viejos + mensajes para UI
 */
 
-const BUILD = "2026-02-17.3";
-const VERSION = `v4-${BUILD}`;
+const BUILD = "2026-02-17.3"; // Puedes dejarlo fijo. Ya no dependes de esto para que app.js se actualice.
+const VERSION = `v5-${BUILD}`;
 
-const CACHE_STATIC  = `musicala-static-${VERSION}`;
-const CACHE_RUNTIME = `musicala-runtime-${VERSION}`;
+const CACHE_STATIC  = `musicala-static`;   // sin versión para no acumular basura
+const CACHE_RUNTIME = `musicala-runtime`;  // sin versión para no acumular basura
 
 /**
- * Core assets: ajusta si cambias estructura.
- * Nota: cache.add usa Request normal, respeta redirects.
+ * Core assets: solo lo mínimo estable.
+ * Importante: NO incluir app.js ni styles.css aquí.
  */
 const CORE_ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
   "./manifest.webmanifest",
   "./logo.png",
   "./icons/icon-192.png",
@@ -31,7 +31,6 @@ const CORE_ASSETS = [
    Utils
 ========================= */
 const isHttp = (url) => url.protocol === "http:" || url.protocol === "https:";
-
 const isRangeRequest = (req) => req.headers && req.headers.has("range");
 
 async function postToAllClients(payload) {
@@ -41,12 +40,29 @@ async function postToAllClients(payload) {
 
 async function safeCachePut(cache, request, response) {
   try {
-    // Evita cachear respuestas inválidas u opacas raras
     if (!response || response.status === 206) return; // Range
-    if (response.type === "opaque") return; // cross-origin opaque
+    if (response.type === "opaque") return;           // cross-origin opaque
     if (response.status >= 400) return;
     await cache.put(request, response);
   } catch (_) {}
+}
+
+function isSameOrigin(url) {
+  return url.origin === self.location.origin;
+}
+
+function isHTML(req) {
+  return req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
+}
+
+function isCriticalFreshAsset(url) {
+  // Fuerza “siempre lo último” para estos, porque aquí es donde se queda pegado Safari.
+  const p = url.pathname;
+  return (
+    p.endsWith("/app.js") ||
+    p.endsWith("/styles.css") ||
+    p.endsWith("/manifest.webmanifest")
+  );
 }
 
 /* =========================
@@ -63,6 +79,14 @@ self.addEventListener("message", (event) => {
   if (data.type === "GET_VERSION") {
     event.source?.postMessage({ type: "SW_VERSION", version: VERSION, build: BUILD });
   }
+
+  if (data.type === "CLEAR_CACHES") {
+    event.waitUntil((async () => {
+      await caches.delete(CACHE_STATIC);
+      await caches.delete(CACHE_RUNTIME);
+      await postToAllClients({ type: "SW_CACHES_CLEARED" });
+    })());
+  }
 });
 
 /* =========================
@@ -72,14 +96,18 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_STATIC);
 
-    // No usamos addAll: si falta 1 archivo, no se cae la instalación.
+    // Importante: usamos fetch({cache:"reload"}) para saltar caché HTTP (Safari ama aferrarse).
     await Promise.allSettled(
       CORE_ASSETS.map(async (url) => {
-        try { await cache.add(url); } catch (_) {}
+        try {
+          const req = new Request(url, { cache: "reload" });
+          const res = await fetch(req);
+          await safeCachePut(cache, url, res.clone());
+        } catch (_) {}
       })
     );
 
-    // Queremos que instale rápido; la activación queda al usuario (update prompt)
+    // Instalación rápida
     self.skipWaiting();
   })());
 });
@@ -89,21 +117,8 @@ self.addEventListener("install", (event) => {
 ========================= */
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    const keys = await caches.keys();
-
-    // Borra caches viejos de esta misma app (musicala-*)
-    await Promise.all(
-      keys.map((k) => {
-        const keep = (k === CACHE_STATIC || k === CACHE_RUNTIME);
-        const isOurs = k.startsWith("musicala-static-") || k.startsWith("musicala-runtime-") ||
-                       k.startsWith("practicantes-static-") || k.startsWith("practicantes-runtime-");
-        return (!keep && isOurs) ? caches.delete(k) : null;
-      })
-    );
-
+    // Como los caches ya no van versionados, no hay que barrer por versiones antiguas.
     await self.clients.claim();
-
-    // Avisar que ya hay una versión activa
     await postToAllClients({ type: "SW_ACTIVATED", version: VERSION, build: BUILD });
   })());
 });
@@ -117,25 +132,21 @@ self.addEventListener("fetch", (event) => {
   // Solo GET
   if (req.method !== "GET") return;
 
-  // Evita cosas raras (range requests rompen cache put en algunos casos)
+  // Evita Range (media/video)
   if (isRangeRequest(req)) return;
 
   const url = new URL(req.url);
   if (!isHttp(url)) return;
 
-  const sameOrigin = url.origin === self.location.origin;
+  const sameOrigin = isSameOrigin(url);
 
   // ===== Navegación (HTML) =====
-  // Network-first: trae lo último cuando hay internet; si no, index.html cacheado.
-  if (req.mode === "navigate") {
+  if (isHTML(req)) {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(req);
-
-        // Cachea una copia de index.html para offline
+        const fresh = await fetch(new Request(req, { cache: "no-store" }));
         const cache = await caches.open(CACHE_RUNTIME);
         await safeCachePut(cache, "./index.html", fresh.clone());
-
         return fresh;
       } catch (_) {
         const cached = await caches.match("./index.html") || await caches.match("./");
@@ -148,11 +159,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ===== Same-origin assets (CSS/JS/IMG/etc) =====
-  // Stale-While-Revalidate: responde rápido desde caché y actualiza en segundo plano.
+  // ===== Same-origin =====
   if (sameOrigin) {
+    // 1) JS/CSS/manifest: Network-first (auto-update)
+    if (isCriticalFreshAsset(url)) {
+      event.respondWith((async () => {
+        const cache = await caches.open(CACHE_RUNTIME);
+        try {
+          // cache:"reload" evita quedarnos con el caché HTTP viejo
+          const fresh = await fetch(new Request(req, { cache: "reload" }));
+          await safeCachePut(cache, req, fresh.clone());
+          return fresh;
+        } catch (_) {
+          const cached = await caches.match(req);
+          return cached || new Response("", { status: 504 });
+        }
+      })());
+      return;
+    }
+
+    // 2) Resto de assets same-origin: Stale-While-Revalidate
     event.respondWith((async () => {
-      const cached = await caches.match(req, { ignoreSearch: true });
+      const cached = await caches.match(req, { ignoreSearch: false });
 
       const fetchPromise = (async () => {
         try {
@@ -171,21 +199,5 @@ self.addEventListener("fetch", (event) => {
   }
 
   // ===== Cross-origin =====
-  // No cacheamos externo (Firebase CDN, Google, etc). Passthrough.
-  // (Si algún día quieres cachear gstatic, se hace pero con cuidado.)
+  // Passthrough (no cache externo).
 });
-
-/* =========================
-   Update signaling (optional but nice)
-========================= */
-self.addEventListener("controllerchange", () => {
-  // Esto normalmente vive del lado cliente, pero lo dejo aquí por si el browser lo usa.
-});
-
-/**
- * Nota para tu app.js:
- * Si quieres banner de update "listo para aplicar", escucha estos mensajes:
- * - SW_ACTIVATED
- * - SW_VERSION
- * Y cuando el registro tenga reg.waiting, muestra botón que mande SKIP_WAITING.
- */
