@@ -42,8 +42,8 @@ const HUB = {
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
 
     calendario: "",
-    apuntes: "",
-    bitacoraAcademica: "",
+    apuntes: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    bitacoraAcademica: "https://musicalaescuela.github.io/registrodeclasemusicala/",
     documentosContratacion: "",
     horarioAnual: "",
     bitacoraClases: ""
