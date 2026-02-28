@@ -79,6 +79,11 @@ const HUB = {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
       links: {}
+    },
+     "malego2709@gmail.com": {
+      label: "María Alejandra Gómez",
+      carnet: "",
+      links: {}
     }
   },
 
