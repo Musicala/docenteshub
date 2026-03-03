@@ -43,7 +43,7 @@ const HUB = {
 
     calendario: "",
     apuntes: "https://musicalaescuela.github.io/registrodeclasemusicala/",
-    bitacoraAcademica: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    bitacoraAcademica: "",
     documentosContratacion: "",
     horarioAnual: "",
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/"
