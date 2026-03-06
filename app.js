@@ -86,6 +86,12 @@ const HUB = {
       links: {}
     }
   },
+     "brianalexander99@hotmail.com": {
+      label: "Brian Alexander Gutiérrez",
+      carnet: "",
+      links: {}
+    }
+  },
 
   BUTTONS: [
     { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Mi trabajo hoy" },
