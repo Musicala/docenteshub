@@ -91,7 +91,7 @@ const HUB = {
       carnet: "",
       links: {}
     }
-  },
+  }
 
   BUTTONS: [
     { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Mi trabajo hoy" },
