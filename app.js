@@ -4,11 +4,13 @@
    - Links generales + links personalizados por usuario (Carnet / Horario / etc.)
    - Carnet abre modal (imagen en /assets/*.png)
    - Drawer lateral (si existe en el HTML): perfil + accesos rápidos + logout
+   - PWA con instalación + SW update banner
+   - Login unificado con popup (sin redirect)
 */
-const BUILD = "2026-02-17.2";
+const BUILD = "2026-03-10.1";
 
 /* ===========
-   1) Firebase Config (YA LISTO)
+   1) Firebase Config
 =========== */
 const firebaseConfig = {
   apiKey: "AIzaSyC06dLl2Lig3-kD4OVmh4C9LpFW9AeTyOc",
@@ -80,12 +82,12 @@ const HUB = {
       carnet: "./assets/laurasanchez.png",
       links: {}
     },
-     "malego2709@gmail.com": {
+    "malego2709@gmail.com": {
       label: "María Alejandra Gómez",
       carnet: "",
       links: {}
     },
-     "bagutierrezm@gmail.com": {
+    "bagutierrezm@gmail.com": {
       label: "Brian Alexander Gutiérrez",
       carnet: "",
       links: {}
@@ -128,8 +130,6 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
   onAuthStateChanged,
   signOut,
   setPersistence,
@@ -139,13 +139,15 @@ import {
 /* ===========
    Helpers UI
 =========== */
-const $ = (sel, el = document) => el.querySelector(sel);
-const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+const $ = (sel, el = document) => el?.querySelector?.(sel) || null;
+const $$ = (sel, el = document) => Array.from(el?.querySelectorAll?.(sel) || []);
 
 function escapeHtml(str) {
   return String(str ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
 
@@ -164,7 +166,12 @@ function toast(msg, opts = {}) {
   const el = pickToastEl();
   if (!el) return;
 
-  const { actionText = "", onAction = null, sticky = false, ms = 2600 } = opts || {};
+  const {
+    actionText = "",
+    onAction = null,
+    sticky = false,
+    ms = 2600
+  } = opts || {};
 
   el.classList.remove("show");
   el.hidden = false;
@@ -181,8 +188,11 @@ function toast(msg, opts = {}) {
     btn.className = "toastBtn";
     btn.textContent = actionText;
     btn.addEventListener("click", () => {
-      try { onAction && onAction(); }
-      finally { el.classList.remove("show"); }
+      try {
+        onAction && onAction();
+      } finally {
+        el.classList.remove("show");
+      }
     });
     el.appendChild(btn);
   }
@@ -196,6 +206,14 @@ function toast(msg, opts = {}) {
       if (el.id === "toast-app") el.hidden = true;
     }, Math.max(1200, Number(ms) || 2600));
   }
+}
+
+function setButtonBusy(btn, busy, labelBusy = "Procesando...") {
+  if (!btn) return;
+  if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent || "";
+  btn.disabled = !!busy;
+  btn.setAttribute("aria-busy", busy ? "true" : "false");
+  btn.textContent = busy ? labelBusy : btn.dataset.originalText;
 }
 
 function show(which) {
@@ -220,12 +238,11 @@ function show(which) {
 function normalizeUrl(raw) {
   const url = String(raw || "").trim();
   if (!url) return "";
-  // Bloqueo básico de esquemas peligrosos
+
   if (/^\s*javascript:/i.test(url)) return "";
   if (/^\s*data:/i.test(url)) return "";
-  // Si ya trae protocolo o //, ok
   if (/^(https?:)?\/\//i.test(url)) return url;
-  // Si parece un dominio/URL sin protocolo
+
   return "https://" + url;
 }
 
@@ -245,9 +262,10 @@ function isIOS() {
   const ua = navigator.userAgent || "";
   return /iphone|ipad|ipod/i.test(ua);
 }
+
 function isStandalone() {
-  if (window.navigator.standalone) return true; // iOS Safari
-  return window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+  if (window.navigator.standalone) return true;
+  return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 }
 
 function setInstallUI(visible) {
@@ -366,11 +384,12 @@ function setupInstallPrompt() {
 
   const onInstallClick = async () => {
     if (isIOS() && !__deferredInstallPrompt) {
-      toast("En iPhone/iPad: Compartir → “Agregar a pantalla de inicio”");
+      toast("En iPhone/iPad: Compartir → Agregar a pantalla de inicio");
       return;
     }
+
     if (!__deferredInstallPrompt) {
-      toast("Instalación no disponible todavía (abre en Chrome/Safari)");
+      toast("Instalación no disponible todavía. Abre en Chrome o Safari.");
       return;
     }
 
@@ -420,11 +439,8 @@ function openDrawer() {
 
   overlay.hidden = false;
   drawer.hidden = false;
-
-  // bloqueo scroll del body (la app ya tiene scroll interno, pero esto evita “doble scroll” en mobile)
   document.body.style.overflow = "hidden";
 
-  // foco al cerrar (mejor UX)
   setTimeout(() => {
     (btnClose || drawer).focus?.();
   }, 0);
@@ -438,7 +454,6 @@ function closeDrawer() {
   drawer.hidden = true;
   document.body.style.overflow = "";
 
-  // devolver foco al menú
   setTimeout(() => btnMenu?.focus?.(), 0);
 }
 
@@ -459,7 +474,7 @@ function wireDrawerHandlers(auth) {
   __drawerBound = true;
 
   const { btnMenu, overlay, drawer, btnClose } = drawerEls();
-  if (!overlay || !drawer) return; // si no existe, no hay nada que hacer
+  if (!overlay || !drawer) return;
 
   btnMenu?.addEventListener("click", () => toggleDrawer());
   btnClose?.addEventListener("click", () => closeDrawer());
@@ -469,7 +484,6 @@ function wireDrawerHandlers(auth) {
     if (e.key === "Escape" && isDrawerOpen()) closeDrawer();
   });
 
-  // Delegación: .drawerItem[data-action="..."]
   drawer.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
@@ -477,7 +491,6 @@ function wireDrawerHandlers(auth) {
     const action = String(btn.getAttribute("data-action") || "").trim();
     if (!action) return;
 
-    // Cierra de una para que se sienta rápido
     closeDrawer();
 
     if (action === "logout") {
@@ -486,30 +499,30 @@ function wireDrawerHandlers(auth) {
     }
 
     if (action === "install") {
-      // dispara el mismo handler que los botones de instalar
       const b = document.getElementById("btn-install-2") || document.getElementById("btn-install");
       b?.click?.();
       return;
     }
 
-    // open:<id>
     if (/^open:/i.test(action)) {
       const id = action.split(":")[1] || "";
       if (!id) return;
+
       if (id === "carnet") {
         openCarnet(ACTIVE_PROFILE);
         return;
       }
+
       const url = String(ACTIVE_LINKS?.[id] || "").trim();
       if (!url) {
         toast(`Pendiente: falta pegar el link de “${id}”`);
         return;
       }
+
       if (!openExternal(url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
       return;
     }
 
-    // url directa en data-href (por si algún día)
     const href = btn.getAttribute("data-href");
     if (href) {
       if (!openExternal(href)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
@@ -595,7 +608,9 @@ function ensureCarnetModal() {
   modal.addEventListener("click", (e) => {
     if (e.target === modal) close();
   });
+
   modal.querySelector("#carnetClose")?.addEventListener("click", close);
+
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !modal.hidden) close();
   });
@@ -663,10 +678,10 @@ function renderButtons(buttons, links, profile) {
       </div>
     `;
 
-    html += items.map(b => {
-      const isSpecial = (b.id === "carnet");
+    html += items.map((b) => {
+      const isSpecial = b.id === "carnet";
       const url = isSpecial ? "__SPECIAL__" : String(ACTIVE_LINKS[b.id] || "").trim();
-      const pending = (!isSpecial && !url);
+      const pending = !isSpecial && !url;
       const cls = pending ? "tile pending" : "tile";
       const badge = pending
         ? '<span class="badge">Pendiente</span>'
@@ -716,61 +731,81 @@ function renderButtons(buttons, links, profile) {
 /* ===========
    Auth
 =========== */
+let __loginInFlight = false;
+
 function prettyName(user, fallbackEmail = "") {
   const name = user?.displayName || "";
   const email = user?.email || fallbackEmail || "";
-  return name ? name : (email ? email : "Sesión activa");
+  return name || email || "Sesión activa";
 }
 
 function friendlyAuthError(code = "") {
-  if (code === "auth/unauthorized-domain") return "Dominio no autorizado en Firebase Auth (Authorized domains).";
-  if (code === "auth/popup-blocked") return "El navegador bloqueó el popup. En modo app instalada usamos redirect.";
-  if (code === "auth/cancelled-popup-request") return "Se canceló el popup de inicio de sesión.";
-  if (code === "auth/popup-closed-by-user") return "Cerraste el login.";
+  if (code === "auth/unauthorized-domain") return "Dominio no autorizado en Firebase Auth.";
+  if (code === "auth/popup-blocked") return "El navegador bloqueó la ventana de inicio de sesión.";
+  if (code === "auth/cancelled-popup-request") return "Se canceló el intento de inicio de sesión.";
+  if (code === "auth/popup-closed-by-user") return "Cerraste la ventana de inicio de sesión.";
   if (code === "auth/network-request-failed") return "Falló la red. Revisa internet.";
+  if (code === "auth/internal-error") return "Hubo un error interno de autenticación.";
   return "";
 }
 
+async function ensureAuthPersistence(auth) {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    return true;
+  } catch (err) {
+    console.warn("No se pudo setPersistence:", err);
+    return false;
+  }
+}
+
 async function doGoogleLogin(auth) {
+  if (__loginInFlight) return;
+
+  const btnGoogle = $("#btn-google");
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-
-async function doGoogleLogin(auth) {
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
+  __loginInFlight = true;
+  setButtonBusy(btnGoogle, true, "Entrando...");
 
   try {
-    await setPersistence(auth, browserLocalPersistence);
+    await ensureAuthPersistence(auth);
+
+    if (isStandalone()) {
+      toast("Abriendo Google para iniciar sesión…");
+    }
+
     await signInWithPopup(auth, provider);
   } catch (err) {
     const code = err?.code || "";
+
     if (code === "auth/popup-closed-by-user") return;
 
     const friendly = friendlyAuthError(code);
-    toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
-    console.error("Login error:", err);
-  }
-}
-  } catch (err) {
-    const code = err?.code || "";
-    if (code === "auth/popup-closed-by-user") return;
 
-    const friendly = friendlyAuthError(code);
-    toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
+    if (code === "auth/popup-blocked" && isStandalone()) {
+      toast(
+        "La app instalada bloqueó la ventana de Google. Si sigue pasando, toca probar el helper de auth en el mismo dominio."
+      );
+    } else {
+      toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
+    }
+
     console.error("Login error:", err);
+  } finally {
+    __loginInFlight = false;
+    setButtonBusy(btnGoogle, false);
   }
 }
 
 async function doLogout(auth) {
   try {
-    closeDrawer(); // por si está abierto
+    closeDrawer();
     await signOut(auth);
   } catch (err) {
     toast("No se pudo cerrar sesión");
-    console.error(err);
+    console.error("Logout error:", err);
   }
 }
 
@@ -784,28 +819,12 @@ function assertConfig(cfg) {
   return false;
 }
 
-async function finalizeRedirectIfAny(auth) {
-  try {
-    const res = await getRedirectResult(auth);
-    if (res?.user) {
-      console.log("Redirect login OK:", res.user.email || res.user.uid);
-    }
-  } catch (err) {
-    const code = err?.code || "";
-    if (code) {
-      const friendly = friendlyAuthError(code);
-      toast(friendly ? `Login redirect falló: ${friendly}` : "Login redirect falló");
-      console.warn("Redirect result error:", err);
-    }
-  }
-}
-
 function emailKey(user) {
   return String(user?.email || "").toLowerCase().trim();
 }
 
 function hasUserRestrictions() {
-  return HUB.USERS && Object.keys(HUB.USERS).length > 0;
+  return !!(HUB.USERS && Object.keys(HUB.USERS).length > 0);
 }
 
 function buildLinksForUser(email) {
@@ -816,7 +835,9 @@ function buildLinksForUser(email) {
 }
 
 async function mount() {
-  try { document.title = "Musicala Docentes Hub"; } catch (_) {}
+  try {
+    document.title = "Musicala Docentes Hub";
+  } catch (_) {}
 
   if (!assertConfig(firebaseConfig)) {
     show("login");
@@ -827,22 +848,20 @@ async function mount() {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
 
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch (e) {
-    console.warn("No se pudo setPersistence:", e);
-  }
-
-  await finalizeRedirectIfAny(auth);
+  await ensureAuthPersistence(auth);
 
   const btnGoogle = $("#btn-google");
   const btnOut = $("#btn-logout");
   const userLine = $("#user-line");
 
-  if (btnGoogle) btnGoogle.addEventListener("click", () => doGoogleLogin(auth));
-  if (btnOut) btnOut.addEventListener("click", () => doLogout(auth));
+  if (btnGoogle) {
+    btnGoogle.addEventListener("click", () => doGoogleLogin(auth));
+  }
 
-  // Drawer handlers (si existe)
+  if (btnOut) {
+    btnOut.addEventListener("click", () => doLogout(auth));
+  }
+
   wireDrawerHandlers(auth);
 
   onAuthStateChanged(auth, async (user) => {
@@ -854,10 +873,11 @@ async function mount() {
 
     const email = emailKey(user);
 
-    // Lista blanca
     if (hasUserRestrictions() && !HUB.USERS[email]) {
       toast("Tu correo no está autorizado para este hub 🫠");
-      try { await signOut(auth); } catch (_) {}
+      try {
+        await signOut(auth);
+      } catch (_) {}
       show("login");
       closeDrawer();
       return;
@@ -870,7 +890,6 @@ async function mount() {
       userLine.textContent = profile?.label || prettyName(user, email);
     }
 
-    // Drawer profile (si existe)
     setDrawerProfile(profile, user);
 
     show("app");
@@ -880,7 +899,6 @@ async function mount() {
 
 document.addEventListener("DOMContentLoaded", () => {
   console.log("BUILD", BUILD);
-
   registerServiceWorker();
   setupInstallPrompt();
   wireUpdateBanner();
