@@ -738,11 +738,22 @@ async function doGoogleLogin(auth) {
   try {
     await setPersistence(auth, browserLocalPersistence);
 
-    if (isStandalone()) {
-      await signInWithRedirect(auth, provider);
-      return;
-    }
+async function doGoogleLogin(auth) {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  try {
+    await setPersistence(auth, browserLocalPersistence);
     await signInWithPopup(auth, provider);
+  } catch (err) {
+    const code = err?.code || "";
+    if (code === "auth/popup-closed-by-user") return;
+
+    const friendly = friendlyAuthError(code);
+    toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
+    console.error("Login error:", err);
+  }
+}
   } catch (err) {
     const code = err?.code || "";
     if (code === "auth/popup-closed-by-user") return;
