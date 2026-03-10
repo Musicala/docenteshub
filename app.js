@@ -6,8 +6,9 @@
    - Drawer lateral (si existe en el HTML): perfil + accesos rápidos + logout
    - PWA con instalación + SW update banner
    - Login unificado con popup (sin redirect)
+   - Horario anual 2026 personalizado por docente
 */
-const BUILD = "2026-03-10.1";
+const BUILD = "2026-03-10.2";
 
 /* ===========
    1) Firebase Config
@@ -47,7 +48,12 @@ const HUB = {
     apuntes: "https://musicalaescuela.github.io/registrodeclasemusicala/",
     bitacoraAcademica: "",
     documentosContratacion: "",
+
+    // IMPORTANTE:
+    // vacío a propósito para que NO exista un horario general visible para todos.
+    // Solo quienes tengan override en USERS.links.horarioAnual verán su horario.
     horarioAnual: "",
+
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/"
   },
 
@@ -55,32 +61,35 @@ const HUB = {
     "alekcaballeromusic@gmail.com": {
       label: "Alek Caballero",
       carnet: "./assets/alekcaballero.png",
-      links: {}
+      links: {
+        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/"
+      }
     },
     "catalina.medina.leal@gmail.com": {
       label: "Catalina Medina",
       carnet: "./assets/catalinamedina.png",
       links: {}
     },
-    "angiecamilar4@gmail.com": {
-      label: "Angie (Camila) Rodríguez",
-      carnet: "./assets/angienitola.png",
-      links: {}
-    },
     "emilybg0102@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
-      links: {}
+      links: {
+        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/"
+      }
     },
     "annitolad@gmail.com": {
       label: "Angie Nitola",
       carnet: "./assets/angienitola.png",
-      links: {}
+      links: {
+        horarioAnual: "https://musicala.github.io/horario2026angienitola/"
+      }
     },
     "lorenaduarte.404@gmail.com": {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
-      links: {}
+      links: {
+        horarioAnual: "https://musicala.github.io/horario2026laurasanchez/"
+      }
     },
     "malego2709@gmail.com": {
       label: "María Alejandra Gómez",
@@ -99,7 +108,7 @@ const HUB = {
     { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Mi trabajo hoy" },
     { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Mi trabajo hoy" },
     { id: "infoEstudiantes", icon: "🧒", title: "Info estudiantes", subtitle: "Verificación", section: "Mi trabajo hoy" },
-    { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "General o personal", section: "Mi trabajo hoy" },
+    { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "Solo tu horario", section: "Mi trabajo hoy" },
 
     { id: "apuntes", icon: "📝", title: "Apuntes y tareas pendientes", subtitle: "Organización", section: "Gestión docente" },
     { id: "observacion", icon: "👀", title: "Formulario observación docente", subtitle: "Registro", section: "Gestión docente" },
@@ -661,6 +670,13 @@ function groupBySection(buttons = []) {
   return map;
 }
 
+function getResolvedButtonState(button, links = {}) {
+  const isSpecial = button?.id === "carnet";
+  const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
+  const available = isSpecial || !!url;
+  return { isSpecial, url, available };
+}
+
 function renderButtons(buttons, links, profile) {
   const grid = $("#grid");
   if (!grid) return;
@@ -668,7 +684,13 @@ function renderButtons(buttons, links, profile) {
   ACTIVE_LINKS = links || {};
   ACTIVE_PROFILE = profile || null;
 
-  const sections = groupBySection(buttons || []);
+  const filteredButtons = (buttons || []).filter((b) => {
+    const state = getResolvedButtonState(b, ACTIVE_LINKS);
+    if (b.id === "carnet") return true;
+    return state.available;
+  });
+
+  const sections = groupBySection(filteredButtons);
   let html = "";
 
   for (const [sec, items] of sections.entries()) {
@@ -679,13 +701,11 @@ function renderButtons(buttons, links, profile) {
     `;
 
     html += items.map((b) => {
-      const isSpecial = b.id === "carnet";
-      const url = isSpecial ? "__SPECIAL__" : String(ACTIVE_LINKS[b.id] || "").trim();
-      const pending = !isSpecial && !url;
-      const cls = pending ? "tile pending" : "tile";
-      const badge = pending
-        ? '<span class="badge">Pendiente</span>'
-        : '<span class="badge ok">Abrir</span>';
+      const state = getResolvedButtonState(b, ACTIVE_LINKS);
+      const cls = state.available ? "tile" : "tile pending";
+      const badge = state.available
+        ? '<span class="badge ok">Abrir</span>'
+        : '<span class="badge">Pendiente</span>';
 
       return `
         <button class="${cls}" type="button" data-id="${escapeHtml(b.id)}" aria-label="${escapeHtml(b.title)}">
@@ -719,7 +739,7 @@ function renderButtons(buttons, links, profile) {
 
       const url = String(ACTIVE_LINKS[id] || "").trim();
       if (!url) {
-        toast(`Pendiente: falta pegar el link de “${id}”`);
+        toast(`No tienes un link asignado para “${id}” 🙃`);
         return;
       }
 
@@ -785,9 +805,7 @@ async function doGoogleLogin(auth) {
     const friendly = friendlyAuthError(code);
 
     if (code === "auth/popup-blocked" && isStandalone()) {
-      toast(
-        "La app instalada bloqueó la ventana de Google. Si sigue pasando, toca probar el helper de auth en el mismo dominio."
-      );
+      toast("La app instalada bloqueó la ventana de Google. Toca resolver eso con auth por redirect o helper de dominio.");
     } else {
       toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
     }
