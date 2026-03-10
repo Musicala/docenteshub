@@ -84,8 +84,7 @@ const HUB = {
       label: "María Alejandra Gómez",
       carnet: "",
       links: {}
-    }
-  },
+    },
      "brianalexandersax@gmail.com": {
       label: "Brian Alexander Gutiérrez",
       carnet: "",
