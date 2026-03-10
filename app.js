@@ -86,7 +86,7 @@ const HUB = {
       links: {}
     }
   },
-     "brianalexander99@hotmail.com": {
+     "brianalexandersax@gmail.com": {
       label: "Brian Alexander Gutiérrez",
       carnet: "",
       links: {}
