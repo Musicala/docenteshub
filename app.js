@@ -7,8 +7,9 @@
    - PWA con instalación + SW update banner
    - Login unificado con popup (sin redirect)
    - Horario anual 2026 personalizado por docente
+   - NUEVO: Bitácoras de clase pendientes con link individual por docente
 */
-const BUILD = "2026-03-10.2";
+const BUILD = "2026-03-13.1";
 
 /* ===========
    1) Firebase Config
@@ -45,11 +46,11 @@ const HUB = {
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
 
     calendario: "",
-    apuntes: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    bitacorasClasePendientes: "",
     bitacoraAcademica: "",
     documentosContratacion: "",
 
-    // IMPORTANTE:
+    // Importante:
     // vacío a propósito para que NO exista un horario general visible para todos.
     // Solo quienes tengan override en USERS.links.horarioAnual verán su horario.
     horarioAnual: "",
@@ -81,14 +82,16 @@ const HUB = {
       label: "Angie Nitola",
       carnet: "./assets/angienitola.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026angienitola/"
+        horarioAnual: "https://musicala.github.io/horario2026angienitola/",
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/"
       }
     },
     "lorenaduarte.404@gmail.com": {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026laurasanchez/"
+        horarioAnual: "https://musicala.github.io/horario2026laurasanchez/",
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareas1/"
       }
     },
     "malego2709@gmail.com": {
@@ -110,10 +113,17 @@ const HUB = {
     { id: "infoEstudiantes", icon: "🧒", title: "Info estudiantes", subtitle: "Verificación", section: "Mi trabajo hoy" },
     { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "Solo tu horario", section: "Mi trabajo hoy" },
 
-    { id: "apuntes", icon: "📝", title: "Apuntes y tareas pendientes", subtitle: "Organización", section: "Gestión docente" },
+    {
+      id: "bitacorasClasePendientes",
+      icon: "📝",
+      title: "Bitácoras de clase pendientes",
+      subtitle: "Individual",
+      section: "Gestión docente",
+      showWhenMissing: true
+    },
     { id: "observacion", icon: "👀", title: "Formulario observación docente", subtitle: "Registro", section: "Gestión docente" },
     { id: "bitacoraClases", icon: "📒", title: "Bitácora de clases", subtitle: "Seguimiento", section: "Gestión docente" },
-    { id: "bitacoraAcademica", icon: "✅", title: "Bitácora tareas académicas", subtitle: "Pendientes", section: "Gestión docente" },
+    { id: "bitacoraAcademica", icon: "✅", title: "Bitácora tareas académicas", subtitle: "Pendientes", section: "Gestión docente", showWhenMissing: true },
 
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
@@ -123,9 +133,9 @@ const HUB = {
     { id: "edades", icon: "📏", title: "Rangos de edades", subtitle: "Guía rápida", section: "Recursos" },
 
     { id: "nomina", icon: "💰", title: "Novedades nómina", subtitle: "General", section: "Institucional" },
-    { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional" },
+    { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional", showWhenMissing: true },
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
-    { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional" },
+    { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
     { id: "vacaciones", icon: "🌞", title: "Info Vacaciones artísticas", subtitle: "General", section: "Institucional" },
     { id: "musicalaFest", icon: "🎸", title: "Musicala Fest 2025", subtitle: "Programa", section: "Institucional" }
   ]
@@ -158,6 +168,14 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function getButtonMeta(buttonId) {
+  return (HUB.BUTTONS || []).find((b) => b.id === buttonId) || null;
+}
+
+function getButtonTitle(buttonId) {
+  return getButtonMeta(buttonId)?.title || buttonId || "este acceso";
 }
 
 function pickToastEl() {
@@ -524,7 +542,7 @@ function wireDrawerHandlers(auth) {
 
       const url = String(ACTIVE_LINKS?.[id] || "").trim();
       if (!url) {
-        toast(`Pendiente: falta pegar el link de “${id}”`);
+        toast(`Pendiente: falta asignar el acceso de “${getButtonTitle(id)}”`);
         return;
       }
 
@@ -674,7 +692,8 @@ function getResolvedButtonState(button, links = {}) {
   const isSpecial = button?.id === "carnet";
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
-  return { isSpecial, url, available };
+  const visible = isSpecial || available || !!button?.showWhenMissing;
+  return { isSpecial, url, available, visible };
 }
 
 function renderButtons(buttons, links, profile) {
@@ -686,8 +705,7 @@ function renderButtons(buttons, links, profile) {
 
   const filteredButtons = (buttons || []).filter((b) => {
     const state = getResolvedButtonState(b, ACTIVE_LINKS);
-    if (b.id === "carnet") return true;
-    return state.available;
+    return state.visible;
   });
 
   const sections = groupBySection(filteredButtons);
@@ -739,7 +757,7 @@ function renderButtons(buttons, links, profile) {
 
       const url = String(ACTIVE_LINKS[id] || "").trim();
       if (!url) {
-        toast(`No tienes un link asignado para “${id}” 🙃`);
+        toast(`Aún no tienes un link asignado para “${getButtonTitle(id)}” 🙃`);
         return;
       }
 
@@ -805,7 +823,7 @@ async function doGoogleLogin(auth) {
     const friendly = friendlyAuthError(code);
 
     if (code === "auth/popup-blocked" && isStandalone()) {
-      toast("La app instalada bloqueó la ventana de Google. Toca resolver eso con auth por redirect o helper de dominio.");
+      toast("La app instalada bloqueó la ventana de Google. Ahí tocaría resolver con redirect o helper de dominio.");
     } else {
       toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
     }
