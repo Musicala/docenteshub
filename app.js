@@ -1,19 +1,20 @@
-/* Musicala · Docentes Hub (SIMPLE + Firebase Google Login)
+/* Musicala · Docentes Hub
    - Login con Google (Firebase Auth)
    - Hub exclusivo para Docentes (lista blanca por correo)
-   - Links generales + links personalizados por usuario (Carnet / Horario / etc.)
+   - Links generales + links personalizados por usuario
    - Carnet abre modal (imagen en /assets/*.png)
-   - Drawer lateral (si existe en el HTML): perfil + accesos rápidos + logout
+   - Drawer lateral: perfil + accesos rápidos + logout
    - PWA con instalación + SW update banner
-   - Login unificado con popup (sin redirect)
    - Horario anual 2026 personalizado por docente
-   - NUEVO: Bitácoras de clase pendientes con link individual por docente
+   - Bitácoras de clase pendientes con link individual por docente
+   - Bitácora de tareas académicas con link individual por docente
 */
-const BUILD = "2026-03-13.1";
 
-/* ===========
-   1) Firebase Config
-=========== */
+const BUILD = "2026-04-01.1";
+
+/* ============================================================================
+   1) FIREBASE CONFIG
+============================================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyC06dLl2Lig3-kD4OVmh4C9LpFW9AeTyOc",
   authDomain: "musicala-docentes-hub.firebaseapp.com",
@@ -23,9 +24,9 @@ const firebaseConfig = {
   appId: "1:936379833270:web:512519cf318c919e3abf17"
 };
 
-/* ===========
-   2) Config Docentes Hub
-=========== */
+/* ============================================================================
+   2) CONFIG DOCENTES HUB
+============================================================================ */
 const HUB = {
   name: "Docentes · Musicala",
 
@@ -44,18 +45,14 @@ const HUB = {
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
+    bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
 
+    // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
     bitacorasClasePendientes: "",
     bitacoraAcademica: "",
     documentosContratacion: "",
-
-    // Importante:
-    // vacío a propósito para que NO exista un horario general visible para todos.
-    // Solo quienes tengan override en USERS.links.horarioAnual verán su horario.
-    horarioAnual: "",
-
-    bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/"
+    horarioAnual: ""
   },
 
   USERS: {
@@ -63,42 +60,58 @@ const HUB = {
       label: "Alek Caballero",
       carnet: "./assets/alekcaballero.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/"
+        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
+        bitacoraAcademica: ""
       }
     },
+
     "catalina.medina.leal@gmail.com": {
       label: "Catalina Medina",
       carnet: "./assets/catalinamedina.png",
-      links: {}
+      links: {
+        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
+        bitacoraAcademica: ""
+      }
     },
+
     "emilybg0102@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/"
+        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
+        bitacoraAcademica: ""
       }
     },
+
     "annitolad@gmail.com": {
       label: "Angie Nitola",
       carnet: "./assets/angienitola.png",
       links: {
         horarioAnual: "https://musicala.github.io/horario2026angienitola/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/"
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
+        bitacoraAcademica: "https://musicala.github.io/bitacoratareasangienitola/"
       }
     },
+
     "lorenaduarte.404@gmail.com": {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
       links: {
         horarioAnual: "https://musicala.github.io/horario2026laurasanchez/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareas1/"
+        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareas1/",
+        bitacoraAcademica: ""
       }
     },
+
     "malego2709@gmail.com": {
       label: "María Alejandra Gómez",
       carnet: "",
       links: {}
     },
+
     "bagutierrezm@gmail.com": {
       label: "Brian Alexander Gutiérrez",
       carnet: "",
@@ -121,9 +134,28 @@ const HUB = {
       section: "Gestión docente",
       showWhenMissing: true
     },
-    { id: "observacion", icon: "👀", title: "Formulario observación docente", subtitle: "Registro", section: "Gestión docente" },
-    { id: "bitacoraClases", icon: "📒", title: "Bitácora de clases", subtitle: "Seguimiento", section: "Gestión docente" },
-    { id: "bitacoraAcademica", icon: "✅", title: "Bitácora tareas académicas", subtitle: "Pendientes", section: "Gestión docente", showWhenMissing: true },
+    {
+      id: "observacion",
+      icon: "👀",
+      title: "Formulario observación docente",
+      subtitle: "Registro",
+      section: "Gestión docente"
+    },
+    {
+      id: "bitacoraClases",
+      icon: "📒",
+      title: "Bitácora de clases",
+      subtitle: "Seguimiento",
+      section: "Gestión docente"
+    },
+    {
+      id: "bitacoraAcademica",
+      icon: "✅",
+      title: "Bitácora tareas académicas",
+      subtitle: "Pendientes",
+      section: "Gestión docente",
+      showWhenMissing: true
+    },
 
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
@@ -141,9 +173,9 @@ const HUB = {
   ]
 };
 
-/* ===========
-   3) Firebase SDK (CDN modular)
-=========== */
+/* ============================================================================
+   3) FIREBASE SDK (CDN MODULAR)
+============================================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth,
@@ -155,14 +187,20 @@ import {
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-/* ===========
-   Helpers UI
-=========== */
-const $ = (sel, el = document) => el?.querySelector?.(sel) || null;
-const $$ = (sel, el = document) => Array.from(el?.querySelectorAll?.(sel) || []);
+/* ============================================================================
+   4) HELPERS BASE
+============================================================================ */
+const $ = (selector, root = document) => root?.querySelector?.(selector) || null;
+const $$ = (selector, root = document) => Array.from(root?.querySelectorAll?.(selector) || []);
 
-function escapeHtml(str) {
-  return String(str ?? "")
+const APP_STATE = {
+  activeLinks: {},
+  activeProfile: null,
+  activeUser: null
+};
+
+function escapeHtml(value) {
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -170,26 +208,64 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+function emailKey(user) {
+  return String(user?.email || "").toLowerCase().trim();
+}
+
+function prettyName(user, fallbackEmail = "") {
+  const name = String(user?.displayName || "").trim();
+  const email = String(user?.email || fallbackEmail || "").trim();
+  return name || email || "Sesión activa";
+}
+
 function getButtonMeta(buttonId) {
-  return (HUB.BUTTONS || []).find((b) => b.id === buttonId) || null;
+  return HUB.BUTTONS.find((button) => button.id === buttonId) || null;
 }
 
 function getButtonTitle(buttonId) {
   return getButtonMeta(buttonId)?.title || buttonId || "este acceso";
 }
 
-function pickToastEl() {
-  const a = $("#toast-app");
-  const b = $("#toast");
-  if (a && !a.hidden) return a;
-  return b || a || null;
+function hasUserRestrictions() {
+  return !!(HUB.USERS && Object.keys(HUB.USERS).length > 0);
 }
 
+function buildLinksForUser(email) {
+  const base = { ...(HUB.GENERAL_LINKS || {}) };
+  const profile = HUB.USERS?.[email] || null;
+  const overrides = profile?.links || {};
+  return { ...base, ...overrides };
+}
+
+function assertConfig(config) {
+  const isInvalid =
+    !config ||
+    !config.apiKey ||
+    !config.authDomain ||
+    !config.projectId ||
+    !config.appId;
+
+  if (isInvalid) {
+    console.warn("Firebase config incompleto. Revisa firebaseConfig en app.js");
+    return false;
+  }
+
+  return true;
+}
+
+/* ============================================================================
+   5) TOAST
+============================================================================ */
 let toastTimer = null;
-/**
- * toast("Mensaje", { actionText:"Actualizar", onAction:()=>{}, sticky:true, ms:5000 })
- */
-function toast(msg, opts = {}) {
+
+function pickToastEl() {
+  const toastApp = $("#toast-app");
+  const toastFallback = $("#toast");
+  if (toastApp && !toastApp.hidden) return toastApp;
+  return toastFallback || toastApp || null;
+}
+
+function toast(message, options = {}) {
   const el = pickToastEl();
   if (!el) return;
 
@@ -198,7 +274,7 @@ function toast(msg, opts = {}) {
     onAction = null,
     sticky = false,
     ms = 2600
-  } = opts || {};
+  } = options;
 
   el.classList.remove("show");
   el.hidden = false;
@@ -206,22 +282,22 @@ function toast(msg, opts = {}) {
 
   const msgSpan = document.createElement("span");
   msgSpan.className = "toastMsg";
-  msgSpan.textContent = String(msg ?? "");
+  msgSpan.textContent = String(message ?? "");
   el.appendChild(msgSpan);
 
   if (actionText) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "toastBtn";
-    btn.textContent = actionText;
-    btn.addEventListener("click", () => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toastBtn";
+    button.textContent = actionText;
+    button.addEventListener("click", () => {
       try {
-        onAction && onAction();
+        onAction?.();
       } finally {
         el.classList.remove("show");
       }
     });
-    el.appendChild(btn);
+    el.appendChild(button);
   }
 
   requestAnimationFrame(() => el.classList.add("show"));
@@ -230,38 +306,47 @@ function toast(msg, opts = {}) {
   if (!sticky) {
     toastTimer = setTimeout(() => {
       el.classList.remove("show");
-      if (el.id === "toast-app") el.hidden = true;
+      if (el.id === "toast-app") {
+        el.hidden = true;
+      }
     }, Math.max(1200, Number(ms) || 2600));
   }
 }
 
-function setButtonBusy(btn, busy, labelBusy = "Procesando...") {
-  if (!btn) return;
-  if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent || "";
-  btn.disabled = !!busy;
-  btn.setAttribute("aria-busy", busy ? "true" : "false");
-  btn.textContent = busy ? labelBusy : btn.dataset.originalText;
+function setButtonBusy(button, busy, busyLabel = "Procesando...") {
+  if (!button) return;
+  if (!button.dataset.originalText) {
+    button.dataset.originalText = button.textContent || "";
+  }
+
+  button.disabled = !!busy;
+  button.setAttribute("aria-busy", busy ? "true" : "false");
+  button.textContent = busy ? busyLabel : button.dataset.originalText;
 }
 
+/* ============================================================================
+   6) VISTAS
+============================================================================ */
 function show(which) {
-  const vLogin = $("#view-login");
-  const vApp = $("#view-app");
-  if (!vLogin || !vApp) return;
+  const loginView = $("#view-login");
+  const appView = $("#view-app");
+  if (!loginView || !appView) return;
 
   if (which === "login") {
-    vLogin.hidden = false;
-    vApp.hidden = true;
-    const tApp = $("#toast-app");
-    if (tApp) tApp.hidden = true;
+    loginView.hidden = false;
+    appView.hidden = true;
+
+    const toastApp = $("#toast-app");
+    if (toastApp) toastApp.hidden = true;
   } else {
-    vLogin.hidden = true;
-    vApp.hidden = false;
+    loginView.hidden = true;
+    appView.hidden = false;
   }
 }
 
-/* ===========
-   URL safety
-=========== */
+/* ============================================================================
+   7) URL SAFETY
+============================================================================ */
 function normalizeUrl(raw) {
   const url = String(raw || "").trim();
   if (!url) return "";
@@ -270,20 +355,20 @@ function normalizeUrl(raw) {
   if (/^\s*data:/i.test(url)) return "";
   if (/^(https?:)?\/\//i.test(url)) return url;
 
-  return "https://" + url;
+  return `https://${url}`;
 }
 
 function openExternal(rawUrl) {
-  const safe = normalizeUrl(rawUrl);
-  if (!safe) return false;
-  window.open(safe, "_blank", "noopener,noreferrer");
+  const safeUrl = normalizeUrl(rawUrl);
+  if (!safeUrl) return false;
+  window.open(safeUrl, "_blank", "noopener,noreferrer");
   return true;
 }
 
-/* ===========
-   PWA: install + SW + Update banner button
-=========== */
-let __deferredInstallPrompt = null;
+/* ============================================================================
+   8) PWA
+============================================================================ */
+let deferredInstallPrompt = null;
 
 function isIOS() {
   const ua = navigator.userAgent || "";
@@ -292,21 +377,24 @@ function isIOS() {
 
 function isStandalone() {
   if (window.navigator.standalone) return true;
-  return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  return !!(
+    window.matchMedia &&
+    window.matchMedia("(display-mode: standalone)").matches
+  );
 }
 
 function setInstallUI(visible) {
-  const b1 = document.getElementById("btn-install");
-  const b2 = document.getElementById("btn-install-2");
-  if (b1) b1.hidden = !visible;
-  if (b2) b2.hidden = !visible;
+  const btn1 = $("#btn-install");
+  const btn2 = $("#btn-install-2");
+  if (btn1) btn1.hidden = !visible;
+  if (btn2) btn2.hidden = !visible;
 }
 
 async function trySkipWaiting() {
   try {
-    const reg = await navigator.serviceWorker.getRegistration("./");
-    if (reg?.waiting) {
-      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    const registration = await navigator.serviceWorker.getRegistration("./");
+    if (registration?.waiting) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
       return true;
     }
   } catch (_) {}
@@ -314,25 +402,29 @@ async function trySkipWaiting() {
 }
 
 function wireUpdateBanner() {
-  const wrap = document.getElementById("pwa-update");
-  const btn = document.getElementById("btn-update");
+  const wrap = $("#pwa-update");
+  const btn = $("#btn-update");
   if (!wrap || !btn) return;
 
   btn.addEventListener("click", async () => {
     const ok = await trySkipWaiting();
-    if (!ok) toast("No hay actualización lista aún 🙃");
+    if (!ok) {
+      toast("No hay actualización lista aún 🙃");
+    }
   });
 
   const maybeShow = async () => {
     try {
-      const reg = await navigator.serviceWorker.getRegistration("./");
-      if (reg?.waiting) wrap.hidden = false;
+      const registration = await navigator.serviceWorker.getRegistration("./");
+      if (registration?.waiting) {
+        wrap.hidden = false;
+      }
     } catch (_) {}
   };
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", (e) => {
-      if (e?.data?.type === "SW_ACTIVATED") {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event?.data?.type === "SW_ACTIVATED") {
         wrap.hidden = true;
       }
     });
@@ -343,10 +435,10 @@ function wireUpdateBanner() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
-  const promptUpdate = (reg) => {
-    if (!reg || !reg.waiting) return;
+  const promptUpdate = (registration) => {
+    if (!registration?.waiting) return;
 
-    const wrap = document.getElementById("pwa-update");
+    const wrap = $("#pwa-update");
     if (wrap) wrap.hidden = false;
 
     toast("Hay una actualización lista ✨", {
@@ -354,9 +446,9 @@ async function registerServiceWorker() {
       sticky: true,
       onAction: () => {
         try {
-          reg.waiting.postMessage({ type: "SKIP_WAITING" });
-        } catch (e) {
-          console.warn("No se pudo activar update", e);
+          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+        } catch (error) {
+          console.warn("No se pudo activar update", error);
           toast("No se pudo actualizar, recarga la página 🙃");
         }
       }
@@ -364,17 +456,19 @@ async function registerServiceWorker() {
   };
 
   try {
-    const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+    const registration = await navigator.serviceWorker.register("./sw.js", {
+      scope: "./"
+    });
 
-    promptUpdate(reg);
+    promptUpdate(registration);
 
-    reg.addEventListener("updatefound", () => {
-      const sw = reg.installing;
+    registration.addEventListener("updatefound", () => {
+      const sw = registration.installing;
       if (!sw) return;
 
       sw.addEventListener("statechange", () => {
         if (sw.state === "installed" && navigator.serviceWorker.controller) {
-          promptUpdate(reg);
+          promptUpdate(registration);
         }
       });
     });
@@ -385,9 +479,9 @@ async function registerServiceWorker() {
       window.location.reload();
     });
 
-    reg.update?.().catch(() => null);
-  } catch (e) {
-    console.warn("SW no se pudo registrar", e);
+    registration.update?.().catch(() => null);
+  } catch (error) {
+    console.warn("SW no se pudo registrar", error);
   }
 }
 
@@ -397,60 +491,57 @@ function setupInstallPrompt() {
     return;
   }
 
-  window.addEventListener("beforeinstallprompt", (e) => {
-    e.preventDefault();
-    __deferredInstallPrompt = e;
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
     setInstallUI(true);
   });
 
   window.addEventListener("appinstalled", () => {
-    __deferredInstallPrompt = null;
+    deferredInstallPrompt = null;
     setInstallUI(false);
     toast("Instalada ✨");
   });
 
   const onInstallClick = async () => {
-    if (isIOS() && !__deferredInstallPrompt) {
+    if (isIOS() && !deferredInstallPrompt) {
       toast("En iPhone/iPad: Compartir → Agregar a pantalla de inicio");
       return;
     }
 
-    if (!__deferredInstallPrompt) {
+    if (!deferredInstallPrompt) {
       toast("Instalación no disponible todavía. Abre en Chrome o Safari.");
       return;
     }
 
-    __deferredInstallPrompt.prompt();
-    const choice = await __deferredInstallPrompt.userChoice.catch(() => null);
-    __deferredInstallPrompt = null;
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice.catch(() => null);
+    deferredInstallPrompt = null;
 
     if (!choice || choice.outcome !== "accepted") {
       setInstallUI(false);
       setTimeout(() => setInstallUI(true), 8000);
-      return;
     }
   };
 
-  const b1 = document.getElementById("btn-install");
-  const b2 = document.getElementById("btn-install-2");
-  if (b1) b1.addEventListener("click", onInstallClick);
-  if (b2) b2.addEventListener("click", onInstallClick);
+  $("#btn-install")?.addEventListener("click", onInstallClick);
+  $("#btn-install-2")?.addEventListener("click", onInstallClick);
 }
 
-/* ===========
-   Drawer (si existe en el HTML)
-=========== */
-let __drawerBound = false;
+/* ============================================================================
+   9) DRAWER
+============================================================================ */
+let drawerBound = false;
 
 function drawerEls() {
   return {
-    btnMenu: document.getElementById("btn-menu"),
-    overlay: document.getElementById("drawer-overlay"),
-    drawer: document.getElementById("app-drawer"),
-    btnClose: document.getElementById("drawer-close"),
-    userName: document.getElementById("drawer-user-name"),
-    userEmail: document.getElementById("drawer-user-email"),
-    buildTag: document.getElementById("drawer-build")
+    btnMenu: $("#btn-menu"),
+    overlay: $("#drawer-overlay"),
+    drawer: $("#app-drawer"),
+    btnClose: $("#drawer-close"),
+    userName: $("#drawer-user-name"),
+    userEmail: $("#drawer-user-email"),
+    buildTag: $("#drawer-build")
   };
 }
 
@@ -481,7 +572,9 @@ function closeDrawer() {
   drawer.hidden = true;
   document.body.style.overflow = "";
 
-  setTimeout(() => btnMenu?.focus?.(), 0);
+  setTimeout(() => {
+    btnMenu?.focus?.();
+  }, 0);
 }
 
 function toggleDrawer() {
@@ -497,73 +590,67 @@ function setDrawerProfile(profile, user) {
 }
 
 function wireDrawerHandlers(auth) {
-  if (__drawerBound) return;
-  __drawerBound = true;
+  if (drawerBound) return;
+  drawerBound = true;
 
   const { btnMenu, overlay, drawer, btnClose } = drawerEls();
   if (!overlay || !drawer) return;
 
-  btnMenu?.addEventListener("click", () => toggleDrawer());
-  btnClose?.addEventListener("click", () => closeDrawer());
-  overlay.addEventListener("click", () => closeDrawer());
+  btnMenu?.addEventListener("click", toggleDrawer);
+  btnClose?.addEventListener("click", closeDrawer);
+  overlay.addEventListener("click", closeDrawer);
 
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isDrawerOpen()) closeDrawer();
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isDrawerOpen()) {
+      closeDrawer();
+    }
   });
 
-  drawer.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-action]");
-    if (!btn) return;
+  drawer.addEventListener(
+    "click",
+    async (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
 
-    const action = String(btn.getAttribute("data-action") || "").trim();
-    if (!action) return;
+      const action = String(button.getAttribute("data-action") || "").trim();
+      if (!action) return;
 
-    closeDrawer();
+      closeDrawer();
 
-    if (action === "logout") {
-      await doLogout(auth);
-      return;
-    }
-
-    if (action === "install") {
-      const b = document.getElementById("btn-install-2") || document.getElementById("btn-install");
-      b?.click?.();
-      return;
-    }
-
-    if (/^open:/i.test(action)) {
-      const id = action.split(":")[1] || "";
-      if (!id) return;
-
-      if (id === "carnet") {
-        openCarnet(ACTIVE_PROFILE);
+      if (action === "logout") {
+        await doLogout(auth);
         return;
       }
 
-      const url = String(ACTIVE_LINKS?.[id] || "").trim();
-      if (!url) {
-        toast(`Pendiente: falta asignar el acceso de “${getButtonTitle(id)}”`);
+      if (action === "install") {
+        const installBtn = $("#btn-install-2") || $("#btn-install");
+        installBtn?.click?.();
         return;
       }
 
-      if (!openExternal(url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
-      return;
-    }
+      if (/^open:/i.test(action)) {
+        const id = action.split(":")[1] || "";
+        if (!id) return;
+        handleButtonAction(id);
+        return;
+      }
 
-    const href = btn.getAttribute("data-href");
-    if (href) {
-      if (!openExternal(href)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
-    }
-  }, { passive: true });
+      const href = button.getAttribute("data-href");
+      if (href && !openExternal(href)) {
+        toast("Ese link está raro y lo bloqueé 😶‍🌫️");
+      }
+    },
+    { passive: true }
+  );
 }
 
-/* ===========
-   Carnet modal (se crea dinámico, no depende del HTML)
-=========== */
-let __carnetModal = null;
+/* ============================================================================
+   10) MODAL CARNET
+============================================================================ */
+let carnetModal = null;
 
 function ensureCarnetModal() {
-  if (__carnetModal) return __carnetModal;
+  if (carnetModal) return carnetModal;
 
   const modal = document.createElement("div");
   modal.id = "carnetModal";
@@ -601,28 +688,48 @@ function ensureCarnetModal() {
         border-bottom: 1px solid rgba(11,16,32,.10);
       ">
         <div class="carnetTitle" id="carnetTitle" style="font-weight:900;">Carnet docente</div>
-        <button type="button" id="carnetClose" class="btnGhost" style="
-          height:36px; padding:0 12px; border-radius:12px;
-          border:1px solid rgba(11,16,32,.14); background: rgba(255,255,255,.92);
-          font-weight:850; cursor:pointer;
-        ">Cerrar</button>
+        <button
+          type="button"
+          id="carnetClose"
+          class="btnGhost"
+          style="
+            height:36px;
+            padding:0 12px;
+            border-radius:12px;
+            border:1px solid rgba(11,16,32,.14);
+            background: rgba(255,255,255,.92);
+            font-weight:850;
+            cursor:pointer;
+          "
+        >
+          Cerrar
+        </button>
       </div>
 
       <div class="carnetBody" style="padding: 14px;">
-        <img id="carnetImg" alt="Carnet docente" style="
-          width:100%;
-          height:auto;
-          border-radius: 16px;
-          border: 1px solid rgba(11,16,32,.10);
-          background: rgba(255,255,255,.6);
-          display:block;
-        " />
-        <div id="carnetNote" style="
-          margin-top: 10px;
-          font-size: 12px;
-          color: rgba(11,16,32,.68);
-          text-align:center;
-        ">Muestra este carnet para validar tu vinculación con Musicala.</div>
+        <img
+          id="carnetImg"
+          alt="Carnet docente"
+          style="
+            width:100%;
+            height:auto;
+            border-radius: 16px;
+            border: 1px solid rgba(11,16,32,.10);
+            background: rgba(255,255,255,.6);
+            display:block;
+          "
+        />
+        <div
+          id="carnetNote"
+          style="
+            margin-top: 10px;
+            font-size: 12px;
+            color: rgba(11,16,32,.68);
+            text-align:center;
+          "
+        >
+          Muestra este carnet para validar tu vinculación con Musicala.
+        </div>
       </div>
     </div>
   `;
@@ -632,18 +739,20 @@ function ensureCarnetModal() {
     document.body.style.overflow = "";
   };
 
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) close();
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
   });
 
   modal.querySelector("#carnetClose")?.addEventListener("click", close);
 
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !modal.hidden) close();
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.hidden) {
+      close();
+    }
   });
 
   document.body.appendChild(modal);
-  __carnetModal = modal;
+  carnetModal = modal;
   return modal;
 }
 
@@ -655,16 +764,18 @@ function openCarnet(profile) {
   }
 
   const modal = ensureCarnetModal();
-  const img = modal.querySelector("#carnetImg");
-  const title = modal.querySelector("#carnetTitle");
+  const image = $("#carnetImg", modal);
+  const title = $("#carnetTitle", modal);
 
-  if (title) title.textContent = `Carnet · ${profile?.label || "Docente"}`;
+  if (title) {
+    title.textContent = `Carnet · ${profile?.label || "Docente"}`;
+  }
 
-  if (img) {
-    img.src = path;
-    img.onerror = () => {
+  if (image) {
+    image.src = path;
+    image.onerror = () => {
       toast("No pude cargar el carnet. Revisa el nombre del archivo en /assets 😵");
-      img.onerror = null;
+      image.onerror = null;
     };
   }
 
@@ -672,19 +783,20 @@ function openCarnet(profile) {
   document.body.style.overflow = "hidden";
 }
 
-/* ===========
-   Render botones (agrupado por secciones)
-=========== */
-let ACTIVE_LINKS = {};
-let ACTIVE_PROFILE = null;
-
+/* ============================================================================
+   11) RENDER BOTONES
+============================================================================ */
 function groupBySection(buttons = []) {
   const map = new Map();
-  for (const b of buttons) {
-    const sec = b.section || "Accesos";
-    if (!map.has(sec)) map.set(sec, []);
-    map.get(sec).push(b);
+
+  for (const button of buttons) {
+    const section = button.section || "Accesos";
+    if (!map.has(section)) {
+      map.set(section, []);
+    }
+    map.get(section).push(button);
   }
+
   return map;
 }
 
@@ -693,89 +805,107 @@ function getResolvedButtonState(button, links = {}) {
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
   const visible = isSpecial || available || !!button?.showWhenMissing;
-  return { isSpecial, url, available, visible };
+
+  return {
+    isSpecial,
+    url,
+    available,
+    visible
+  };
 }
 
-function renderButtons(buttons, links, profile) {
+function renderButtons(buttons = [], links = {}, profile = null) {
   const grid = $("#grid");
   if (!grid) return;
 
-  ACTIVE_LINKS = links || {};
-  ACTIVE_PROFILE = profile || null;
+  APP_STATE.activeLinks = links || {};
+  APP_STATE.activeProfile = profile || null;
 
-  const filteredButtons = (buttons || []).filter((b) => {
-    const state = getResolvedButtonState(b, ACTIVE_LINKS);
+  const filteredButtons = buttons.filter((button) => {
+    const state = getResolvedButtonState(button, APP_STATE.activeLinks);
     return state.visible;
   });
 
   const sections = groupBySection(filteredButtons);
   let html = "";
 
-  for (const [sec, items] of sections.entries()) {
+  for (const [section, items] of sections.entries()) {
     html += `
-      <div class="secBlock" data-sec="${escapeHtml(sec)}" style="grid-column: 1 / -1;">
-        <div class="secTitle">${escapeHtml(sec)}</div>
+      <div class="secBlock" data-sec="${escapeHtml(section)}" style="grid-column: 1 / -1;">
+        <div class="secTitle">${escapeHtml(section)}</div>
       </div>
     `;
 
-    html += items.map((b) => {
-      const state = getResolvedButtonState(b, ACTIVE_LINKS);
-      const cls = state.available ? "tile" : "tile pending";
-      const badge = state.available
-        ? '<span class="badge ok">Abrir</span>'
-        : '<span class="badge">Pendiente</span>';
+    html += items
+      .map((button) => {
+        const state = getResolvedButtonState(button, APP_STATE.activeLinks);
+        const tileClass = state.available ? "tile" : "tile pending";
+        const badge = state.available
+          ? '<span class="badge ok">Abrir</span>'
+          : '<span class="badge">Pendiente</span>';
 
-      return `
-        <button class="${cls}" type="button" data-id="${escapeHtml(b.id)}" aria-label="${escapeHtml(b.title)}">
-          <div class="tileTop">
-            <div class="ico" aria-hidden="true">${escapeHtml(b.icon)}</div>
-            ${badge}
-          </div>
-          <div class="tileText">
-            <div class="tTitle">${escapeHtml(b.title)}</div>
-            <div class="tSub">${escapeHtml(b.subtitle)}</div>
-          </div>
-        </button>
-      `;
-    }).join("");
+        return `
+          <button
+            class="${tileClass}"
+            type="button"
+            data-id="${escapeHtml(button.id)}"
+            aria-label="${escapeHtml(button.title)}"
+          >
+            <div class="tileTop">
+              <div class="ico" aria-hidden="true">${escapeHtml(button.icon)}</div>
+              ${badge}
+            </div>
+            <div class="tileText">
+              <div class="tTitle">${escapeHtml(button.title)}</div>
+              <div class="tSub">${escapeHtml(button.subtitle)}</div>
+            </div>
+          </button>
+        `;
+      })
+      .join("");
   }
 
   grid.innerHTML = html;
 
-  if (!grid.__boundClick) {
-    grid.__boundClick = true;
-    grid.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-id]");
-      if (!btn) return;
+  if (!grid.dataset.boundClick) {
+    grid.dataset.boundClick = "true";
+    grid.addEventListener(
+      "click",
+      (event) => {
+        const button = event.target.closest("button[data-id]");
+        if (!button) return;
 
-      const id = btn.getAttribute("data-id");
-
-      if (id === "carnet") {
-        openCarnet(ACTIVE_PROFILE);
-        return;
-      }
-
-      const url = String(ACTIVE_LINKS[id] || "").trim();
-      if (!url) {
-        toast(`Aún no tienes un link asignado para “${getButtonTitle(id)}” 🙃`);
-        return;
-      }
-
-      if (!openExternal(url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
-    }, { passive: true });
+        const id = button.getAttribute("data-id");
+        handleButtonAction(id);
+      },
+      { passive: true }
+    );
   }
 }
 
-/* ===========
-   Auth
-=========== */
-let __loginInFlight = false;
+function handleButtonAction(id) {
+  if (!id) return;
 
-function prettyName(user, fallbackEmail = "") {
-  const name = user?.displayName || "";
-  const email = user?.email || fallbackEmail || "";
-  return name || email || "Sesión activa";
+  if (id === "carnet") {
+    openCarnet(APP_STATE.activeProfile);
+    return;
+  }
+
+  const url = String(APP_STATE.activeLinks?.[id] || "").trim();
+  if (!url) {
+    toast(`Aún no tienes un link asignado para “${getButtonTitle(id)}” 🙃`);
+    return;
+  }
+
+  if (!openExternal(url)) {
+    toast("Ese link está raro y lo bloqueé 😶‍🌫️");
+  }
 }
+
+/* ============================================================================
+   12) AUTH
+============================================================================ */
+let loginInFlight = false;
 
 function friendlyAuthError(code = "") {
   if (code === "auth/unauthorized-domain") return "Dominio no autorizado en Firebase Auth.";
@@ -791,20 +921,20 @@ async function ensureAuthPersistence(auth) {
   try {
     await setPersistence(auth, browserLocalPersistence);
     return true;
-  } catch (err) {
-    console.warn("No se pudo setPersistence:", err);
+  } catch (error) {
+    console.warn("No se pudo setPersistence:", error);
     return false;
   }
 }
 
 async function doGoogleLogin(auth) {
-  if (__loginInFlight) return;
+  if (loginInFlight) return;
 
   const btnGoogle = $("#btn-google");
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
-  __loginInFlight = true;
+  loginInFlight = true;
   setButtonBusy(btnGoogle, true, "Entrando...");
 
   try {
@@ -815,22 +945,22 @@ async function doGoogleLogin(auth) {
     }
 
     await signInWithPopup(auth, provider);
-  } catch (err) {
-    const code = err?.code || "";
+  } catch (error) {
+    const code = error?.code || "";
 
     if (code === "auth/popup-closed-by-user") return;
 
     const friendly = friendlyAuthError(code);
 
     if (code === "auth/popup-blocked" && isStandalone()) {
-      toast("La app instalada bloqueó la ventana de Google. Ahí tocaría resolver con redirect o helper de dominio.");
+      toast("La app instalada bloqueó la ventana de Google. Ahí toca resolver eso aparte 😵‍💫");
     } else {
       toast(friendly ? `No se pudo iniciar sesión: ${friendly}` : "No se pudo iniciar sesión");
     }
 
-    console.error("Login error:", err);
+    console.error("Login error:", error);
   } finally {
-    __loginInFlight = false;
+    loginInFlight = false;
     setButtonBusy(btnGoogle, false);
   }
 }
@@ -839,35 +969,50 @@ async function doLogout(auth) {
   try {
     closeDrawer();
     await signOut(auth);
-  } catch (err) {
+  } catch (error) {
     toast("No se pudo cerrar sesión");
-    console.error("Logout error:", err);
+    console.error("Logout error:", error);
   }
 }
 
-/* ===========
-   Boot
-=========== */
-function assertConfig(cfg) {
-  const bad = !cfg || !cfg.apiKey || !cfg.authDomain || !cfg.projectId || !cfg.appId;
-  if (!bad) return true;
-  console.warn("Firebase config incompleto. Revisa firebaseConfig en app.js");
-  return false;
+/* ============================================================================
+   13) APP BOOT
+============================================================================ */
+function setUserLine(profile, user) {
+  const userLine = $("#user-line");
+  if (!userLine) return;
+  userLine.textContent = profile?.label || prettyName(user, emailKey(user));
 }
 
-function emailKey(user) {
-  return String(user?.email || "").toLowerCase().trim();
+async function handleAuthorizedUser(user) {
+  const email = emailKey(user);
+  const profile = HUB.USERS?.[email] || null;
+  const mergedLinks = buildLinksForUser(email);
+
+  APP_STATE.activeUser = user;
+  APP_STATE.activeProfile = profile;
+  APP_STATE.activeLinks = mergedLinks;
+
+  setUserLine(profile, user);
+  setDrawerProfile(profile, user);
+
+  show("app");
+  renderButtons(HUB.BUTTONS, mergedLinks, profile);
 }
 
-function hasUserRestrictions() {
-  return !!(HUB.USERS && Object.keys(HUB.USERS).length > 0);
-}
+async function handleUnauthorizedUser(auth) {
+  toast("Tu correo no está autorizado para este hub 🫠");
 
-function buildLinksForUser(email) {
-  const base = { ...(HUB.GENERAL_LINKS || {}) };
-  const prof = HUB.USERS?.[email] || null;
-  const overrides = prof?.links || {};
-  return { ...base, ...overrides };
+  try {
+    await signOut(auth);
+  } catch (_) {}
+
+  APP_STATE.activeUser = null;
+  APP_STATE.activeProfile = null;
+  APP_STATE.activeLinks = {};
+
+  show("login");
+  closeDrawer();
 }
 
 async function mount() {
@@ -886,22 +1031,17 @@ async function mount() {
 
   await ensureAuthPersistence(auth);
 
-  const btnGoogle = $("#btn-google");
-  const btnOut = $("#btn-logout");
-  const userLine = $("#user-line");
-
-  if (btnGoogle) {
-    btnGoogle.addEventListener("click", () => doGoogleLogin(auth));
-  }
-
-  if (btnOut) {
-    btnOut.addEventListener("click", () => doLogout(auth));
-  }
+  $("#btn-google")?.addEventListener("click", () => doGoogleLogin(auth));
+  $("#btn-logout")?.addEventListener("click", () => doLogout(auth));
 
   wireDrawerHandlers(auth);
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
+      APP_STATE.activeUser = null;
+      APP_STATE.activeProfile = null;
+      APP_STATE.activeLinks = {};
+
       show("login");
       closeDrawer();
       return;
@@ -910,29 +1050,17 @@ async function mount() {
     const email = emailKey(user);
 
     if (hasUserRestrictions() && !HUB.USERS[email]) {
-      toast("Tu correo no está autorizado para este hub 🫠");
-      try {
-        await signOut(auth);
-      } catch (_) {}
-      show("login");
-      closeDrawer();
+      await handleUnauthorizedUser(auth);
       return;
     }
 
-    const profile = HUB.USERS?.[email] || null;
-    const mergedLinks = buildLinksForUser(email);
-
-    if (userLine) {
-      userLine.textContent = profile?.label || prettyName(user, email);
-    }
-
-    setDrawerProfile(profile, user);
-
-    show("app");
-    renderButtons(HUB.BUTTONS || [], mergedLinks, profile);
+    await handleAuthorizedUser(user);
   });
 }
 
+/* ============================================================================
+   14) INIT
+============================================================================ */
 document.addEventListener("DOMContentLoaded", () => {
   console.log("BUILD", BUILD);
   registerServiceWorker();
