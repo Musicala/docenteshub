@@ -46,7 +46,7 @@ const HUB = {
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
-    documentosSGSST: "https://musicala.github.io/SGSSTPoliticas2026/"
+    documentosSGSST: "https://musicala.github.io/SGSSTPoliticas2026/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
