@@ -46,6 +46,7 @@ const HUB = {
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    documentosSGSST: "https://musicala.github.io/SGSSTPoliticas2026/"
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
@@ -125,6 +126,7 @@ const HUB = {
     { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Mi trabajo hoy" },
     { id: "infoEstudiantes", icon: "🧒", title: "Info estudiantes", subtitle: "Verificación", section: "Mi trabajo hoy" },
     { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "Solo tu horario", section: "Mi trabajo hoy" },
+    { id: "documentosSGSST", icon: "📁", title: "Políticas", subtitle: "SG SST 2026", section: "Mi trabajo hoy" },
 
     {
       id: "bitacorasClasePendientes",
