@@ -851,7 +851,8 @@ function getTeacherName() {
 }
 
 function isValidTeacherSiteQr(decodedText) {
-  return normalizeQrValue(decodedText) === TEACHER_SITE_QR_ARRIVAL;
+  const value = normalizeQrValue(decodedText);
+  return value === TEACHER_SITE_QR_ARRIVAL || value === TEACHER_SITE_QR_EXIT;
 }
 
 function getTeacherQrMessage(decodedText) {
@@ -859,9 +860,9 @@ function getTeacherQrMessage(decodedText) {
 
   if (value === TEACHER_SITE_QR_ARRIVAL) {
     return {
-      status: "valid",
+      status: "arrival",
       value,
-      message: "QR válido. Guardando registro..."
+      message: "QR de ingreso válido. Guardando registro..."
     };
   }
 
@@ -869,7 +870,7 @@ function getTeacherQrMessage(decodedText) {
     return {
       status: "exit",
       value,
-      message: "Este QR es de salida. Para iniciar jornada en sede, escanea el QR de Llegada."
+      message: "QR de salida válido. Guardando registro..."
     };
   }
 
@@ -877,14 +878,14 @@ function getTeacherQrMessage(decodedText) {
     return {
       status: "lunch",
       value,
-      message: "Este QR es de almuerzo. Este Hub todavía no registra almuerzos."
+      message: "Este QR es de almuerzo. Esta app todavía no registra almuerzos."
     };
   }
 
   return {
     status: "unknown",
     value,
-    message: "Este QR no corresponde al registro de clase en sede. Escanea el QR de Llegada."
+    message: "Este QR no corresponde al registro de jornada de Musicala."
   };
 }
 
@@ -903,7 +904,7 @@ function ensureTeacherShiftModal() {
       <div class="shiftToolHead">
         <div>
           <p class="shiftEyebrow">Registro de jornada</p>
-          <h2>Inicio de jornada</h2>
+          <h2>Registro de jornada</h2>
         </div>
         <button class="btnGhost shiftClose" id="teacherShiftClose" type="button" aria-label="Cerrar">Cerrar</button>
       </div>
@@ -939,7 +940,7 @@ function ensureTeacherShiftModal() {
       </div>
 
       <section class="shiftModePanel" id="teacherShiftPanel" aria-live="polite">
-        <p>Elige la modalidad para registrar el inicio de tu jornada.</p>
+        <p>Elige la modalidad para registrar tu evento de jornada.</p>
       </section>
 
       <section class="summaryBox">
@@ -1024,7 +1025,7 @@ async function openTeacherShiftModal() {
 
   const modal = ensureTeacherShiftModal();
   updateTeacherShiftHeader();
-  setTeacherShiftPanel("<p>Elige la modalidad para registrar el inicio de tu jornada.</p>");
+  setTeacherShiftPanel("<p>Elige la modalidad para registrar tu evento de jornada.</p>");
   modal.hidden = false;
   document.body.style.overflow = "hidden";
   await loadTeacherShiftSummary();
@@ -1046,48 +1047,18 @@ async function fetchTodayTeacherShiftRecords() {
     .sort((a, b) => Number(b.createdAtClient || 0) - Number(a.createdAtClient || 0));
 }
 
-function getTodayJornadaStatus(records = []) {
-  const hasStart = records.some((record) => record.action === "inicio_clase");
-  const hasEnd = records.some((record) => record.action === "fin_jornada");
-  if (hasEnd) return "finished";
-  if (hasStart) return "started";
-  return "idle";
-}
-
-function updateHeroJornadaButton(status = "idle") {
+function updateHeroJornadaButton() {
   const button = $(".heroPrimary[data-id='jornada']");
   if (!button) return;
 
   button.disabled = false;
   button.classList.remove("isFinalizing", "isDone");
   button.removeAttribute("data-jornada-action");
-
-  if (status === "started") {
-    button.textContent = "Finalizar jornada";
-    button.dataset.jornadaAction = "finish";
-    button.classList.add("isFinalizing");
-    return;
-  }
-
-  if (status === "finished") {
-    button.textContent = "Jornada finalizada";
-    button.dataset.jornadaAction = "done";
-    button.classList.add("isDone");
-    button.disabled = true;
-    return;
-  }
-
-  button.textContent = "Iniciar jornada";
+  button.textContent = "Registrar ingreso / salida";
 }
 
 async function refreshTeacherJornadaStatus() {
-  try {
-    const records = await fetchTodayTeacherShiftRecords();
-    updateHeroJornadaButton(getTodayJornadaStatus(records));
-  } catch (error) {
-    console.warn("No se pudo actualizar estado de jornada", error);
-    updateHeroJornadaButton("idle");
-  }
+  updateHeroJornadaButton();
 }
 
 function setSelectedShiftMode(mode) {
@@ -1116,7 +1087,7 @@ function renderTeacherSiteQrPanel() {
       <div class="readerTop">
         <div>
           <strong>Clase en sede</strong>
-          <span>Escanea el QR autorizado de Musicala para guardar el inicio.</span>
+          <span>Escanea el QR autorizado de ingreso o salida.</span>
         </div>
       </div>
       <label class="fieldLabel" for="teacherCameraSelect">Cámara</label>
@@ -1199,15 +1170,15 @@ async function startTeacherQrReader() {
 async function handleTeacherQrDecoded(decodedText) {
   const result = $("#teacherQrResult", teacherShiftModal);
   const readout = $("#teacherQrReadout", teacherShiftModal);
-  console.info("[Musicala QR le?do]", decodedText);
+  console.info("[Musicala QR leído]", decodedText);
   await stopTeacherQrReader();
 
   const qrInfo = getTeacherQrMessage(decodedText);
   if (readout) {
-    readout.textContent = `QR le?do: ${qrInfo.value || "sin valor"}`;
+    readout.textContent = `QR leído: ${qrInfo.value || "sin valor"}`;
   }
 
-  if (!isValidTeacherSiteQr(decodedText)) {
+  if (qrInfo.status === "lunch" || qrInfo.status === "unknown") {
     if (result) result.textContent = qrInfo.message;
     toast(qrInfo.message);
     return;
@@ -1217,7 +1188,9 @@ async function handleTeacherQrDecoded(decodedText) {
   await saveTeacherClassStartRecord({
     modalidad: "sede",
     source: "qr_sede",
-    raw: decodedText
+    raw: decodedText,
+    action: qrInfo.status === "exit" ? "fin_jornada" : "inicio_clase",
+    successMessage: qrInfo.status === "exit" ? "Salida en sede guardada." : "Ingreso en sede guardado."
   });
 }
 
@@ -1304,21 +1277,35 @@ async function loadTeacherShiftSummary() {
 
   try {
     const records = await fetchTodayTeacherShiftRecords();
-    updateHeroJornadaButton(getTodayJornadaStatus(records));
+    updateHeroJornadaButton();
 
     if (!records.length) {
-      target.textContent = "Aún no hay registros de inicio de jornada hoy.";
+      target.textContent = "Aún no hay registros de jornada hoy.";
       return;
     }
 
     const rows = records
+      .slice()
+      .sort((a, b) => Number(a.createdAtClient || 0) - Number(b.createdAtClient || 0))
       .map((data) => {
-        const actionLabel = data.action === "fin_jornada" ? "finalización" : data.modalidad || "-";
+        const actionLabel = data.action === "fin_jornada" ? "Salida" : "Ingreso";
+        const modalidadLabel = {
+          sede: "Sede",
+          hogar: "Hogar",
+          virtual: "Virtual"
+        }[data.modalidad] || data.modalidad || "-";
+        const sourceLabel = {
+          qr_sede: "QR",
+          manual_hogar: "Manual hogar",
+          manual_virtual: "Manual virtual"
+        }[data.source] || data.source || "-";
+
         return `
           <tr>
             <td>${escapeHtml(actionLabel)}</td>
+            <td>${escapeHtml(modalidadLabel)}</td>
             <td>${escapeHtml(data.time || "-")}</td>
-            <td>${escapeHtml(data.source || "-")}</td>
+            <td>${escapeHtml(sourceLabel)}</td>
           </tr>
         `;
       }).join("");
@@ -1328,6 +1315,7 @@ async function loadTeacherShiftSummary() {
         <table class="recordTable">
           <thead>
             <tr>
+              <th>Tipo</th>
               <th>Modalidad</th>
               <th>Hora</th>
               <th>Fuente</th>
@@ -1398,22 +1386,25 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       <article class="heroShiftCard">
         <p>Jornada</p>
         <h2>Registro de jornada</h2>
-        <span>Marca el inicio de trabajo. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
+        <span>Registra ingreso y salida. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
         <div class="heroShiftActions">
-          <button class="heroPrimary" type="button" data-id="jornada">Iniciar jornada</button>
+          <button class="heroPrimary" type="button" data-id="jornada">Registrar ingreso / salida</button>
           <button class="heroSecondary" type="button" data-id="bitacoraClases">Bitácora de clase</button>
         </div>
       </article>
     </section>
 
     <details class="teacherInstructions">
-      <summary>¿Cómo usar este Hub?</summary>
+      <summary>¿Cómo usar esta app?</summary>
       <div class="teacherInstructionsGrid">
-        <div class="teacherInstructionItem">Inicia sesión con tu cuenta autorizada por Musicala.</div>
-        <div class="teacherInstructionItem">Si estás en sede, registra tu llegada escaneando el QR de Llegada.</div>
-        <div class="teacherInstructionItem">Si estás en clase a hogar o virtual, usa el registro manual correspondiente.</div>
-        <div class="teacherInstructionItem">Usa la bitácora para dejar registro de tus clases.</div>
-        <div class="teacherInstructionItem">Si la cámara falla, revisa permisos del navegador, buena luz y que estés usando la cámara correcta.</div>
+        <div class="teacherInstructionItem">Revisa tu información y accesos asignados al iniciar sesión.</div>
+        <div class="teacherInstructionItem">Para clases en sede, registra ingreso y salida escaneando el QR correspondiente.</div>
+        <div class="teacherInstructionItem">Para clases a hogar o virtuales, usa el registro manual disponible en la app.</div>
+        <div class="teacherInstructionItem">Al terminar tus clases, completa la bitácora para dejar evidencia del proceso.</div>
+        <div class="teacherInstructionItem">En “Mi trabajo hoy” encontrarás tus accesos, documentos y enlaces importantes.</div>
+        <div class="teacherInstructionItem">Puedes instalar la app en tu dispositivo para abrirla más fácil.</div>
+        <div class="teacherInstructionItem">Cuando termines en un equipo compartido, cierra sesión desde el menú.</div>
+        <div class="teacherInstructionItem">Si la cámara no funciona, revisa permisos del navegador, buena iluminación y cámara seleccionada.</div>
       </div>
     </details>
   `;
@@ -1481,24 +1472,6 @@ async function handleButtonAction(id, trigger = null) {
   }
 
   if (id === "jornada") {
-    const jornadaAction = trigger?.dataset?.jornadaAction || "";
-    if (jornadaAction === "finish") {
-      await saveTeacherClassStartRecord({
-        modalidad: "jornada",
-        source: "manual_fin",
-        raw: "MANUAL_FIN_JORNADA",
-        action: "fin_jornada",
-        successMessage: "Finalización de jornada guardada.",
-        button: trigger
-      });
-      return;
-    }
-
-    if (jornadaAction === "done") {
-      toast("Tu jornada de hoy ya está finalizada.");
-      return;
-    }
-
     openTeacherShiftModal();
     return;
   }
