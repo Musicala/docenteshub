@@ -810,6 +810,71 @@ input, textarea, select{
   transform:translateY(0) scale(var(--tapScale));
 }
 
+.teacherInstructions{
+  grid-column:1 / -1;
+  border:1px solid rgba(11,16,32,.09);
+  border-radius:20px;
+  background:rgba(255,255,255,.78);
+  box-shadow:0 16px 40px rgba(11,16,32,.07);
+  overflow:hidden;
+}
+
+.teacherInstructions summary{
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:0 18px;
+  color:#16306f;
+  cursor:pointer;
+  font-size:1rem;
+  font-weight:950;
+  list-style:none;
+}
+
+.teacherInstructions summary::-webkit-details-marker{
+  display:none;
+}
+
+.teacherInstructions summary::after{
+  content:"+";
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+  border-radius:999px;
+  background:rgba(12,65,196,.10);
+  color:#0C41C4;
+  font-weight:950;
+}
+
+.teacherInstructions[open] summary::after{
+  content:"-";
+}
+
+.teacherInstructionsGrid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+  padding:0 18px 18px;
+}
+
+.teacherInstructionItem{
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  padding:12px 14px;
+  border:1px solid rgba(12,65,196,.10);
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(246,248,255,.72), rgba(255,255,255,.92));
+  color:rgba(11,16,32,.72);
+  font-size:.92rem;
+  font-weight:760;
+  line-height:1.35;
+}
+
 .heroShiftCard .heroPrimary[data-id="jornada"]{
   color:#fff;
   background:linear-gradient(135deg, #0C41C4 0%, #4e19d7 48%, #CE0071 100%);
@@ -1800,6 +1865,14 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   padding:0 16px;
 }
 
+.readerReadout{
+  min-height:18px;
+  margin-top:8px;
+  color:rgba(11,16,32,.52);
+  font-size:.82rem;
+  font-weight:800;
+}
+
 .readerResult{
   margin-top:10px;
   padding:10px 12px;
@@ -2165,6 +2238,28 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   .heroPrimary,
   .heroSecondary{
     width:100%;
+  }
+
+  .teacherInstructions{
+    border-radius:18px;
+  }
+
+  .teacherInstructions summary{
+    min-height:50px;
+    padding:0 14px;
+    font-size:.96rem;
+  }
+
+  .teacherInstructionsGrid{
+    grid-template-columns:1fr;
+    gap:8px;
+    padding:0 14px 14px;
+  }
+
+  .teacherInstructionItem{
+    min-height:auto;
+    padding:10px 12px;
+    font-size:.88rem;
   }
 
   .secTitle{

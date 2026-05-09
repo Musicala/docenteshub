@@ -122,12 +122,6 @@ const HUB = {
       label: "Dara Natalia Cifuentes Rojas",
       carnet: "",
       links: {}
-    },
-     
-     "juanpablopicosantos2022@gmail.com": {
-      label: "Juan Pablo Pico",
-      carnet: "",
-      links: {}
     }
   },
 
@@ -223,10 +217,11 @@ const APP_STATE = {
   db: null
 };
 
-const VALID_SITE_QR_TOKENS = [
-  "MUSICALA_DOCENTE_SEDE",
-  "MUSICALA_SEDE_CLASE",
-  "DOCENTE_SEDE_CHECKIN"
+const TEACHER_SITE_QR_ARRIVAL = "ADM-LLEGADA";
+const TEACHER_SITE_QR_EXIT = "ADM-SALIDA";
+const TEACHER_SITE_QR_LUNCH = [
+  "ADM-ALMUERZO-INICIO",
+  "ADM-ALMUERZO-FIN"
 ];
 
 function escapeHtml(value) {
@@ -236,6 +231,10 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function normalizeQrValue(value) {
+  return String(value ?? "").trim().toUpperCase();
 }
 
 function emailKey(user) {
@@ -852,13 +851,41 @@ function getTeacherName() {
 }
 
 function isValidTeacherSiteQr(decodedText) {
-  const raw = String(decodedText || "").trim();
-  if (!raw) return false;
+  return normalizeQrValue(decodedText) === TEACHER_SITE_QR_ARRIVAL;
+}
 
-  return VALID_SITE_QR_TOKENS.some((token) => {
-    const safeToken = String(token || "").trim();
-    return raw === safeToken || raw.includes(safeToken);
-  });
+function getTeacherQrMessage(decodedText) {
+  const value = normalizeQrValue(decodedText);
+
+  if (value === TEACHER_SITE_QR_ARRIVAL) {
+    return {
+      status: "valid",
+      value,
+      message: "QR válido. Guardando registro..."
+    };
+  }
+
+  if (value === TEACHER_SITE_QR_EXIT) {
+    return {
+      status: "exit",
+      value,
+      message: "Este QR es de salida. Para iniciar jornada en sede, escanea el QR de Llegada."
+    };
+  }
+
+  if (TEACHER_SITE_QR_LUNCH.includes(value)) {
+    return {
+      status: "lunch",
+      value,
+      message: "Este QR es de almuerzo. Este Hub todavía no registra almuerzos."
+    };
+  }
+
+  return {
+    status: "unknown",
+    value,
+    message: "Este QR no corresponde al registro de clase en sede. Escanea el QR de Llegada."
+  };
 }
 
 function ensureTeacherShiftModal() {
@@ -1101,6 +1128,7 @@ function renderTeacherSiteQrPanel() {
         <button class="btnGoogle" id="teacherQrStart" type="button">Iniciar cámara</button>
         <button class="btnGhost" id="teacherQrStop" type="button">Detener</button>
       </div>
+      <div class="readerReadout" id="teacherQrReadout" aria-live="polite"></div>
       <div class="readerResult" id="teacherQrResult">Esperando lectura de QR.</div>
     </div>
   `);
@@ -1170,15 +1198,22 @@ async function startTeacherQrReader() {
 
 async function handleTeacherQrDecoded(decodedText) {
   const result = $("#teacherQrResult", teacherShiftModal);
+  const readout = $("#teacherQrReadout", teacherShiftModal);
+  console.info("[Musicala QR le?do]", decodedText);
   await stopTeacherQrReader();
 
+  const qrInfo = getTeacherQrMessage(decodedText);
+  if (readout) {
+    readout.textContent = `QR le?do: ${qrInfo.value || "sin valor"}`;
+  }
+
   if (!isValidTeacherSiteQr(decodedText)) {
-    if (result) result.textContent = "Este QR no corresponde al registro de clase en sede.";
-    toast("Este QR no corresponde al registro de clase en sede.");
+    if (result) result.textContent = qrInfo.message;
+    toast(qrInfo.message);
     return;
   }
 
-  if (result) result.textContent = "QR válido. Guardando registro...";
+  if (result) result.textContent = qrInfo.message;
   await saveTeacherClassStartRecord({
     modalidad: "sede",
     source: "qr_sede",
@@ -1370,6 +1405,17 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         </div>
       </article>
     </section>
+
+    <details class="teacherInstructions">
+      <summary>¿Cómo usar este Hub?</summary>
+      <div class="teacherInstructionsGrid">
+        <div class="teacherInstructionItem">Inicia sesión con tu cuenta autorizada por Musicala.</div>
+        <div class="teacherInstructionItem">Si estás en sede, registra tu llegada escaneando el QR de Llegada.</div>
+        <div class="teacherInstructionItem">Si estás en clase a hogar o virtual, usa el registro manual correspondiente.</div>
+        <div class="teacherInstructionItem">Usa la bitácora para dejar registro de tus clases.</div>
+        <div class="teacherInstructionItem">Si la cámara falla, revisa permisos del navegador, buena luz y que estés usando la cámara correcta.</div>
+      </div>
+    </details>
   `;
 
   for (const [section, items] of sections.entries()) {
