@@ -10,7 +10,7 @@
    - Bitácora de tareas académicas con link individual por docente
 */
 
-const BUILD = "2026-04-01.1";
+const BUILD = "2026-05-08.1";
 
 /* ============================================================================
    1) FIREBASE CONFIG
@@ -36,7 +36,7 @@ const HUB = {
     observacion: "https://docs.google.com/forms/d/1z8TEQACP6L8d0vTWEpSl2RQJ198PwQwzH4-UKqq9EQA/viewform?edit_requested=true",
     induccion: "https://musicalaescuela.github.io/inducciondocentesmusicala/",
     infoEstudiantes: "https://musicalaescuela.github.io/verificaci-nestudiantes/",
-    jornada: "https://musicala.github.io/registrojornadadocentes/",
+    jornada: "__INTERNAL_TEACHER_SHIFT__",
     muestras: "https://musicalaescuela.github.io/muestrasdeproceso/#musica",
     guiones: "https://musicalaescuela.github.io/plantillaparaguiones/",
     protocolosMusica: "https://musicalaescuela.github.io/protocolosmusica/",
@@ -192,6 +192,17 @@ import {
   setPersistence,
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* ============================================================================
    4) HELPERS BASE
@@ -202,8 +213,15 @@ const $$ = (selector, root = document) => Array.from(root?.querySelectorAll?.(se
 const APP_STATE = {
   activeLinks: {},
   activeProfile: null,
-  activeUser: null
+  activeUser: null,
+  db: null
 };
+
+const VALID_SITE_QR_TOKENS = [
+  "MUSICALA_DOCENTE_SEDE",
+  "MUSICALA_SEDE_CLASE",
+  "DOCENTE_SEDE_CHECKIN"
+];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -790,7 +808,502 @@ function openCarnet(profile) {
 }
 
 /* ============================================================================
-   11) RENDER BOTONES
+   11) REGISTRO DE JORNADA
+============================================================================ */
+let teacherShiftModal = null;
+let teacherQrReader = null;
+let teacherQrRunning = false;
+
+function bogotaParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  })
+    .formatToParts(date)
+    .reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`
+  };
+}
+
+function getTeacherName() {
+  return (
+    APP_STATE.activeProfile?.label ||
+    APP_STATE.activeUser?.displayName ||
+    emailKey(APP_STATE.activeUser) ||
+    "Docente"
+  );
+}
+
+function isValidTeacherSiteQr(decodedText) {
+  const raw = String(decodedText || "").trim();
+  if (!raw) return false;
+
+  return VALID_SITE_QR_TOKENS.some((token) => {
+    const safeToken = String(token || "").trim();
+    return raw === safeToken || raw.includes(safeToken);
+  });
+}
+
+function ensureTeacherShiftModal() {
+  if (teacherShiftModal) return teacherShiftModal;
+
+  const modal = document.createElement("div");
+  modal.id = "teacherShiftModal";
+  modal.hidden = true;
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Registro de jornada");
+
+  modal.innerHTML = `
+    <div class="shiftTool" role="document">
+      <div class="shiftToolHead">
+        <div>
+          <p class="shiftEyebrow">Registro de jornada</p>
+          <h2>Inicio de jornada</h2>
+        </div>
+        <button class="btnGhost shiftClose" id="teacherShiftClose" type="button" aria-label="Cerrar">Cerrar</button>
+      </div>
+
+      <div class="shiftPerson">
+        <div class="shiftAvatar" aria-hidden="true">DM</div>
+        <div>
+          <strong id="teacherShiftName">Docente</strong>
+          <span id="teacherShiftEmail">correo</span>
+        </div>
+      </div>
+
+      <div class="shiftDateLine">
+        <span id="teacherShiftDate">Fecha Bogotá</span>
+        <span id="teacherShiftTime">Hora Bogotá</span>
+      </div>
+
+      <div class="shiftModeGrid" aria-label="Modalidad de clase">
+        <button class="shiftModeCard" type="button" data-shift-mode="sede">
+          <strong>Estoy en sede · Escanear QR</strong>
+          <span>Obligatorio para clases en sede</span>
+        </button>
+        <button class="shiftModeCard" type="button" data-shift-mode="hogar">
+          <strong>Clase a hogar</strong>
+          <span>Ya llegué a la ubicación de la clase</span>
+          <small>Registro manual bajo responsabilidad del docente</small>
+        </button>
+        <button class="shiftModeCard" type="button" data-shift-mode="virtual">
+          <strong>Clase virtual</strong>
+          <span>Ya me conecté</span>
+          <small>Registro manual bajo responsabilidad del docente</small>
+        </button>
+      </div>
+
+      <section class="shiftModePanel" id="teacherShiftPanel" aria-live="polite">
+        <p>Elige la modalidad para registrar el inicio de tu jornada.</p>
+      </section>
+
+      <section class="summaryBox">
+        <div class="summaryHead">
+          <strong>Mis registros de hoy</strong>
+          <button class="btnGhost compact" id="teacherShiftRefresh" type="button">Actualizar</button>
+        </div>
+        <div id="teacherShiftSummary">Cargando registros...</div>
+      </section>
+    </div>
+  `;
+
+  const close = () => closeTeacherShiftModal();
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  modal.querySelector("#teacherShiftClose")?.addEventListener("click", close);
+  modal.querySelector("#teacherShiftRefresh")?.addEventListener("click", () => loadTeacherShiftSummary());
+  modal.querySelectorAll("[data-shift-mode]").forEach((button) => {
+    button.addEventListener("click", () => selectTeacherShiftMode(button.dataset.shiftMode));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.hidden) close();
+  });
+
+  document.body.appendChild(modal);
+  teacherShiftModal = modal;
+  return modal;
+}
+
+function setTeacherShiftPanel(html) {
+  const panel = $("#teacherShiftPanel", teacherShiftModal);
+  if (panel) panel.innerHTML = html;
+}
+
+function updateTeacherShiftHeader() {
+  const modal = ensureTeacherShiftModal();
+  const now = bogotaParts();
+  const name = getTeacherName();
+  const email = emailKey(APP_STATE.activeUser);
+
+  $("#teacherShiftName", modal).textContent = name;
+  $("#teacherShiftEmail", modal).textContent = email;
+  $("#teacherShiftDate", modal).textContent = `Fecha Bogotá: ${now.date}`;
+  $("#teacherShiftTime", modal).textContent = `Hora Bogotá: ${now.time}`;
+  $(".shiftAvatar", modal).textContent = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "DM";
+}
+
+async function stopTeacherQrReader() {
+  if (!teacherQrReader || !teacherQrRunning) return;
+
+  try {
+    await teacherQrReader.stop();
+  } catch (error) {
+    console.warn("No se pudo detener el lector QR", error);
+  } finally {
+    try {
+      teacherQrReader.clear();
+    } catch (_) {}
+    teacherQrRunning = false;
+  }
+}
+
+function closeTeacherShiftModal() {
+  if (!teacherShiftModal) return;
+  stopTeacherQrReader();
+  teacherShiftModal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+async function openTeacherShiftModal() {
+  if (!APP_STATE.db) {
+    toast("Firestore no está listo todavía. Intenta de nuevo en un momento.");
+    return;
+  }
+
+  const modal = ensureTeacherShiftModal();
+  updateTeacherShiftHeader();
+  setTeacherShiftPanel("<p>Elige la modalidad para registrar el inicio de tu jornada.</p>");
+  modal.hidden = false;
+  document.body.style.overflow = "hidden";
+  await loadTeacherShiftSummary();
+}
+
+async function fetchTodayTeacherShiftRecords() {
+  if (!APP_STATE.db || !APP_STATE.activeUser) return [];
+
+  const { date } = bogotaParts();
+  const q = query(
+    collection(APP_STATE.db, "teacherClassStartRecords"),
+    where("email", "==", emailKey(APP_STATE.activeUser)),
+    where("date", "==", date),
+    limit(30)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map((doc) => doc.data() || {})
+    .sort((a, b) => Number(b.createdAtClient || 0) - Number(a.createdAtClient || 0));
+}
+
+function getTodayJornadaStatus(records = []) {
+  const hasStart = records.some((record) => record.action === "inicio_clase");
+  const hasEnd = records.some((record) => record.action === "fin_jornada");
+  if (hasEnd) return "finished";
+  if (hasStart) return "started";
+  return "idle";
+}
+
+function updateHeroJornadaButton(status = "idle") {
+  const button = $(".heroPrimary[data-id='jornada']");
+  if (!button) return;
+
+  button.disabled = false;
+  button.classList.remove("isFinalizing", "isDone");
+  button.removeAttribute("data-jornada-action");
+
+  if (status === "started") {
+    button.textContent = "Finalizar jornada";
+    button.dataset.jornadaAction = "finish";
+    button.classList.add("isFinalizing");
+    return;
+  }
+
+  if (status === "finished") {
+    button.textContent = "Jornada finalizada";
+    button.dataset.jornadaAction = "done";
+    button.classList.add("isDone");
+    button.disabled = true;
+    return;
+  }
+
+  button.textContent = "Iniciar jornada";
+}
+
+async function refreshTeacherJornadaStatus() {
+  try {
+    const records = await fetchTodayTeacherShiftRecords();
+    updateHeroJornadaButton(getTodayJornadaStatus(records));
+  } catch (error) {
+    console.warn("No se pudo actualizar estado de jornada", error);
+    updateHeroJornadaButton("idle");
+  }
+}
+
+function setSelectedShiftMode(mode) {
+  teacherShiftModal?.querySelectorAll("[data-shift-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.shiftMode === mode);
+  });
+}
+
+async function selectTeacherShiftMode(mode) {
+  await stopTeacherQrReader();
+  setSelectedShiftMode(mode);
+
+  if (mode === "sede") {
+    renderTeacherSiteQrPanel();
+    return;
+  }
+
+  if (mode === "hogar" || mode === "virtual") {
+    renderTeacherManualPanel(mode);
+  }
+}
+
+function renderTeacherSiteQrPanel() {
+  setTeacherShiftPanel(`
+    <div class="reader">
+      <div class="readerTop">
+        <div>
+          <strong>Clase en sede</strong>
+          <span>Escanea el QR autorizado de Musicala para guardar el inicio.</span>
+        </div>
+      </div>
+      <label class="fieldLabel" for="teacherCameraSelect">Cámara</label>
+      <select id="teacherCameraSelect" class="shiftSelect">
+        <option value="">Cargando cámaras...</option>
+      </select>
+      <div id="teacherQrReader" class="qrBox"></div>
+      <div class="readerActions">
+        <button class="btnGoogle" id="teacherQrStart" type="button">Iniciar cámara</button>
+        <button class="btnGhost" id="teacherQrStop" type="button">Detener</button>
+      </div>
+      <div class="readerResult" id="teacherQrResult">Esperando lectura de QR.</div>
+    </div>
+  `);
+
+  const startBtn = $("#teacherQrStart", teacherShiftModal);
+  const stopBtn = $("#teacherQrStop", teacherShiftModal);
+  const cameraSelect = $("#teacherCameraSelect", teacherShiftModal);
+
+  startBtn?.addEventListener("click", () => startTeacherQrReader());
+  stopBtn?.addEventListener("click", () => stopTeacherQrReader());
+
+  loadTeacherCameras(cameraSelect);
+}
+
+async function loadTeacherCameras(select) {
+  if (!select) return;
+  if (!window.Html5Qrcode) {
+    select.innerHTML = '<option value="">Lector QR no disponible</option>';
+    return;
+  }
+
+  try {
+    const cameras = await window.Html5Qrcode.getCameras();
+    if (!cameras?.length) {
+      select.innerHTML = '<option value="">No se detectaron cámaras</option>';
+      return;
+    }
+
+    select.innerHTML = cameras
+      .map((camera, index) => `<option value="${escapeHtml(camera.id)}">${escapeHtml(camera.label || `Cámara ${index + 1}`)}</option>`)
+      .join("");
+  } catch (error) {
+    console.warn("No se pudieron listar cámaras", error);
+    select.innerHTML = '<option value="">Permite la cámara para continuar</option>';
+  }
+}
+
+async function startTeacherQrReader() {
+  const result = $("#teacherQrResult", teacherShiftModal);
+  const select = $("#teacherCameraSelect", teacherShiftModal);
+
+  if (!window.Html5Qrcode) {
+    if (result) result.textContent = "No se pudo cargar el lector QR.";
+    return;
+  }
+
+  await stopTeacherQrReader();
+  teacherQrReader = new window.Html5Qrcode("teacherQrReader");
+  const cameraId = select?.value || undefined;
+
+  try {
+    teacherQrRunning = true;
+    if (result) result.textContent = "Cámara activa. Escanea el QR de sede.";
+
+    await teacherQrReader.start(
+      cameraId || { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 240, height: 240 } },
+      async (decodedText) => handleTeacherQrDecoded(decodedText),
+      () => {}
+    );
+  } catch (error) {
+    teacherQrRunning = false;
+    console.error("QR start error:", error);
+    if (result) result.textContent = "No se pudo iniciar la cámara. Revisa permisos.";
+  }
+}
+
+async function handleTeacherQrDecoded(decodedText) {
+  const result = $("#teacherQrResult", teacherShiftModal);
+  await stopTeacherQrReader();
+
+  if (!isValidTeacherSiteQr(decodedText)) {
+    if (result) result.textContent = "Este QR no corresponde al registro de clase en sede.";
+    toast("Este QR no corresponde al registro de clase en sede.");
+    return;
+  }
+
+  if (result) result.textContent = "QR válido. Guardando registro...";
+  await saveTeacherClassStartRecord({
+    modalidad: "sede",
+    source: "qr_sede",
+    raw: decodedText
+  });
+}
+
+function renderTeacherManualPanel(mode) {
+  const isHome = mode === "hogar";
+  const title = isHome ? "Clase a hogar" : "Clase virtual";
+  const buttonText = isHome ? "Ya llegué a la ubicación de la clase" : "Ya me conecté";
+
+  setTeacherShiftPanel(`
+    <div class="manualPanel">
+      <strong>${escapeHtml(title)}</strong>
+      <p>Registro manual bajo responsabilidad del docente.</p>
+      <div class="manualData">
+        <span>${escapeHtml(getTeacherName())}</span>
+        <span>${escapeHtml(emailKey(APP_STATE.activeUser))}</span>
+      </div>
+      <button class="btnGoogle" id="teacherManualConfirm" type="button">${escapeHtml(buttonText)}</button>
+    </div>
+  `);
+
+  $("#teacherManualConfirm", teacherShiftModal)?.addEventListener("click", async (event) => {
+    await saveTeacherClassStartRecord({
+      modalidad: mode,
+      source: isHome ? "manual_hogar" : "manual_virtual",
+      raw: isHome ? "MANUAL_HOGAR" : "MANUAL_VIRTUAL",
+      button: event.currentTarget
+    });
+  });
+}
+
+async function saveTeacherClassStartRecord({
+  modalidad,
+  source,
+  raw,
+  button = null,
+  action = "inicio_clase",
+  successMessage = "Inicio de jornada guardado."
+}) {
+  if (!APP_STATE.db || !APP_STATE.activeUser) {
+    toast("No hay sesión lista para guardar el registro.");
+    return;
+  }
+
+  const user = APP_STATE.activeUser;
+  const parts = bogotaParts();
+  const payload = {
+    role: "docente",
+    email: emailKey(user),
+    name: getTeacherName(),
+    uid: user.uid || "",
+    date: parts.date,
+    time: parts.time,
+    stamp: new Date().toISOString(),
+    createdAt: serverTimestamp(),
+    createdAtClient: Date.now(),
+    action,
+    modalidad,
+    source,
+    raw: String(raw || "")
+  };
+
+  try {
+    setButtonBusy(button, true, "Guardando...");
+    await addDoc(collection(APP_STATE.db, "teacherClassStartRecords"), payload);
+    toast(successMessage);
+    if (teacherShiftModal && !teacherShiftModal.hidden) {
+      updateTeacherShiftHeader();
+      await loadTeacherShiftSummary();
+    }
+  } catch (error) {
+    console.error("No se pudo guardar el registro de clase", error);
+    toast("No se pudo guardar el registro. Revisa conexión o permisos.");
+  } finally {
+    setButtonBusy(button, false);
+    await refreshTeacherJornadaStatus();
+  }
+}
+
+async function loadTeacherShiftSummary() {
+  const target = $("#teacherShiftSummary", teacherShiftModal);
+  if (!target || !APP_STATE.db || !APP_STATE.activeUser) return;
+
+  target.textContent = "Cargando registros...";
+
+  try {
+    const records = await fetchTodayTeacherShiftRecords();
+    updateHeroJornadaButton(getTodayJornadaStatus(records));
+
+    if (!records.length) {
+      target.textContent = "Aún no hay registros de inicio de jornada hoy.";
+      return;
+    }
+
+    const rows = records
+      .map((data) => {
+        const actionLabel = data.action === "fin_jornada" ? "finalización" : data.modalidad || "-";
+        return `
+          <tr>
+            <td>${escapeHtml(actionLabel)}</td>
+            <td>${escapeHtml(data.time || "-")}</td>
+            <td>${escapeHtml(data.source || "-")}</td>
+          </tr>
+        `;
+      }).join("");
+
+    target.innerHTML = `
+      <div class="recordTableWrap">
+        <table class="recordTable">
+          <thead>
+            <tr>
+              <th>Modalidad</th>
+              <th>Hora</th>
+              <th>Fuente</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  } catch (error) {
+    console.error("No se pudo cargar el resumen", error);
+    target.textContent = "No se pudo cargar el resumen de hoy.";
+  }
+}
+
+/* ============================================================================
+   12) RENDER BOTONES
 ============================================================================ */
 function groupBySection(buttons = []) {
   const map = new Map();
@@ -807,7 +1320,7 @@ function groupBySection(buttons = []) {
 }
 
 function getResolvedButtonState(button, links = {}) {
-  const isSpecial = button?.id === "carnet";
+  const isSpecial = button?.id === "carnet" || button?.id === "jornada";
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
   const visible = isSpecial || available || !!button?.showWhenMissing;
@@ -833,7 +1346,25 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   });
 
   const sections = groupBySection(filteredButtons);
-  let html = "";
+  let html = `
+    <section class="hubHero" aria-label="Inicio de hoy">
+      <div class="heroCopy">
+        <p>Inicio de hoy</p>
+        <h1>Docentes Musicala</h1>
+        <span>Inicia tu jornada, deja a mano la bitácora de clase y conserva tus recursos docentes en un solo lugar.</span>
+      </div>
+
+      <article class="heroShiftCard">
+        <p>Jornada</p>
+        <h2>Registro de jornada</h2>
+        <span>Marca el inicio de trabajo. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
+        <div class="heroShiftActions">
+          <button class="heroPrimary" type="button" data-id="jornada">Iniciar jornada</button>
+          <button class="heroSecondary" type="button" data-id="bitacoraClases">Bitácora de clase</button>
+        </div>
+      </article>
+    </section>
+  `;
 
   for (const [section, items] of sections.entries()) {
     html += `
@@ -882,18 +1413,41 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         if (!button) return;
 
         const id = button.getAttribute("data-id");
-        handleButtonAction(id);
+        handleButtonAction(id, button);
       },
       { passive: true }
     );
   }
 }
 
-function handleButtonAction(id) {
+async function handleButtonAction(id, trigger = null) {
   if (!id) return;
 
   if (id === "carnet") {
     openCarnet(APP_STATE.activeProfile);
+    return;
+  }
+
+  if (id === "jornada") {
+    const jornadaAction = trigger?.dataset?.jornadaAction || "";
+    if (jornadaAction === "finish") {
+      await saveTeacherClassStartRecord({
+        modalidad: "jornada",
+        source: "manual_fin",
+        raw: "MANUAL_FIN_JORNADA",
+        action: "fin_jornada",
+        successMessage: "Finalización de jornada guardada.",
+        button: trigger
+      });
+      return;
+    }
+
+    if (jornadaAction === "done") {
+      toast("Tu jornada de hoy ya está finalizada.");
+      return;
+    }
+
+    openTeacherShiftModal();
     return;
   }
 
@@ -1004,6 +1558,7 @@ async function handleAuthorizedUser(user) {
 
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
+  await refreshTeacherJornadaStatus();
 }
 
 async function handleUnauthorizedUser(auth) {
@@ -1034,6 +1589,8 @@ async function mount() {
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  const db = getFirestore(app);
+  APP_STATE.db = db;
 
   await ensureAuthPersistence(auth);
 
