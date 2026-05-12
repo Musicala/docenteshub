@@ -45,7 +45,7 @@ const HUB = {
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
-    bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    bitacoraClases: "https://musicalaescuela.github.io/bitacoradeclase/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
