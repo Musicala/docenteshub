@@ -122,6 +122,12 @@ const HUB = {
       label: "Dara Natalia Cifuentes Rojas",
       carnet: "",
       links: {}
+    },
+
+    "juanpablopicosantos2022@gmail.com": {
+      label: "Juan Pablo Pico",
+      carnet: "",
+      links: {}
     }
   },
 
