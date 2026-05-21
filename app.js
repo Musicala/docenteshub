@@ -45,7 +45,7 @@ const HUB = {
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
-    bitacoraClases: "https://musicalaescuela.github.io/bitacoradeclase/",
+    bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
@@ -120,12 +120,6 @@ const HUB = {
 
     "darasaxcifuentes@gmail.com": {
       label: "Dara Natalia Cifuentes Rojas",
-      carnet: "",
-      links: {}
-    },
-
-    "juanpablopicosantos2022@gmail.com": {
-      label: "Juan Pablo Pico",
       carnet: "",
       links: {}
     }
@@ -229,6 +223,8 @@ const TEACHER_SITE_QR_LUNCH = [
   "ADM-ALMUERZO-INICIO",
   "ADM-ALMUERZO-FIN"
 ];
+const TEACHER_SHIFT_EMAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxFSNUdj01qYYlIYIs8Y43VP3cvRC0TQc27j91OGd735z09pxs6f8Xp3pvAd0yFeQJO/exec";
+const TEACHER_SHIFT_NOTIFY_EXITS = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -856,6 +852,25 @@ function getTeacherName() {
   );
 }
 
+async function notifyTeacherShiftByEmail(payload) {
+  const webhookUrl = String(TEACHER_SHIFT_EMAIL_WEBHOOK_URL || "").trim();
+  if (!webhookUrl) return;
+  if (payload?.action === "fin_jornada" && !TEACHER_SHIFT_NOTIFY_EXITS) return;
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload || {})
+    });
+  } catch (error) {
+    console.warn("No se pudo enviar la notificacion de jornada por correo", error);
+  }
+}
+
 function isValidTeacherSiteQr(decodedText) {
   const value = normalizeQrValue(decodedText);
   return value === TEACHER_SITE_QR_ARRIVAL || value === TEACHER_SITE_QR_EXIT;
@@ -1261,6 +1276,7 @@ async function saveTeacherClassStartRecord({
   try {
     setButtonBusy(button, true, "Guardando...");
     await addDoc(collection(APP_STATE.db, "teacherClassStartRecords"), payload);
+    notifyTeacherShiftByEmail(payload);
     toast(successMessage);
     if (teacherShiftModal && !teacherShiftModal.hidden) {
       updateTeacherShiftHeader();
