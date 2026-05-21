@@ -223,7 +223,7 @@ const TEACHER_SITE_QR_LUNCH = [
   "ADM-ALMUERZO-INICIO",
   "ADM-ALMUERZO-FIN"
 ];
-const TEACHER_SHIFT_EMAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxFSNUdj01qYYlIYIs8Y43VP3cvRC0TQc27j91OGd735z09pxs6f8Xp3pvAd0yFeQJO/exec";
+const TEACHER_SHIFT_EMAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzDNyxzjieDdAdX8UyzXVTdGFWPj4JEJ6Q3OtKHjMqCI0QlDyak3ZEW49LYDm6ANUVSKA/exec";
 const TEACHER_SHIFT_NOTIFY_EXITS = false;
 
 function escapeHtml(value) {
