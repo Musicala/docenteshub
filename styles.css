@@ -2522,18 +2522,32 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   }
 
   .musiProfeBot{
-    left:12px;
-    right:12px;
+    left:auto;
+    right:10px;
     bottom:12px;
-    max-width:none;
+    max-width:min(330px, calc(100vw - 20px));
   }
 
   .musiProfeFab{
-    width:100%;
-    justify-content:flex-start;
+    width:auto;
+    min-height:46px;
+    justify-content:flex-end;
+    padding:6px;
+    border-radius:999px;
+  }
+
+  .musiProfeFab span{
+    width:34px;
+    height:34px;
+    font-size:.86rem;
+  }
+
+  .musiProfeFab strong{
+    display:none;
   }
 
   .musiProfePanel{
+    width:min(330px, calc(100vw - 20px));
     max-height:72vh;
     overflow:auto;
   }
