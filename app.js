@@ -10,7 +10,7 @@
    - Bitácora de tareas académicas con link individual por docente
 */
 
-const BUILD = "2026-05-08.1";
+const BUILD = "2026-05-26.1";
 
 /* ============================================================================
    1) FIREBASE CONFIG
@@ -195,13 +195,14 @@ import {
 import {
   getFirestore,
   collection,
-  addDoc,
+  doc,
   serverTimestamp,
   query,
   where,
   orderBy,
   limit,
-  getDocs
+  getDocs,
+  runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* ============================================================================
@@ -214,7 +215,11 @@ const APP_STATE = {
   activeLinks: {},
   activeProfile: null,
   activeUser: null,
-  db: null
+  db: null,
+  teacherShiftStatus: {
+    open: false,
+    record: null
+  }
 };
 
 const TEACHER_SITE_QR_ARRIVAL = "ADM-LLEGADA";
@@ -237,6 +242,14 @@ function escapeHtml(value) {
 
 function normalizeQrValue(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function emailKey(user) {
@@ -852,6 +865,90 @@ function getTeacherName() {
   );
 }
 
+function getTeacherShiftSessionId(user = APP_STATE.activeUser) {
+  const uid = String(user?.uid || "").trim();
+  if (uid) return uid;
+  return emailKey(user).replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
+}
+
+function getOpenTeacherShift(records = []) {
+  const ordered = records
+    .slice()
+    .sort((a, b) => Number(a.createdAtClient || 0) - Number(b.createdAtClient || 0));
+  let open = null;
+
+  for (const record of ordered) {
+    if (record.action === "fin_jornada") {
+      open = null;
+      continue;
+    }
+
+    if (record.action === "inicio_clase") {
+      open = record;
+    }
+  }
+
+  return open;
+}
+
+function getTeacherShiftActionLabel(action = "") {
+  return action === "fin_jornada" ? "Salida" : "Ingreso";
+}
+
+function getTeacherShiftSourceLabel(source = "") {
+  return {
+    qr_sede: "QR",
+    manual_hogar: "Manual hogar",
+    manual_virtual: "Manual virtual",
+    manual_fin: "Cierre manual"
+  }[source] || source || "-";
+}
+
+function getTeacherShiftModeLabel(modalidad = "") {
+  return {
+    sede: "Sede",
+    hogar: "Hogar",
+    virtual: "Virtual",
+    jornada: "Jornada"
+  }[modalidad] || modalidad || "-";
+}
+
+const MUSIPROFE_SUGGESTIONS = [
+  "¿Cómo registro mi jornada?",
+  "¿Qué hago si olvidé cerrar?",
+  "¿Dónde está mi bitácora?",
+  "No me abre un enlace",
+  "Permisos de cámara",
+  "Recursos para clase"
+];
+
+const MUSIPROFE_KNOWLEDGE = [
+  {
+    match: ["jornada", "ingreso", "entrada", "qr", "sede"],
+    answer: "Para registrar jornada entra a Registro de jornada. Si estás en sede, usa el QR autorizado de ingreso o salida. La app no permite otro ingreso mientras tengas una jornada abierta."
+  },
+  {
+    match: ["cerrar", "salida", "olvid", "abierta", "sesion", "sesión"],
+    answer: "Si olvidaste cerrar, vuelve a Registro de jornada. MusiProfe te mostrará la sesión abierta y podrás tocar Sí, cerrar jornada antes de crear un nuevo ingreso."
+  },
+  {
+    match: ["bitacora", "bitácora", "clase", "evidencia", "tarea"],
+    answer: "La bitácora está en el botón Bitácora de clase. Después de terminar tus clases, deja allí la evidencia y el seguimiento del proceso del estudiante."
+  },
+  {
+    match: ["link", "enlace", "pendiente", "abre", "abrir"],
+    answer: "Si un enlace aparece como Pendiente, todavía no hay un link asignado para tu perfil. Si un enlace no abre, prueba actualizar la app y reporta el botón exacto."
+  },
+  {
+    match: ["camara", "cámara", "permiso", "qr"],
+    answer: "Para leer QR revisa que el navegador tenga permiso de cámara, selecciona la cámara correcta y usa buena luz. En celular suele funcionar mejor la cámara trasera."
+  },
+  {
+    match: ["recurso", "protocolo", "salon", "salón", "estudiante", "horario"],
+    answer: "En Mi trabajo hoy encuentras horario, salones e info de estudiantes. En Recursos están protocolos, guías y materiales docentes."
+  }
+];
+
 async function notifyTeacherShiftByEmail(payload) {
   const webhookUrl = String(TEACHER_SHIFT_EMAIL_WEBHOOK_URL || "").trim();
   if (!webhookUrl) return;
@@ -1050,6 +1147,42 @@ async function openTeacherShiftModal() {
   modal.hidden = false;
   document.body.style.overflow = "hidden";
   await loadTeacherShiftSummary();
+  if (APP_STATE.teacherShiftStatus.open) {
+    renderOpenTeacherShiftNotice(APP_STATE.teacherShiftStatus.record);
+  }
+}
+
+function renderOpenTeacherShiftNotice(openRecord = {}) {
+  const modeLabel = getTeacherShiftModeLabel(openRecord?.modalidad);
+  const sourceLabel = getTeacherShiftSourceLabel(openRecord?.source);
+  const startTime = openRecord?.time || "hora no disponible";
+
+  setSelectedShiftMode("");
+  setTeacherShiftPanel(`
+    <div class="openShiftNotice">
+      <strong>Tienes una sesión abierta todavía</strong>
+      <p>Registraste ingreso a las ${escapeHtml(startTime)} (${escapeHtml(modeLabel)} · ${escapeHtml(sourceLabel)}). Para registrar un nuevo ingreso primero debes cerrar esta jornada.</p>
+      <div class="openShiftActions">
+        <button class="btnGoogle" id="teacherCloseOpenShift" type="button">Sí, cerrar jornada</button>
+        <button class="btnGhost" id="teacherKeepOpenShift" type="button">Mantener abierta</button>
+      </div>
+    </div>
+  `);
+
+  $("#teacherCloseOpenShift", teacherShiftModal)?.addEventListener("click", async (event) => {
+    await saveTeacherClassStartRecord({
+      modalidad: openRecord?.modalidad || "jornada",
+      source: openRecord?.source === "qr_sede" ? "qr_sede" : "manual_fin",
+      raw: "CIERRE_SESION_ABIERTA",
+      action: "fin_jornada",
+      button: event.currentTarget,
+      successMessage: "Jornada cerrada. Ya puedes registrar un nuevo ingreso."
+    });
+  });
+
+  $("#teacherKeepOpenShift", teacherShiftModal)?.addEventListener("click", () => {
+    toast("La jornada sigue abierta.");
+  });
 }
 
 async function fetchTodayTeacherShiftRecords() {
@@ -1073,12 +1206,34 @@ function updateHeroJornadaButton() {
   if (!button) return;
 
   button.disabled = false;
-  button.classList.remove("isFinalizing", "isDone");
+  button.classList.remove("isFinalizing", "isDone", "hasOpenShift");
   button.removeAttribute("data-jornada-action");
-  button.textContent = "Registrar ingreso / salida";
+
+  if (APP_STATE.teacherShiftStatus.open) {
+    button.classList.add("hasOpenShift");
+    button.dataset.jornadaAction = "close";
+    button.textContent = "Tienes una jornada abierta";
+    return;
+  }
+
+  button.textContent = "Registrar ingreso";
 }
 
 async function refreshTeacherJornadaStatus() {
+  if (!APP_STATE.db || !APP_STATE.activeUser) {
+    APP_STATE.teacherShiftStatus = { open: false, record: null };
+    updateHeroJornadaButton();
+    return;
+  }
+
+  try {
+    const records = await fetchTodayTeacherShiftRecords();
+    const openRecord = getOpenTeacherShift(records);
+    APP_STATE.teacherShiftStatus = { open: !!openRecord, record: openRecord || null };
+  } catch (error) {
+    console.warn("No se pudo actualizar el estado de jornada", error);
+  }
+
   updateHeroJornadaButton();
 }
 
@@ -1242,6 +1397,51 @@ function renderTeacherManualPanel(mode) {
   });
 }
 
+async function saveTeacherShiftRecordTransaction(user, payload) {
+  const sessionRef = doc(APP_STATE.db, "teacherOpenShiftSessions", getTeacherShiftSessionId(user));
+  const recordRef = doc(collection(APP_STATE.db, "teacherClassStartRecords"));
+
+  await runTransaction(APP_STATE.db, async (transaction) => {
+    const sessionSnap = await transaction.get(sessionRef);
+    const session = sessionSnap.exists() ? sessionSnap.data() || {} : {};
+    const sessionIsOpen = !!session.open && session.email === payload.email;
+
+    if (payload.action === "inicio_clase" && sessionIsOpen) {
+      const openError = new Error("OPEN_TEACHER_SHIFT");
+      openError.openRecord = session.openRecord || session.lastRecord || session;
+      throw openError;
+    }
+
+    transaction.set(recordRef, payload);
+
+    if (payload.action === "fin_jornada") {
+      transaction.set(sessionRef, {
+        open: false,
+        email: payload.email,
+        uid: payload.uid,
+        name: payload.name,
+        closedAt: serverTimestamp(),
+        closedAtClient: payload.createdAtClient,
+        closeRecordId: recordRef.id,
+        lastRecord: payload
+      }, { merge: true });
+      return;
+    }
+
+    transaction.set(sessionRef, {
+      open: true,
+      email: payload.email,
+      uid: payload.uid,
+      name: payload.name,
+      openedAt: serverTimestamp(),
+      openedAtClient: payload.createdAtClient,
+      openRecordId: recordRef.id,
+      openRecord: payload,
+      lastRecord: payload
+    }, { merge: true });
+  });
+}
+
 async function saveTeacherClassStartRecord({
   modalidad,
   source,
@@ -1275,14 +1475,26 @@ async function saveTeacherClassStartRecord({
 
   try {
     setButtonBusy(button, true, "Guardando...");
-    await addDoc(collection(APP_STATE.db, "teacherClassStartRecords"), payload);
+    await saveTeacherShiftRecordTransaction(user, payload);
     notifyTeacherShiftByEmail(payload);
     toast(successMessage);
     if (teacherShiftModal && !teacherShiftModal.hidden) {
       updateTeacherShiftHeader();
       await loadTeacherShiftSummary();
+      if (action === "inicio_clase") {
+        renderOpenTeacherShiftNotice(payload);
+      }
     }
   } catch (error) {
+    if (error?.message === "OPEN_TEACHER_SHIFT") {
+      const openRecord = error.openRecord || APP_STATE.teacherShiftStatus.record || {};
+      APP_STATE.teacherShiftStatus = { open: true, record: openRecord };
+      renderOpenTeacherShiftNotice(openRecord);
+      updateHeroJornadaButton();
+      toast("Tienes una sesión abierta todavía. Ciérrala antes de registrar otro ingreso.");
+      return;
+    }
+
     console.error("No se pudo guardar el registro de clase", error);
     toast("No se pudo guardar el registro. Revisa conexión o permisos.");
   } finally {
@@ -1299,6 +1511,8 @@ async function loadTeacherShiftSummary() {
 
   try {
     const records = await fetchTodayTeacherShiftRecords();
+    const openRecord = getOpenTeacherShift(records);
+    APP_STATE.teacherShiftStatus = { open: !!openRecord, record: openRecord || null };
     updateHeroJornadaButton();
 
     if (!records.length) {
@@ -1310,17 +1524,9 @@ async function loadTeacherShiftSummary() {
       .slice()
       .sort((a, b) => Number(a.createdAtClient || 0) - Number(b.createdAtClient || 0))
       .map((data) => {
-        const actionLabel = data.action === "fin_jornada" ? "Salida" : "Ingreso";
-        const modalidadLabel = {
-          sede: "Sede",
-          hogar: "Hogar",
-          virtual: "Virtual"
-        }[data.modalidad] || data.modalidad || "-";
-        const sourceLabel = {
-          qr_sede: "QR",
-          manual_hogar: "Manual hogar",
-          manual_virtual: "Manual virtual"
-        }[data.source] || data.source || "-";
+        const actionLabel = getTeacherShiftActionLabel(data.action);
+        const modalidadLabel = getTeacherShiftModeLabel(data.modalidad);
+        const sourceLabel = getTeacherShiftSourceLabel(data.source);
 
         return `
           <tr>
@@ -1468,6 +1674,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   }
 
   grid.innerHTML = html;
+  ensureMusiProfeBot();
 
   if (!grid.dataset.boundClick) {
     grid.dataset.boundClick = "true";
@@ -1483,6 +1690,99 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       { passive: true }
     );
   }
+}
+
+function getMusiProfeAnswer(question = "") {
+  const normalized = normalizeText(question);
+  const found = MUSIPROFE_KNOWLEDGE.find((item) =>
+    item.match.some((term) => normalized.includes(normalizeText(term)))
+  );
+
+  if (found) return found.answer;
+  return "Puedo ayudarte con jornada, QR, cierre de sesión abierta, bitácoras, enlaces, cámara y recursos de clase. Escríbeme qué necesitas revisar.";
+}
+
+function addMusiProfeMessage(body, who = "bot") {
+  const log = $("#musiProfeLog");
+  if (!log) return;
+
+  const message = document.createElement("div");
+  message.className = `musiProfeMsg ${who === "user" ? "fromUser" : "fromBot"}`;
+  message.textContent = body;
+  log.appendChild(message);
+  log.scrollTop = log.scrollHeight;
+}
+
+function ensureMusiProfeBot() {
+  if ($("#musiProfeBot")) return;
+
+  const bot = document.createElement("aside");
+  bot.id = "musiProfeBot";
+  bot.className = "musiProfeBot";
+  bot.innerHTML = `
+    <button class="musiProfeFab" id="musiProfeFab" type="button" aria-expanded="false" aria-controls="musiProfePanel">
+      <span aria-hidden="true">MP</span>
+      <strong>¿Cómo les podemos ayudar?</strong>
+    </button>
+    <section class="musiProfePanel" id="musiProfePanel" hidden>
+      <div class="musiProfeHead">
+        <div>
+          <p>MusiProfe</p>
+          <strong>Asistente docente</strong>
+        </div>
+        <button class="btnGhost compact" id="musiProfeClose" type="button">Cerrar</button>
+      </div>
+      <div class="musiProfeLog" id="musiProfeLog" aria-live="polite"></div>
+      <div class="musiProfeChips">
+        ${MUSIPROFE_SUGGESTIONS.map((item) => `<button type="button" data-musi-question="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join("")}
+      </div>
+      <form class="musiProfeForm" id="musiProfeForm">
+        <input id="musiProfeInput" type="text" autocomplete="off" placeholder="Escribe tu duda" />
+        <button type="submit">Enviar</button>
+      </form>
+    </section>
+  `;
+
+  document.body.appendChild(bot);
+  const fab = $("#musiProfeFab", bot);
+  const panel = $("#musiProfePanel", bot);
+  const form = $("#musiProfeForm", bot);
+  const input = $("#musiProfeInput", bot);
+
+  const open = () => {
+    panel.hidden = false;
+    fab.setAttribute("aria-expanded", "true");
+    if (!$("#musiProfeLog", bot)?.children.length) {
+      addMusiProfeMessage("Hola, soy MusiProfe. Puedo orientarles con jornada, QR, bitácoras y accesos de la app.");
+    }
+    setTimeout(() => input?.focus(), 30);
+  };
+
+  const close = () => {
+    panel.hidden = true;
+    fab.setAttribute("aria-expanded", "false");
+  };
+
+  fab?.addEventListener("click", () => {
+    if (panel.hidden) open();
+    else close();
+  });
+  $("#musiProfeClose", bot)?.addEventListener("click", close);
+  bot.querySelectorAll("[data-musi-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const question = button.getAttribute("data-musi-question") || "";
+      addMusiProfeMessage(question, "user");
+      addMusiProfeMessage(getMusiProfeAnswer(question));
+    });
+  });
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = String(input?.value || "").trim();
+    if (!question) return;
+    addMusiProfeMessage(question, "user");
+    addMusiProfeMessage(getMusiProfeAnswer(question));
+    input.value = "";
+  });
 }
 
 async function handleButtonAction(id, trigger = null) {

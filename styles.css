@@ -676,27 +676,14 @@ input, textarea, select{
   align-items:center;
   min-height:258px;
   padding:20px;
-  border-radius:32px;
-  border:1px solid rgba(11,16,32,.08);
+  border-radius:24px;
+  border:1px solid rgba(11,16,32,.09);
   background:
-    radial-gradient(620px 360px at 7% 0%, rgba(12,65,196,.18), transparent 64%),
-    radial-gradient(560px 340px at 92% 12%, rgba(104,13,191,.18), transparent 64%),
-    radial-gradient(560px 360px at 92% 100%, rgba(206,0,113,.16), transparent 66%),
-    linear-gradient(105deg, rgba(237,243,255,.94) 0%, rgba(246,239,255,.88) 54%, rgba(255,239,249,.86) 100%);
-  box-shadow:0 24px 72px rgba(11,16,32,.10);
+    linear-gradient(135deg, rgba(255,255,255,.95), rgba(238,244,255,.92)),
+    url("./logo.png") right 26px center / 128px auto no-repeat;
+  box-shadow:0 18px 54px rgba(11,16,32,.09);
   overflow:hidden;
   position:relative;
-}
-
-.hubHero::before{
-  content:"";
-  position:absolute;
-  inset:-30% -12%;
-  background:
-    radial-gradient(520px 280px at 82% 20%, rgba(12,65,196,.22), transparent 64%),
-    radial-gradient(520px 300px at 98% 88%, rgba(206,0,113,.20), transparent 64%),
-    radial-gradient(480px 260px at 30% 120%, rgba(104,13,191,.18), transparent 64%);
-  pointer-events:none;
 }
 
 .hubHero > *{
@@ -717,7 +704,7 @@ input, textarea, select{
   margin:0;
   max-width:740px;
   color:#0b1020;
-  font-size:clamp(2.35rem, 6vw, 3.75rem);
+  font-size:3.45rem;
   line-height:.96;
   font-weight:980;
   letter-spacing:0;
@@ -736,13 +723,11 @@ input, textarea, select{
 .heroShiftCard{
   min-height:218px;
   padding:20px 18px;
-  border-radius:24px;
+  border-radius:18px;
   border:1px solid rgba(11,16,32,.10);
   background:
-    radial-gradient(360px 220px at 12% 0%, rgba(12,65,196,.24), transparent 66%),
-    radial-gradient(360px 240px at 100% 100%, rgba(206,0,113,.22), transparent 66%),
-    linear-gradient(135deg, rgba(228,237,255,.94), rgba(241,229,255,.92), rgba(255,233,247,.90));
-  box-shadow:0 24px 58px rgba(104,13,191,.18);
+    linear-gradient(135deg, rgba(236,243,255,.95), rgba(255,255,255,.92));
+  box-shadow:0 18px 42px rgba(12,65,196,.13);
 }
 
 .heroShiftCard h2{
@@ -896,6 +881,14 @@ input, textarea, select{
   box-shadow:none;
   text-shadow:none;
   cursor:not-allowed;
+}
+
+.heroShiftCard .heroPrimary[data-id="jornada"].hasOpenShift{
+  color:#162042;
+  background:#fff7d6;
+  border:1px solid rgba(190,126,0,.28);
+  box-shadow:0 16px 34px rgba(190,126,0,.13);
+  text-shadow:none;
 }
 
 .heroShiftCard .heroSecondary[data-id="bitacoraClases"]{
@@ -1909,6 +1902,40 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   font-weight:750;
 }
 
+.openShiftNotice{
+  display:grid;
+  gap:10px;
+  padding:14px;
+  border:1px solid rgba(190,126,0,.24);
+  border-radius:18px;
+  background:linear-gradient(135deg, rgba(255,248,221,.96), rgba(255,255,255,.90));
+}
+
+.openShiftNotice strong{
+  color:#162042;
+  font-size:1.08rem;
+}
+
+.openShiftNotice p{
+  margin:0;
+  color:rgba(22,32,66,.72);
+  font-weight:780;
+  line-height:1.42;
+}
+
+.openShiftActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.openShiftActions .btnGoogle,
+.openShiftActions .btnGhost{
+  width:auto;
+  min-height:42px;
+  padding:0 16px;
+}
+
 .summaryBox{
   background:rgba(255,255,255,.76);
 }
@@ -1950,6 +1977,161 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .recordTable td{
   color:#0b1020;
   font-weight:850;
+}
+
+/* ==========================================================================
+   MUSIPROFE BOT
+========================================================================== */
+.musiProfeBot{
+  position:fixed;
+  right:18px;
+  bottom:18px;
+  z-index:9997;
+  display:grid;
+  justify-items:end;
+  gap:10px;
+  max-width:min(370px, calc(100vw - 28px));
+}
+
+.musiProfeFab{
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px 8px 8px;
+  border:1px solid rgba(12,65,196,.18);
+  border-radius:999px;
+  background:rgba(255,255,255,.94);
+  box-shadow:0 18px 44px rgba(11,16,32,.18);
+  color:#162042;
+  cursor:pointer;
+}
+
+.musiProfeFab span{
+  width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  border-radius:999px;
+  background:linear-gradient(135deg, #0C41C4, #CE0071);
+  color:#fff;
+  font-weight:950;
+}
+
+.musiProfeFab strong{
+  max-width:210px;
+  text-align:left;
+  font-size:.9rem;
+  line-height:1.15;
+}
+
+.musiProfePanel{
+  width:100%;
+  display:grid;
+  gap:10px;
+  padding:14px;
+  border:1px solid rgba(11,16,32,.10);
+  border-radius:20px;
+  background:rgba(255,255,255,.98);
+  box-shadow:0 26px 74px rgba(11,16,32,.22);
+}
+
+.musiProfePanel[hidden]{
+  display:none !important;
+}
+
+.musiProfeHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.musiProfeHead p{
+  margin:0 0 2px;
+  color:#2f5dd4;
+  font-size:.76rem;
+  font-weight:950;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.musiProfeHead strong{
+  color:#0b1020;
+}
+
+.musiProfeLog{
+  max-height:220px;
+  overflow:auto;
+  display:grid;
+  gap:8px;
+  padding:10px;
+  border-radius:16px;
+  background:rgba(246,248,255,.72);
+}
+
+.musiProfeMsg{
+  width:fit-content;
+  max-width:88%;
+  padding:9px 11px;
+  border-radius:14px;
+  color:#162042;
+  background:#fff;
+  font-size:.9rem;
+  font-weight:760;
+  line-height:1.35;
+  box-shadow:0 8px 18px rgba(11,16,32,.06);
+}
+
+.musiProfeMsg.fromUser{
+  justify-self:end;
+  color:#fff;
+  background:#0C41C4;
+}
+
+.musiProfeChips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+}
+
+.musiProfeChips button{
+  min-height:34px;
+  padding:0 10px;
+  border:1px solid rgba(12,65,196,.16);
+  border-radius:999px;
+  background:rgba(12,65,196,.07);
+  color:#16306f;
+  cursor:pointer;
+  font-weight:850;
+  font-size:.82rem;
+}
+
+.musiProfeForm{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px;
+}
+
+.musiProfeForm input{
+  min-width:0;
+  min-height:42px;
+  border:1px solid rgba(11,16,32,.14);
+  border-radius:14px;
+  padding:0 12px;
+  color:#0b1020;
+  font-weight:780;
+}
+
+.musiProfeForm button{
+  min-height:42px;
+  border:0;
+  border-radius:14px;
+  padding:0 14px;
+  color:#fff;
+  background:#0C41C4;
+  cursor:pointer;
+  font-weight:950;
 }
 
 /* ==========================================================================
@@ -2328,12 +2510,35 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 
   .readerActions .btnGoogle,
   .readerActions .btnGhost,
-  .manualPanel .btnGoogle{
+  .manualPanel .btnGoogle,
+  .openShiftActions .btnGoogle,
+  .openShiftActions .btnGhost{
     width:100%;
     justify-content:center;
   }
 
   .qrBox{
     min-height:230px;
+  }
+
+  .musiProfeBot{
+    left:12px;
+    right:12px;
+    bottom:12px;
+    max-width:none;
+  }
+
+  .musiProfeFab{
+    width:100%;
+    justify-content:flex-start;
+  }
+
+  .musiProfePanel{
+    max-height:72vh;
+    overflow:auto;
+  }
+
+  .musiProfeForm{
+    grid-template-columns:1fr;
   }
 }
