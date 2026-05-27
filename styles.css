@@ -2556,3 +2556,134 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
     grid-template-columns:1fr;
   }
 }
+
+/* ==========================================================================
+   ADMIN PANEL MODAL
+========================================================================== */
+#adminPanelModal[hidden]{ display:none !important; }
+
+#adminPanelModal{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  display:grid;
+  place-items:center;
+  padding:18px;
+  background:rgba(11,16,32,.5);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+
+.adminTool{
+  width:min(1080px, 100%);
+  max-height:min(94vh, 960px);
+}
+
+.adminTabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  border-bottom:1px solid rgba(12,65,196,.14);
+  padding-bottom:8px;
+}
+
+.adminTab{
+  appearance:none;
+  border:1px solid rgba(12,65,196,.18);
+  background:#fff;
+  border-radius:999px;
+  padding:6px 14px;
+  font-weight:700;
+  font-size:.86rem;
+  cursor:pointer;
+  color:#0b1020;
+}
+
+.adminTab.active{
+  background:#0c41c4;
+  color:#fff;
+  border-color:#0c41c4;
+}
+
+.adminFilters{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0, 1fr));
+  gap:10px;
+  align-items:end;
+}
+
+.adminFilters label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:.78rem;
+  font-weight:600;
+  color:#0b1020;
+}
+
+.adminFilters input,
+.adminFilters select{
+  border:1px solid rgba(12,65,196,.2);
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:.9rem;
+  background:#fff;
+}
+
+.adminApply{
+  height:38px;
+}
+
+.adminBody{
+  min-height:200px;
+}
+
+.adminMeta{
+  font-size:.82rem;
+  color:#4b5563;
+  margin:4px 0 8px;
+}
+
+.adminNote{
+  font-size:.78rem;
+  color:#6b7280;
+  margin-top:8px;
+}
+
+.adminBody .recordTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.85rem;
+}
+
+.adminBody .recordTable th,
+.adminBody .recordTable td{
+  padding:6px 8px;
+  border-bottom:1px solid rgba(11,16,32,.08);
+  text-align:left;
+  vertical-align:top;
+}
+
+.adminBody .recordTable thead th{
+  background:#f4f6fb;
+  font-weight:700;
+  color:#0b1020;
+  position:sticky;
+  top:0;
+}
+
+.adminBody .recordTableWrap{
+  max-height:55vh;
+  overflow:auto;
+  border:1px solid rgba(11,16,32,.08);
+  border-radius:12px;
+}
+
+@media (max-width:720px){
+  .adminFilters{
+    grid-template-columns:1fr 1fr;
+  }
+  .adminApply{
+    grid-column:1 / -1;
+  }
+}

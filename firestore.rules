@@ -55,9 +55,9 @@ service cloud.firestore {
     }
 
     match /teacherOpenShiftSessions/{sessionId} {
-      allow get: if isTeacherHubUser()
-        && sessionId == request.auth.uid;
-      allow list: if false;
+      allow get: if (isTeacherHubUser() && sessionId == request.auth.uid)
+        || isAdminReader();
+      allow list: if isAdminReader();
       allow create, update: if writesOwnTeacherShiftSession(sessionId);
       allow delete: if false;
     }

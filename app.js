@@ -10,7 +10,12 @@
    - Bitácora de tareas académicas con link individual por docente
 */
 
-const BUILD = "2026-05-26.1";
+const BUILD = "2026-05-27.1";
+
+const ADMIN_EMAILS = [
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com"
+];
 
 /* ============================================================================
    1) FIREBASE CONFIG
@@ -175,7 +180,9 @@ const HUB = {
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
     { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
     { id: "vacaciones", icon: "🌞", title: "Info Vacaciones artísticas", subtitle: "General", section: "Institucional" },
-    { id: "musicalaFest", icon: "🎸", title: "Musicala Fest 2025", subtitle: "Programa", section: "Institucional" }
+    { id: "musicalaFest", icon: "🎸", title: "Musicala Fest 2025", subtitle: "Programa", section: "Institucional" },
+
+    { id: "adminPanel", icon: "🛠️", title: "Panel admin", subtitle: "Solo administradores", section: "Administración", adminOnly: true }
   ]
 };
 
@@ -1560,6 +1567,456 @@ async function loadTeacherShiftSummary() {
 }
 
 /* ============================================================================
+   11b) PANEL ADMIN
+============================================================================ */
+let adminPanelModal = null;
+const ADMIN_STATE = {
+  records: [],
+  liveSessions: [],
+  loading: false,
+  tab: "marcaciones",
+  filters: {
+    email: "",
+    from: "",
+    to: ""
+  }
+};
+
+function adminDefaultDateRange() {
+  const { date } = bogotaParts();
+  const today = date;
+  const dt = new Date(today + "T00:00:00");
+  dt.setDate(dt.getDate() - 30);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return { from: `${yyyy}-${mm}-${dd}`, to: today };
+}
+
+function getAdminTeacherOptions() {
+  const entries = Object.entries(HUB.USERS || {})
+    .map(([email, profile]) => ({ email, label: profile?.label || email }))
+    .filter((item) => !ADMIN_EMAILS.includes(item.email) || true)
+    .sort((a, b) => a.label.localeCompare(b.label, "es"));
+  return entries;
+}
+
+function ensureAdminPanelModal() {
+  if (adminPanelModal) return adminPanelModal;
+
+  const modal = document.createElement("div");
+  modal.id = "adminPanelModal";
+  modal.hidden = true;
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Panel admin");
+
+  const teacherOptions = getAdminTeacherOptions()
+    .map((item) => `<option value="${escapeHtml(item.email)}">${escapeHtml(item.label)}</option>`)
+    .join("");
+
+  const range = adminDefaultDateRange();
+  ADMIN_STATE.filters.from = range.from;
+  ADMIN_STATE.filters.to = range.to;
+
+  modal.innerHTML = `
+    <div class="shiftTool adminTool" role="document">
+      <div class="shiftToolHead">
+        <div>
+          <p class="shiftEyebrow">Administración</p>
+          <h2>Panel admin · Marcaciones docentes</h2>
+        </div>
+        <button class="btnGhost shiftClose" id="adminPanelClose" type="button" aria-label="Cerrar">Cerrar</button>
+      </div>
+
+      <div class="adminTabs" role="tablist">
+        <button class="adminTab active" type="button" data-admin-tab="marcaciones" role="tab">Marcaciones</button>
+        <button class="adminTab" type="button" data-admin-tab="diario" role="tab">Jornadas por día</button>
+        <button class="adminTab" type="button" data-admin-tab="mensual" role="tab">Estadísticas</button>
+        <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
+      </div>
+
+      <div class="adminFilters" id="adminFilters">
+        <label>
+          <span>Docente</span>
+          <select id="adminFilterEmail">
+            <option value="">Todos</option>
+            ${teacherOptions}
+          </select>
+        </label>
+        <label>
+          <span>Desde</span>
+          <input type="date" id="adminFilterFrom" value="${escapeHtml(range.from)}" />
+        </label>
+        <label>
+          <span>Hasta</span>
+          <input type="date" id="adminFilterTo" value="${escapeHtml(range.to)}" />
+        </label>
+        <button class="btnGoogle adminApply" id="adminFilterApply" type="button">Aplicar</button>
+      </div>
+
+      <div class="adminBody" id="adminBody">
+        <p>Cargando…</p>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  adminPanelModal = modal;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeAdminPanel();
+  });
+
+  $("#adminPanelClose", modal)?.addEventListener("click", closeAdminPanel);
+
+  modal.querySelectorAll("[data-admin-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const id = tab.dataset.adminTab;
+      setAdminTab(id);
+    });
+  });
+
+  $("#adminFilterApply", modal)?.addEventListener("click", () => {
+    ADMIN_STATE.filters.email = $("#adminFilterEmail", modal).value || "";
+    ADMIN_STATE.filters.from = $("#adminFilterFrom", modal).value || "";
+    ADMIN_STATE.filters.to = $("#adminFilterTo", modal).value || "";
+    loadAdminData();
+  });
+
+  return modal;
+}
+
+function openAdminPanel() {
+  if (!isAdminUser()) {
+    toast("Sección reservada para administradores.");
+    return;
+  }
+  const modal = ensureAdminPanelModal();
+  modal.hidden = false;
+  document.body.style.overflow = "hidden";
+  setAdminTab(ADMIN_STATE.tab || "marcaciones");
+  loadAdminData();
+}
+
+function closeAdminPanel() {
+  if (!adminPanelModal) return;
+  adminPanelModal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+function setAdminTab(tabId) {
+  ADMIN_STATE.tab = tabId;
+  if (!adminPanelModal) return;
+
+  adminPanelModal.querySelectorAll("[data-admin-tab]").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.adminTab === tabId);
+  });
+
+  const filters = $("#adminFilters", adminPanelModal);
+  if (filters) filters.style.display = tabId === "vivo" ? "none" : "";
+
+  renderAdminBody();
+}
+
+async function loadAdminData() {
+  if (!APP_STATE.db || !isAdminUser()) return;
+  const body = $("#adminBody", adminPanelModal);
+  if (body) body.innerHTML = "<p>Cargando registros…</p>";
+  ADMIN_STATE.loading = true;
+
+  try {
+    if (ADMIN_STATE.tab === "vivo") {
+      ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
+    } else {
+      ADMIN_STATE.records = await fetchAdminRecords();
+    }
+  } catch (error) {
+    console.error("Admin load error", error);
+    if (body) body.innerHTML = `<p>No se pudieron cargar los datos. ${escapeHtml(error?.message || "")}</p>`;
+    ADMIN_STATE.loading = false;
+    return;
+  }
+
+  ADMIN_STATE.loading = false;
+  renderAdminBody();
+}
+
+async function fetchAdminRecords() {
+  const { email, from, to } = ADMIN_STATE.filters;
+  const constraints = [];
+  if (email) constraints.push(where("email", "==", email));
+  if (from) constraints.push(where("date", ">=", from));
+  if (to) constraints.push(where("date", "<=", to));
+  constraints.push(orderBy("date", "desc"));
+  constraints.push(limit(1000));
+
+  const q = query(collection(APP_STATE.db, "teacherClassStartRecords"), ...constraints);
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+}
+
+async function fetchAdminLiveSessions() {
+  const q = query(
+    collection(APP_STATE.db, "teacherOpenShiftSessions"),
+    where("open", "==", true),
+    limit(200)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+}
+
+function renderAdminBody() {
+  const body = $("#adminBody", adminPanelModal);
+  if (!body) return;
+  if (ADMIN_STATE.loading) {
+    body.innerHTML = "<p>Cargando…</p>";
+    return;
+  }
+
+  if (ADMIN_STATE.tab === "marcaciones") return renderAdminMarcaciones(body);
+  if (ADMIN_STATE.tab === "diario") return renderAdminDiario(body);
+  if (ADMIN_STATE.tab === "mensual") return renderAdminMensual(body);
+  if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
+}
+
+function renderAdminMarcaciones(body) {
+  const records = ADMIN_STATE.records.slice().sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return Number(b.createdAtClient || 0) - Number(a.createdAtClient || 0);
+  });
+
+  if (!records.length) {
+    body.innerHTML = "<p>No hay marcaciones en el rango seleccionado.</p>";
+    return;
+  }
+
+  const rows = records.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.date || "-")}</td>
+      <td>${escapeHtml(r.time || "-")}</td>
+      <td>${escapeHtml(r.name || r.email || "-")}</td>
+      <td>${escapeHtml(getTeacherShiftActionLabel(r.action))}</td>
+      <td>${escapeHtml(getTeacherShiftModeLabel(r.modalidad))}</td>
+      <td>${escapeHtml(getTeacherShiftSourceLabel(r.source))}</td>
+    </tr>
+  `).join("");
+
+  body.innerHTML = `
+    <p class="adminMeta">${records.length} marcaciones</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Fecha</th><th>Hora</th><th>Docente</th><th>Tipo</th><th>Modalidad</th><th>Fuente</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function pairDailyShifts(records) {
+  const byKey = new Map();
+  for (const r of records) {
+    const key = `${r.email}|${r.date}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(r);
+  }
+
+  const rows = [];
+  for (const [key, list] of byKey.entries()) {
+    list.sort((a, b) => Number(a.createdAtClient || 0) - Number(b.createdAtClient || 0));
+    const [email, date] = key.split("|");
+    const name = list[0]?.name || email;
+    const inicios = list.filter((r) => r.action === "inicio_clase");
+    const fines = list.filter((r) => r.action === "fin_jornada");
+    const firstIn = inicios[0];
+    const lastOut = fines[fines.length - 1];
+
+    let horas = "-";
+    if (firstIn?.stamp && lastOut?.stamp) {
+      const ms = new Date(lastOut.stamp).getTime() - new Date(firstIn.stamp).getTime();
+      if (Number.isFinite(ms) && ms > 0) {
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        horas = `${h}h ${String(m).padStart(2, "0")}m`;
+      }
+    }
+
+    const modalidades = Array.from(new Set(list.map((r) => getTeacherShiftModeLabel(r.modalidad)))).join(", ");
+    rows.push({
+      date, name, email,
+      entrada: firstIn?.time || "-",
+      salida: lastOut?.time || (firstIn ? "Sin cierre" : "-"),
+      horas,
+      modalidades,
+      total: list.length
+    });
+  }
+
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.name.localeCompare(b.name, "es");
+  });
+  return rows;
+}
+
+function renderAdminDiario(body) {
+  const rows = pairDailyShifts(ADMIN_STATE.records);
+  if (!rows.length) {
+    body.innerHTML = "<p>No hay jornadas en el rango seleccionado.</p>";
+    return;
+  }
+
+  const html = rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.date)}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.entrada)}</td>
+      <td>${escapeHtml(r.salida)}</td>
+      <td>${escapeHtml(r.horas)}</td>
+      <td>${escapeHtml(r.modalidades)}</td>
+      <td>${escapeHtml(String(r.total))}</td>
+    </tr>
+  `).join("");
+
+  body.innerHTML = `
+    <p class="adminMeta">${rows.length} días-docente</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Fecha</th><th>Docente</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Modalidades</th><th>Marcas</th>
+        </tr></thead>
+        <tbody>${html}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAdminMensual(body) {
+  const records = ADMIN_STATE.records;
+  if (!records.length) {
+    body.innerHTML = "<p>No hay datos en el rango seleccionado.</p>";
+    return;
+  }
+
+  const byTeacher = new Map();
+  for (const r of records) {
+    const email = r.email || "-";
+    if (!byTeacher.has(email)) {
+      byTeacher.set(email, {
+        name: r.name || email,
+        email,
+        ingresos: 0,
+        cierres: 0,
+        sede: 0,
+        hogar: 0,
+        virtual: 0,
+        otras: 0,
+        dias: new Set(),
+        horasMs: 0
+      });
+    }
+    const t = byTeacher.get(email);
+    if (r.action === "inicio_clase") t.ingresos += 1;
+    if (r.action === "fin_jornada") t.cierres += 1;
+    const mod = String(r.modalidad || "").toLowerCase();
+    if (mod === "sede") t.sede += 1;
+    else if (mod === "hogar") t.hogar += 1;
+    else if (mod === "virtual") t.virtual += 1;
+    else t.otras += 1;
+    if (r.date) t.dias.add(r.date);
+  }
+
+  for (const row of pairDailyShifts(records)) {
+    const t = byTeacher.get(row.email);
+    if (!t) continue;
+    const match = String(row.horas).match(/(\d+)h (\d+)m/);
+    if (match) {
+      t.horasMs += (Number(match[1]) * 60 + Number(match[2])) * 60000;
+    }
+  }
+
+  const list = Array.from(byTeacher.values()).sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  const rows = list.map((t) => {
+    const totalH = Math.floor(t.horasMs / 3600000);
+    const totalM = Math.floor((t.horasMs % 3600000) / 60000);
+    const horasTotal = `${totalH}h ${String(totalM).padStart(2, "0")}m`;
+    return `
+      <tr>
+        <td>${escapeHtml(t.name)}</td>
+        <td>${t.dias.size}</td>
+        <td>${t.ingresos}</td>
+        <td>${t.cierres}</td>
+        <td>${t.sede}</td>
+        <td>${t.hogar}</td>
+        <td>${t.virtual}</td>
+        <td>${escapeHtml(horasTotal)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <p class="adminMeta">${list.length} docentes en el rango ${escapeHtml(ADMIN_STATE.filters.from)} → ${escapeHtml(ADMIN_STATE.filters.to)}</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Docente</th><th>Días</th><th>Ingresos</th><th>Cierres</th><th>Sede</th><th>Hogar</th><th>Virtual</th><th>Horas (aprox.)</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. Si una jornada quedó sin cerrar no se contabiliza.</p>
+  `;
+}
+
+function renderAdminVivo(body) {
+  const sessions = ADMIN_STATE.liveSessions.slice().sort((a, b) => {
+    const ta = Number(a.openedAtClient || 0);
+    const tb = Number(b.openedAtClient || 0);
+    return tb - ta;
+  });
+
+  if (!sessions.length) {
+    body.innerHTML = `
+      <p>No hay docentes con jornada abierta en este momento.</p>
+      <button class="btnGhost" type="button" id="adminReloadLive">Recargar</button>
+    `;
+    $("#adminReloadLive", body)?.addEventListener("click", loadAdminData);
+    return;
+  }
+
+  const rows = sessions.map((s) => {
+    const rec = s.openRecord || s.lastRecord || {};
+    const opened = rec.time && rec.date ? `${rec.date} ${rec.time}` : (s.openedAtClient ? new Date(s.openedAtClient).toLocaleString("es-CO", { timeZone: "America/Bogota" }) : "-");
+    return `
+      <tr>
+        <td>${escapeHtml(s.name || rec.name || s.email || "-")}</td>
+        <td>${escapeHtml(s.email || "-")}</td>
+        <td>${escapeHtml(opened)}</td>
+        <td>${escapeHtml(getTeacherShiftModeLabel(rec.modalidad))}</td>
+        <td>${escapeHtml(getTeacherShiftSourceLabel(rec.source))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <p class="adminMeta">${sessions.length} jornadas abiertas</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Docente</th><th>Correo</th><th>Inicio</th><th>Modalidad</th><th>Fuente</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <button class="btnGhost" type="button" id="adminReloadLive">Recargar</button>
+  `;
+  $("#adminReloadLive", body)?.addEventListener("click", loadAdminData);
+}
+
+/* ============================================================================
    12) RENDER BOTONES
 ============================================================================ */
 function groupBySection(buttons = []) {
@@ -1576,8 +2033,15 @@ function groupBySection(buttons = []) {
   return map;
 }
 
+function isAdminUser(user = APP_STATE.activeUser) {
+  return ADMIN_EMAILS.includes(emailKey(user));
+}
+
 function getResolvedButtonState(button, links = {}) {
-  const isSpecial = button?.id === "carnet" || button?.id === "jornada";
+  const isSpecial = button?.id === "carnet" || button?.id === "jornada" || button?.id === "adminPanel";
+  if (button?.adminOnly && !isAdminUser()) {
+    return { isSpecial: false, url: "", available: false, visible: false };
+  }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
   const visible = isSpecial || available || !!button?.showWhenMissing;
@@ -1795,6 +2259,11 @@ async function handleButtonAction(id, trigger = null) {
 
   if (id === "jornada") {
     openTeacherShiftModal();
+    return;
+  }
+
+  if (id === "adminPanel") {
+    openAdminPanel();
     return;
   }
 
