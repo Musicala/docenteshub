@@ -8,7 +8,7 @@
    - Limpieza de cachés viejos + mensajes para UI
 */
 
-const BUILD = "2026-05-26.1"; // Puedes dejarlo fijo. Ya no dependes de esto para que app.js se actualice.
+const BUILD = "2026-05-28.1"; // Puedes dejarlo fijo. Ya no dependes de esto para que app.js se actualice.
 const VERSION = `v5-${BUILD}`;
 
 const CACHE_STATIC  = `musicala-static`;   // sin versión para no acumular basura

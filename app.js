@@ -8,9 +8,10 @@
    - Horario anual 2026 personalizado por docente
    - Bitácoras de clase pendientes con link individual por docente
    - Bitácora de tareas académicas con link individual por docente
+   - Bitácora de clases (nueva versión)
 */
 
-const BUILD = "2026-05-27.1";
+const BUILD = "2026-05-28.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -51,6 +52,7 @@ const HUB = {
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
+    bitacoraClasesNueva: "https://musicalaescuela.github.io/bitacoradeclase/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
@@ -157,6 +159,13 @@ const HUB = {
       icon: "📒",
       title: "Bitácora de clases",
       subtitle: "Seguimiento",
+      section: "Gestión docente"
+    },
+    {
+      id: "bitacoraClasesNueva",
+      icon: "✨",
+      title: "Bitácora de clases (nueva versión)",
+      subtitle: "Seguimiento actualizado",
       section: "Gestión docente"
     },
     {
@@ -940,7 +949,7 @@ const MUSIPROFE_KNOWLEDGE = [
   },
   {
     match: ["bitacora", "bitácora", "clase", "evidencia", "tarea"],
-    answer: "La bitácora está en el botón Bitácora de clase. Después de terminar tus clases, deja allí la evidencia y el seguimiento del proceso del estudiante."
+    answer: "La bitácora está en el botón Bitácora de clase. También tienes disponible “Bitácora de clases (nueva versión)” para el nuevo enlace. Después de terminar tus clases, deja allí la evidencia y el seguimiento del proceso del estudiante."
   },
   {
     match: ["link", "enlace", "pendiente", "abre", "abrir"],
@@ -2082,6 +2091,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <div class="heroShiftActions">
           <button class="heroPrimary" type="button" data-id="jornada">Registrar ingreso / salida</button>
           <button class="heroSecondary" type="button" data-id="bitacoraClases">Bitácora de clase</button>
+          <button class="heroSecondary" type="button" data-id="bitacoraClasesNueva">Nueva versión</button>
         </div>
       </article>
     </section>

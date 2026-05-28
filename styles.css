@@ -891,7 +891,8 @@ input, textarea, select{
   text-shadow:none;
 }
 
-.heroShiftCard .heroSecondary[data-id="bitacoraClases"]{
+.heroShiftCard .heroSecondary[data-id="bitacoraClases"],
+.heroShiftCard .heroSecondary[data-id="bitacoraClasesNueva"]{
   background:
     linear-gradient(135deg, rgba(255,255,255,.82), rgba(239,244,255,.72));
 }
