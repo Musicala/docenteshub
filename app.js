@@ -53,6 +53,7 @@ const HUB = {
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
     bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
     bitacoraClasesNueva: "https://musicalaescuela.github.io/bitacoradeclase/",
+    musigym: "https://musicalaescuela.github.io/musigymtraininghub/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
     calendario: "",
@@ -183,6 +184,7 @@ const HUB = {
     { id: "guiones", icon: "🎬", title: "Plantilla guiones de video", subtitle: "Contenido", section: "Recursos" },
     { id: "explicacionArtes", icon: "🧩", title: "Explicación de las artes", subtitle: "Oferta", section: "Recursos" },
     { id: "edades", icon: "📏", title: "Rangos de edades", subtitle: "Guía rápida", section: "Recursos" },
+    { id: "musigym", icon: "🏋️", title: "MusiGym Training Hub", subtitle: "Entrenamiento", section: "Recursos" },
 
     { id: "nomina", icon: "💰", title: "Novedades nómina", subtitle: "General", section: "Institucional" },
     { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional", showWhenMissing: true },
