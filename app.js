@@ -90,7 +90,7 @@ const HUB = {
       links: {
         horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
         bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
-        bitacoraAcademica: ""
+        bitacoraAcademica: "https://musicala.github.io/bitacoratareasemilybejarano/"
       }
     },
 
