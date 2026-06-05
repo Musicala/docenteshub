@@ -2688,3 +2688,152 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
     grid-column:1 / -1;
   }
 }
+
+/* ============================================================================
+   PUNTUALIDAD Y HORARIOS (PANEL ADMIN)
+============================================================================ */
+.adminKpis{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:10px;
+  margin:0 0 14px;
+}
+.kpiCard{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding:12px 14px;
+  border-radius:var(--r);
+  background:var(--card2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow2);
+}
+.kpiNum{ font-size:22px; font-weight:800; line-height:1; color:var(--text); }
+.kpiLbl{ font-size:12px; color:var(--muted); font-weight:600; }
+.kpiOk{ border-color:rgba(16,138,90,.3); }
+.kpiOk .kpiNum{ color:#0c8a52; }
+.kpiLate{ border-color:rgba(214,122,0,.32); }
+.kpiLate .kpiNum{ color:#c9760a; }
+.kpiAbsent{ border-color:rgba(206,0,57,.3); }
+.kpiAbsent .kpiNum{ color:#ce0039; }
+.kpiEarly .kpiNum{ color:var(--a2); }
+.kpiAvg .kpiNum{ color:var(--a1); }
+
+.puntBadge{
+  display:inline-block;
+  padding:3px 9px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.punt-ok{ background:rgba(16,138,90,.12); color:#0c8a52; }
+.punt-late{ background:rgba(214,122,0,.14); color:#b86c08; }
+.punt-early{ background:rgba(104,13,191,.12); color:var(--a2); }
+.punt-absent{ background:rgba(206,0,57,.12); color:#ce0039; }
+.punt-excused{ background:rgba(12,65,196,.1); color:var(--a1); }
+.punt-none{ background:var(--pendingBg); color:var(--pendingText); }
+.puntNote{ cursor:help; }
+.puntAdjust{ padding:4px 12px; font-size:13px; }
+
+/* ---- Tarjetas de horarios ---- */
+.schedGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:12px;
+}
+.schedCard{
+  padding:14px;
+  border-radius:var(--r);
+  background:var(--card2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow2);
+}
+.schedCardHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.schedType{
+  display:inline-block;
+  margin-left:8px;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+}
+.schedType-fijo{ background:rgba(12,65,196,.1); color:var(--a1); }
+.schedType-flexible{ background:rgba(104,13,191,.1); color:var(--a2); }
+.schedSummary{ margin:8px 0 0; font-size:13px; color:var(--muted); }
+.schedEdit{ padding:4px 12px; font-size:13px; }
+
+/* ---- Sub-modal (editor de horario / override) ---- */
+.adminSubModal{
+  position:fixed;
+  inset:0;
+  z-index:120;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(11,16,32,.42);
+  backdrop-filter:blur(4px);
+}
+.adminSubCard{
+  width:min(440px,100%);
+  max-height:90vh;
+  overflow:auto;
+  background:var(--card2);
+  border-radius:var(--r2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow3);
+  padding:20px;
+}
+.adminSubCard h3{ margin:0 0 2px; font-size:18px; }
+.adminSubSub{ margin:0 0 12px; color:var(--muted); font-size:13px; }
+.adminSubCard label{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  margin:0 0 12px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text);
+}
+.adminSubCard input[type="time"],
+.adminSubCard input[type="text"],
+.adminSubCard input[type="number"],
+.adminSubCard select{
+  padding:9px 11px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:#fff;
+  font:inherit;
+}
+.adminCheck{
+  flex-direction:row !important;
+  align-items:center;
+  gap:8px !important;
+}
+.adminCheck input{ width:18px; height:18px; }
+.adminSubActions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:8px;
+}
+.adminSubActions > div{ display:flex; gap:8px; }
+.adminDanger{ color:#ce0039; }
+
+.schedWeekly{ margin:4px 0 12px; }
+.schedWeeklyHint{ margin:0 0 8px; font-size:12px; color:var(--muted); }
+.schedDayRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:6px;
+}
+.schedDayLbl{ width:78px; font-size:13px; font-weight:600; }
+.schedDayRow input[type="time"]{ flex:1; min-width:0; }

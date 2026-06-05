@@ -219,7 +219,10 @@ import {
   where,
   orderBy,
   limit,
+  getDoc,
   getDocs,
+  setDoc,
+  deleteDoc,
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
@@ -1586,12 +1589,23 @@ let adminPanelModal = null;
 const ADMIN_STATE = {
   records: [],
   liveSessions: [],
+  schedules: {},       // { email: scheduleDoc }
+  overrides: {},       // { "email__date": overrideDoc }
   loading: false,
-  tab: "marcaciones",
+  tab: "puntualidad",
   filters: {
     email: "",
     from: "",
     to: ""
+  }
+};
+
+const PUNCTUALITY = {
+  DEFAULT_GRACE: 5,
+  WEEKDAYS: ["dom", "lun", "mar", "mie", "jue", "vie", "sab"],
+  WEEKDAY_LABELS: {
+    lun: "Lunes", mar: "Martes", mie: "Miércoles", jue: "Jueves",
+    vie: "Viernes", sab: "Sábado", dom: "Domingo"
   }
 };
 
@@ -1643,9 +1657,11 @@ function ensureAdminPanelModal() {
       </div>
 
       <div class="adminTabs" role="tablist">
-        <button class="adminTab active" type="button" data-admin-tab="marcaciones" role="tab">Marcaciones</button>
+        <button class="adminTab active" type="button" data-admin-tab="puntualidad" role="tab">Puntualidad</button>
+        <button class="adminTab" type="button" data-admin-tab="marcaciones" role="tab">Marcaciones</button>
         <button class="adminTab" type="button" data-admin-tab="diario" role="tab">Jornadas por día</button>
         <button class="adminTab" type="button" data-admin-tab="mensual" role="tab">Estadísticas</button>
+        <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
 
@@ -1727,7 +1743,7 @@ function setAdminTab(tabId) {
   });
 
   const filters = $("#adminFilters", adminPanelModal);
-  if (filters) filters.style.display = tabId === "vivo" ? "none" : "";
+  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios") ? "none" : "";
 
   renderAdminBody();
 }
@@ -1741,8 +1757,20 @@ async function loadAdminData() {
   try {
     if (ADMIN_STATE.tab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
+    } else if (ADMIN_STATE.tab === "horarios") {
+      ADMIN_STATE.schedules = await fetchAdminSchedules();
     } else {
-      ADMIN_STATE.records = await fetchAdminRecords();
+      const [records] = await Promise.all([fetchAdminRecords()]);
+      ADMIN_STATE.records = records;
+      // Para puntualidad necesitamos horarios + overrides del rango.
+      if (ADMIN_STATE.tab === "puntualidad") {
+        const [schedules, overrides] = await Promise.all([
+          fetchAdminSchedules(),
+          fetchAdminOverrides()
+        ]);
+        ADMIN_STATE.schedules = schedules;
+        ADMIN_STATE.overrides = overrides;
+      }
     }
   } catch (error) {
     console.error("Admin load error", error);
@@ -1779,6 +1807,163 @@ async function fetchAdminLiveSessions() {
   return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
 }
 
+/* ============================================================================
+   11c) HORARIOS Y PUNTUALIDAD
+============================================================================ */
+async function fetchAdminSchedules() {
+  const snapshot = await getDocs(collection(APP_STATE.db, "teacherSchedules"));
+  const map = {};
+  snapshot.forEach((d) => { map[d.id] = { email: d.id, ...(d.data() || {}) }; });
+  return map;
+}
+
+async function fetchAdminOverrides() {
+  const { from, to } = ADMIN_STATE.filters;
+  const constraints = [];
+  if (from) constraints.push(where("date", ">=", from));
+  if (to) constraints.push(where("date", "<=", to));
+  const q = constraints.length
+    ? query(collection(APP_STATE.db, "teacherScheduleOverrides"), ...constraints)
+    : collection(APP_STATE.db, "teacherScheduleOverrides");
+  const snapshot = await getDocs(q);
+  const map = {};
+  snapshot.forEach((d) => { map[d.id] = { id: d.id, ...(d.data() || {}) }; });
+  return map;
+}
+
+function overrideId(email, date) {
+  return `${email}__${date}`;
+}
+
+async function saveTeacherSchedule(email, data) {
+  const ref = doc(APP_STATE.db, "teacherSchedules", email);
+  await setDoc(ref, {
+    ...data,
+    email,
+    updatedBy: emailKey(APP_STATE.activeUser),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function saveScheduleOverride(email, date, data) {
+  const ref = doc(APP_STATE.db, "teacherScheduleOverrides", overrideId(email, date));
+  await setDoc(ref, {
+    email,
+    date,
+    ...data,
+    updatedBy: emailKey(APP_STATE.activeUser),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function deleteScheduleOverride(email, date) {
+  const ref = doc(APP_STATE.db, "teacherScheduleOverrides", overrideId(email, date));
+  await deleteDoc(ref);
+}
+
+// "YYYY-MM-DD" -> clave de día de semana ("lun".."dom") en zona Bogotá.
+const WEEKDAY_MAP = { Sun: "dom", Mon: "lun", Tue: "mar", Wed: "mie", Thu: "jue", Fri: "vie", Sat: "sab" };
+function weekdayKeyFromDate(dateStr) {
+  // Anclamos a mediodía Bogotá (-05) para evitar saltos por zona horaria.
+  const dt = new Date(`${dateStr}T12:00:00-05:00`);
+  const short = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Bogota", weekday: "short"
+  }).format(dt);
+  return WEEKDAY_MAP[short] || "dom";
+}
+
+function timeToMinutes(hhmm) {
+  const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function minutesToLabel(mins) {
+  if (mins == null || !Number.isFinite(mins)) return "-";
+  const sign = mins < 0 ? "-" : "";
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return h ? `${sign}${h}h ${String(m).padStart(2, "0")}m` : `${sign}${m}m`;
+}
+
+// Devuelve el horario esperado para (email, date): primero override, luego semanal (fijo).
+function getExpectedSchedule(email, date) {
+  const ov = ADMIN_STATE.overrides[overrideId(email, date)];
+  if (ov) {
+    return {
+      start: ov.start || "",
+      end: ov.end || "",
+      excused: !!ov.excused,
+      note: ov.note || "",
+      source: "override"
+    };
+  }
+  const sched = ADMIN_STATE.schedules[email];
+  if (sched && sched.type === "fijo" && sched.weekly) {
+    const day = sched.weekly[weekdayKeyFromDate(date)];
+    if (day && day.start) {
+      return { start: day.start, end: day.end || "", excused: false, note: "", source: "weekly" };
+    }
+  }
+  return null; // sin horario esperado configurado
+}
+
+function getGraceMinutes(email) {
+  const sched = ADMIN_STATE.schedules[email];
+  const g = Number(sched?.graceMinutes);
+  return Number.isFinite(g) ? g : PUNCTUALITY.DEFAULT_GRACE;
+}
+
+// Evalúa puntualidad de un día-docente a partir de las marcas emparejadas.
+function evaluatePunctuality(email, date, firstInTime, lastOutTime) {
+  const expected = getExpectedSchedule(email, date);
+  const grace = getGraceMinutes(email);
+
+  if (!expected || !expected.start) {
+    return { status: "sin_horario", label: "Sin horario", lateMin: null, earlyMin: null, expected, grace };
+  }
+  if (expected.excused) {
+    return { status: "justificado", label: "Justificado", lateMin: null, earlyMin: null, expected, grace };
+  }
+  if (!firstInTime) {
+    return { status: "ausente", label: "Ausente", lateMin: null, earlyMin: null, expected, grace };
+  }
+
+  const expStart = timeToMinutes(expected.start);
+  const realStart = timeToMinutes(firstInTime);
+  let lateMin = null;
+  if (expStart != null && realStart != null) lateMin = realStart - expStart;
+
+  let earlyMin = null;
+  if (expected.end && lastOutTime) {
+    const expEnd = timeToMinutes(expected.end);
+    const realEnd = timeToMinutes(lastOutTime);
+    if (expEnd != null && realEnd != null) earlyMin = expEnd - realEnd; // positivo = salió antes
+  }
+
+  let status = "a_tiempo";
+  let label = "A tiempo";
+  if (lateMin != null && lateMin > grace) {
+    status = "tarde";
+    label = `Tarde ${minutesToLabel(lateMin)}`;
+  } else if (earlyMin != null && earlyMin > grace) {
+    status = "salida_temprana";
+    label = `Salió ${minutesToLabel(earlyMin)} antes`;
+  }
+
+  return { status, label, lateMin, earlyMin, expected, grace };
+}
+
+const PUNCTUALITY_BADGE = {
+  a_tiempo: "ok",
+  tarde: "late",
+  salida_temprana: "early",
+  ausente: "absent",
+  justificado: "excused",
+  sin_horario: "none"
+};
+
 function renderAdminBody() {
   const body = $("#adminBody", adminPanelModal);
   if (!body) return;
@@ -1787,9 +1972,11 @@ function renderAdminBody() {
     return;
   }
 
+  if (ADMIN_STATE.tab === "puntualidad") return renderAdminPuntualidad(body);
   if (ADMIN_STATE.tab === "marcaciones") return renderAdminMarcaciones(body);
   if (ADMIN_STATE.tab === "diario") return renderAdminDiario(body);
   if (ADMIN_STATE.tab === "mensual") return renderAdminMensual(body);
+  if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
 }
 
@@ -2027,6 +2214,336 @@ function renderAdminVivo(body) {
     <button class="btnGhost" type="button" id="adminReloadLive">Recargar</button>
   `;
   $("#adminReloadLive", body)?.addEventListener("click", loadAdminData);
+}
+
+/* ---- Enumerar fechas del rango (YYYY-MM-DD) ---- */
+function enumerateDates(from, to) {
+  const out = [];
+  if (!from || !to) return out;
+  let cur = new Date(`${from}T12:00:00-05:00`);
+  const end = new Date(`${to}T12:00:00-05:00`);
+  let guard = 0;
+  while (cur <= end && guard < 400) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, "0");
+    const d = String(cur.getDate()).padStart(2, "0");
+    out.push(`${y}-${m}-${d}`);
+    cur.setDate(cur.getDate() + 1);
+    guard += 1;
+  }
+  return out;
+}
+
+/* ---- Construye filas de evaluación de puntualidad ---- */
+function buildPunctualityRows() {
+  const { email: filterEmail, from, to } = ADMIN_STATE.filters;
+
+  // Mapa de marcas por día/docente.
+  const recRows = pairDailyShifts(ADMIN_STATE.records);
+  const recMap = new Map();
+  for (const r of recRows) recMap.set(`${r.email}|${r.date}`, r);
+
+  // Universo de docentes a evaluar.
+  let teachers = getAdminTeacherOptions().filter((t) => !ADMIN_EMAILS.includes(t.email));
+  if (filterEmail) teachers = teachers.filter((t) => t.email === filterEmail);
+
+  const dates = enumerateDates(from, to);
+  const rows = [];
+  const validTime = (t) => /^\d{1,2}:\d{2}$/.test(String(t || ""));
+
+  for (const t of teachers) {
+    for (const date of dates) {
+      const rec = recMap.get(`${t.email}|${date}`);
+      const expected = getExpectedSchedule(t.email, date);
+      if (!expected && !rec) continue; // nada que mostrar
+
+      const firstIn = rec && validTime(rec.entrada) ? rec.entrada : "";
+      const lastOut = rec && validTime(rec.salida) ? rec.salida : "";
+      const evalResult = evaluatePunctuality(t.email, date, firstIn, lastOut);
+
+      rows.push({
+        email: t.email,
+        name: t.label,
+        date,
+        firstIn: firstIn || "-",
+        lastOut: lastOut || (rec ? "Sin cierre" : "-"),
+        expectedStart: expected?.start || "-",
+        expectedEnd: expected?.end || "-",
+        note: expected?.note || "",
+        source: expected?.source || "",
+        ...evalResult
+      });
+    }
+  }
+
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.name.localeCompare(b.name, "es");
+  });
+  return rows;
+}
+
+function renderAdminPuntualidad(body) {
+  const rows = buildPunctualityRows();
+
+  if (!rows.length) {
+    body.innerHTML = `
+      <p>No hay datos de puntualidad en el rango. Configura horarios en la pestaña <strong>Horarios</strong> o verifica que existan marcaciones.</p>
+    `;
+    return;
+  }
+
+  // KPIs
+  const counts = { a_tiempo: 0, tarde: 0, salida_temprana: 0, ausente: 0, justificado: 0, sin_horario: 0 };
+  let lateSum = 0, lateN = 0;
+  for (const r of rows) {
+    counts[r.status] = (counts[r.status] || 0) + 1;
+    if (r.status === "tarde" && Number.isFinite(r.lateMin)) { lateSum += r.lateMin; lateN += 1; }
+  }
+  const evaluables = counts.a_tiempo + counts.tarde + counts.salida_temprana + counts.ausente;
+  const pctPuntual = evaluables ? Math.round((counts.a_tiempo / evaluables) * 100) : 0;
+  const avgLate = lateN ? Math.round(lateSum / lateN) : 0;
+
+  const kpis = `
+    <div class="adminKpis">
+      <div class="kpiCard kpiOk"><span class="kpiNum">${pctPuntual}%</span><span class="kpiLbl">Puntualidad</span></div>
+      <div class="kpiCard kpiLate"><span class="kpiNum">${counts.tarde}</span><span class="kpiLbl">Tardanzas</span></div>
+      <div class="kpiCard kpiAbsent"><span class="kpiNum">${counts.ausente}</span><span class="kpiLbl">Ausencias</span></div>
+      <div class="kpiCard kpiEarly"><span class="kpiNum">${counts.salida_temprana}</span><span class="kpiLbl">Salidas antes</span></div>
+      <div class="kpiCard kpiAvg"><span class="kpiNum">${avgLate ? minutesToLabel(avgLate) : "0m"}</span><span class="kpiLbl">Tarde promedio</span></div>
+    </div>
+  `;
+
+  const html = rows.map((r) => {
+    const badge = PUNCTUALITY_BADGE[r.status] || "none";
+    const noteHtml = r.note ? `<span class="puntNote" title="${escapeHtml(r.note)}">📝</span>` : "";
+    return `
+      <tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.expectedStart)}${r.expectedEnd !== "-" ? " → " + escapeHtml(r.expectedEnd) : ""}</td>
+        <td>${escapeHtml(r.firstIn)}</td>
+        <td><span class="puntBadge punt-${badge}">${escapeHtml(r.label)}</span> ${noteHtml}</td>
+        <td><button class="btnGhost puntAdjust" type="button" data-email="${escapeHtml(r.email)}" data-date="${escapeHtml(r.date)}">Ajustar</button></td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    ${kpis}
+    <p class="adminMeta">${rows.length} días evaluados · ${escapeHtml(ADMIN_STATE.filters.from)} → ${escapeHtml(ADMIN_STATE.filters.to)}</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Fecha</th><th>Docente</th><th>Esperado</th><th>Entrada real</th><th>Estado</th><th></th>
+        </tr></thead>
+        <tbody>${html}</tbody>
+      </table>
+    </div>
+    <p class="adminNote">El estado compara la primera marca de ingreso contra la hora esperada (override del día si existe, si no el horario semanal del docente fijo). Gracia configurable por docente.</p>
+  `;
+
+  body.querySelectorAll(".puntAdjust").forEach((btn) => {
+    btn.addEventListener("click", () => openOverrideEditor(btn.dataset.email, btn.dataset.date));
+  });
+}
+
+/* ---- Editor de ajuste de un día (override) ---- */
+function openOverrideEditor(email, date) {
+  const teacher = getAdminTeacherOptions().find((t) => t.email === email);
+  const name = teacher?.label || email;
+  const expected = getExpectedSchedule(email, date);
+  const ov = ADMIN_STATE.overrides[overrideId(email, date)];
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Ajustar día · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">${escapeHtml(date)}</p>
+      <label>Hora esperada de entrada
+        <input type="time" id="ovStart" value="${escapeHtml(expected?.start || "")}" />
+      </label>
+      <label>Hora esperada de salida (opcional)
+        <input type="time" id="ovEnd" value="${escapeHtml(expected?.end || "")}" />
+      </label>
+      <label class="adminCheck">
+        <input type="checkbox" id="ovExcused" ${expected?.excused ? "checked" : ""} />
+        <span>Justificado (no cuenta como tardanza/ausencia)</span>
+      </label>
+      <label>Nota
+        <input type="text" id="ovNote" maxlength="140" value="${escapeHtml(expected?.note || "")}" placeholder="Ej: cambio de horario por evento" />
+      </label>
+      <div class="adminSubActions">
+        ${ov ? `<button class="btnGhost adminDanger" id="ovDelete" type="button">Quitar ajuste</button>` : "<span></span>"}
+        <div>
+          <button class="btnGhost" id="ovCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="ovSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
+  $("#ovCancel", dialog)?.addEventListener("click", close);
+
+  $("#ovSave", dialog)?.addEventListener("click", async () => {
+    const data = {
+      start: $("#ovStart", dialog).value || "",
+      end: $("#ovEnd", dialog).value || "",
+      excused: $("#ovExcused", dialog).checked,
+      note: $("#ovNote", dialog).value.trim()
+    };
+    try {
+      await saveScheduleOverride(email, date, data);
+      ADMIN_STATE.overrides[overrideId(email, date)] = { id: overrideId(email, date), email, date, ...data };
+      toast("Ajuste guardado ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo guardar el ajuste. Revisa permisos/reglas.");
+    }
+  });
+
+  $("#ovDelete", dialog)?.addEventListener("click", async () => {
+    try {
+      await deleteScheduleOverride(email, date);
+      delete ADMIN_STATE.overrides[overrideId(email, date)];
+      toast("Ajuste eliminado.");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo eliminar el ajuste.");
+    }
+  });
+}
+
+/* ---- Pestaña Horarios: configurar tipo + gracia + semana ---- */
+function renderAdminHorarios(body) {
+  const teachers = getAdminTeacherOptions().filter((t) => !ADMIN_EMAILS.includes(t.email));
+  if (!teachers.length) {
+    body.innerHTML = "<p>No hay docentes configurados.</p>";
+    return;
+  }
+
+  const cards = teachers.map((t) => {
+    const sched = ADMIN_STATE.schedules[t.email] || {};
+    const type = sched.type || "flexible";
+    const grace = Number.isFinite(Number(sched.graceMinutes)) ? Number(sched.graceMinutes) : PUNCTUALITY.DEFAULT_GRACE;
+    const summary = type === "fijo"
+      ? "Jornada fija (horario semanal)"
+      : "Flexible (se ajusta por día)";
+    return `
+      <div class="schedCard">
+        <div class="schedCardHead">
+          <div>
+            <strong>${escapeHtml(t.label)}</strong>
+            <span class="schedType schedType-${type}">${type === "fijo" ? "Fijo" : "Flexible"}</span>
+          </div>
+          <button class="btnGhost schedEdit" type="button" data-email="${escapeHtml(t.email)}">Configurar</button>
+        </div>
+        <p class="schedSummary">${summary} · gracia ${grace} min</p>
+      </div>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <p class="adminMeta">Configura el horario esperado de cada docente. Los <strong>flexibles</strong> se ajustan día por día desde Puntualidad; los <strong>fijos</strong> usan el horario semanal de abajo.</p>
+    <div class="schedGrid">${cards}</div>
+  `;
+
+  body.querySelectorAll(".schedEdit").forEach((btn) => {
+    btn.addEventListener("click", () => openScheduleEditor(btn.dataset.email));
+  });
+}
+
+function openScheduleEditor(email) {
+  const teacher = getAdminTeacherOptions().find((t) => t.email === email);
+  const name = teacher?.label || email;
+  const sched = ADMIN_STATE.schedules[email] || {};
+  const type = sched.type || "flexible";
+  const grace = Number.isFinite(Number(sched.graceMinutes)) ? Number(sched.graceMinutes) : PUNCTUALITY.DEFAULT_GRACE;
+  const weekly = sched.weekly || {};
+
+  const weekdayRows = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"].map((wd) => {
+    const day = weekly[wd] || {};
+    return `
+      <div class="schedDayRow">
+        <span class="schedDayLbl">${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd])}</span>
+        <input type="time" data-wd="${wd}" data-field="start" value="${escapeHtml(day.start || "")}" />
+        <span>→</span>
+        <input type="time" data-wd="${wd}" data-field="end" value="${escapeHtml(day.end || "")}" />
+      </div>
+    `;
+  }).join("");
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Horario · ${escapeHtml(name)}</h3>
+      <label>Tipo de docente
+        <select id="schedType">
+          <option value="flexible" ${type === "flexible" ? "selected" : ""}>Flexible (ajuste por día)</option>
+          <option value="fijo" ${type === "fijo" ? "selected" : ""}>Fijo (horario semanal)</option>
+        </select>
+      </label>
+      <label>Minutos de gracia
+        <input type="number" id="schedGrace" min="0" max="60" value="${grace}" />
+      </label>
+      <div id="schedWeekly" class="schedWeekly" ${type === "fijo" ? "" : "hidden"}>
+        <p class="schedWeeklyHint">Horario semanal (deja vacío un día si no trabaja).</p>
+        ${weekdayRows}
+      </div>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="schedCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="schedSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
+  $("#schedCancel", dialog)?.addEventListener("click", close);
+
+  $("#schedType", dialog)?.addEventListener("change", (e) => {
+    const wk = $("#schedWeekly", dialog);
+    if (wk) wk.hidden = e.target.value !== "fijo";
+  });
+
+  $("#schedSave", dialog)?.addEventListener("click", async () => {
+    const newType = $("#schedType", dialog).value;
+    const newGrace = Number($("#schedGrace", dialog).value) || 0;
+    const newWeekly = {};
+    dialog.querySelectorAll("[data-wd]").forEach((input) => {
+      const wd = input.dataset.wd;
+      const field = input.dataset.field;
+      if (!newWeekly[wd]) newWeekly[wd] = {};
+      newWeekly[wd][field] = input.value || "";
+    });
+    // Limpia días sin start.
+    Object.keys(newWeekly).forEach((wd) => {
+      if (!newWeekly[wd].start) delete newWeekly[wd];
+    });
+
+    const data = { type: newType, graceMinutes: newGrace, weekly: newWeekly };
+    try {
+      await saveTeacherSchedule(email, data);
+      ADMIN_STATE.schedules[email] = { email, ...data };
+      toast("Horario guardado ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo guardar el horario. Revisa permisos/reglas.");
+    }
+  });
 }
 
 /* ============================================================================

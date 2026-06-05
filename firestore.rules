@@ -62,6 +62,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Horarios esperados por docente (config base). Solo admins.
+    match /teacherSchedules/{email} {
+      allow read, write: if isAdminReader();
+    }
+
+    // Ajustes de horario por día puntual (overrides). Solo admins.
+    match /teacherScheduleOverrides/{overrideId} {
+      allow read, write: if isAdminReader();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
