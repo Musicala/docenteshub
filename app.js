@@ -110,7 +110,7 @@ const HUB = {
       links: {
         horarioAnual: "https://musicala.github.io/horario2026laurasanchez/",
         bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareas1/",
-        bitacoraAcademica: ""
+        bitacoraAcademica: "https://musicala.github.io/bitacoradetareaslaurasanchez/"
       }
     },
 
@@ -497,24 +497,19 @@ function wireUpdateBanner() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
-  const promptUpdate = (registration) => {
+  // Aplica la actualización automáticamente. Si hay un SW "waiting",
+  // le pedimos que tome el control de inmediato (sin que la docente toque nada).
+  // Se deja el banner/toast solo como respaldo por si el auto-update no aplica.
+  const applyUpdate = (registration) => {
     if (!registration?.waiting) return;
-
-    const wrap = $("#pwa-update");
-    if (wrap) wrap.hidden = false;
-
-    toast("Hay una actualización lista ✨", {
-      actionText: "Actualizar",
-      sticky: true,
-      onAction: () => {
-        try {
-          registration.waiting.postMessage({ type: "SKIP_WAITING" });
-        } catch (error) {
-          console.warn("No se pudo activar update", error);
-          toast("No se pudo actualizar, recarga la página 🙃");
-        }
-      }
-    });
+    try {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    } catch (error) {
+      console.warn("No se pudo activar update automáticamente", error);
+      // Respaldo: mostramos el banner para que pueda forzar la actualización.
+      const wrap = $("#pwa-update");
+      if (wrap) wrap.hidden = false;
+    }
   };
 
   try {
@@ -522,7 +517,7 @@ async function registerServiceWorker() {
       scope: "./"
     });
 
-    promptUpdate(registration);
+    applyUpdate(registration);
 
     registration.addEventListener("updatefound", () => {
       const sw = registration.installing;
@@ -530,7 +525,7 @@ async function registerServiceWorker() {
 
       sw.addEventListener("statechange", () => {
         if (sw.state === "installed" && navigator.serviceWorker.controller) {
-          promptUpdate(registration);
+          applyUpdate(registration);
         }
       });
     });
@@ -541,7 +536,14 @@ async function registerServiceWorker() {
       window.location.reload();
     });
 
-    registration.update?.().catch(() => null);
+    // Chequeos de actualización: al cargar, al volver a la app y cada 60s.
+    const checkForUpdate = () => registration.update?.().catch(() => null);
+    checkForUpdate();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkForUpdate();
+    });
+    window.addEventListener("focus", checkForUpdate);
+    setInterval(checkForUpdate, 60 * 1000);
   } catch (error) {
     console.warn("SW no se pudo registrar", error);
   }
