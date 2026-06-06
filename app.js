@@ -121,8 +121,8 @@ const HUB = {
       links: {}
     },
 
-    "bagutierrezm@gmail.com": {
-      label: "Brian Alexander Gutiérrez",
+    "tiritiri.riri@gmail.com": {
+      label: "Isabel Gómez Gómez",
       carnet: "",
       links: {}
     },
