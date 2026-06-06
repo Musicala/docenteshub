@@ -1,0 +1,14 @@
+# Configuración local de Claude Code (no compartir)
+.claude/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+
+# Temporales
+*.log
+*~

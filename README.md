@@ -1,2 +1,0 @@
-# docenteshub
-Musicala Docentes HUB
