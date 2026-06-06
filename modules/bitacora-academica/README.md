@@ -25,10 +25,17 @@ modules/bitacora-academica/index.html?email=<correo>&name=<nombre>&role=<docente
 - `teachers.js` — **mapa de docentes → fuente de datos** (Apps Script). Aquí se
   agregan nuevas docentes sin duplicar la app.
 
-## Agregar una docente nueva
-1. En el HUB (`app.js` → `HUB.USERS`): añadir `academica: true` a su usuario.
-2. En `teachers.js`: añadir su correo con `name` y, si tiene hoja propia, su
-   `api.baseUrl` + `dataset`. Si no tiene hoja, funciona en **modo local**.
+## Acceso
+El módulo está disponible para **cualquier usuario con acceso al HUB** (no hay
+que habilitar a nadie). Quien ya puede entrar al HUB, ve el botón.
+
+## Agregar hoja de tareas a una docente (opcional)
+Solo si una docente tiene una hoja de Google (Apps Script) propia que quieras
+mostrar como tareas de solo lectura:
+- En `teachers.js`: añadir su correo con `name` + `api.baseUrl` + `dataset`.
+
+Si no se agrega nada, la docente igual usa el módulo en **modo local**
+(objetivos, bolsa de horas, estimaciones e historial en su navegador).
 
 ## Persistencia actual
 - **Tareas de hoja**: solo lectura vía Google Apps Script (`config.api`).

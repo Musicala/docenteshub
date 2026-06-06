@@ -87,10 +87,6 @@ const HUB = {
     "emilybg0102@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
-      // academica: habilita el módulo interno "Bitácora Académica" del HUB.
-      // El endpoint/datos de cada docente vive en
-      // modules/bitacora-academica/teachers.js (no se duplica la app).
-      academica: true,
       links: {
         horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
         bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
@@ -2579,12 +2575,6 @@ function isAdminUser(user = APP_STATE.activeUser) {
   return ADMIN_EMAILS.includes(emailKey(user));
 }
 
-// ¿La docente activa tiene habilitado el módulo de Bitácora Académica?
-function isAcademicEnabled(user = APP_STATE.activeUser) {
-  const email = emailKey(user);
-  return !!HUB.USERS?.[email]?.academica;
-}
-
 function getResolvedButtonState(button, links = {}) {
   const isSpecial =
     button?.id === "carnet" ||
@@ -2594,10 +2584,9 @@ function getResolvedButtonState(button, links = {}) {
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
-  // El módulo académico solo se muestra a docentes habilitadas (o admin).
+  // El módulo académico está disponible para cualquier usuario con acceso al HUB.
   if (button?.id === "academicModule") {
-    const allow = isAcademicEnabled() || isAdminUser();
-    return { isSpecial: true, url: "__SPECIAL__", available: allow, visible: allow };
+    return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
@@ -2866,11 +2855,7 @@ function buildAcademicModuleUrl() {
 }
 
 function openAcademicModule() {
-  if (!isAcademicEnabled() && !isAdminUser()) {
-    toast("El módulo de Bitácora Académica no está habilitado para tu cuenta.");
-    return;
-  }
-
+  // Disponible para cualquier usuario autenticado en el HUB.
   // Escucha el "Volver al HUB" del iframe una sola vez.
   if (!academicMsgWired) {
     window.addEventListener("message", (event) => {
