@@ -1599,6 +1599,7 @@ const ADMIN_STATE = {
   liveSessions: [],
   schedules: {},       // { email: scheduleDoc }
   overrides: {},       // { "email__date": overrideDoc }
+  academic: { objectives: [], budgets: [], hourLogs: [] },
   loading: false,
   tab: "puntualidad",
   filters: {
@@ -1669,6 +1670,7 @@ function ensureAdminPanelModal() {
         <button class="adminTab" type="button" data-admin-tab="marcaciones" role="tab">Marcaciones</button>
         <button class="adminTab" type="button" data-admin-tab="diario" role="tab">Jornadas por día</button>
         <button class="adminTab" type="button" data-admin-tab="mensual" role="tab">Estadísticas</button>
+        <button class="adminTab" type="button" data-admin-tab="academica" role="tab">Académica</button>
         <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
@@ -1767,6 +1769,8 @@ async function loadAdminData() {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
     } else if (ADMIN_STATE.tab === "horarios") {
       ADMIN_STATE.schedules = await fetchAdminSchedules();
+    } else if (ADMIN_STATE.tab === "academica") {
+      ADMIN_STATE.academic = await fetchAdminAcademic();
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
@@ -1841,6 +1845,36 @@ async function fetchAdminOverrides() {
 
 function overrideId(email, date) {
   return `${email}__${date}`;
+}
+
+/* ---- Estadísticas del módulo Bitácora Académica ---- */
+async function fetchAdminAcademic() {
+  const read = async (name) => {
+    const snap = await getDocs(collection(APP_STATE.db, name));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+  };
+  const [objectives, budgets, hourLogs] = await Promise.all([
+    read("academicObjectives"),
+    read("academicTaskBudgets"),
+    read("academicTaskHourLogs")
+  ]);
+  return { objectives, budgets, hourLogs };
+}
+
+function academicNum(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function academicHours(n) {
+  return `${(Math.round((Number(n) || 0) * 100) / 100).toLocaleString("es-CO", { maximumFractionDigits: 2 })} h`;
+}
+
+function academicStateLabel(value) {
+  const s = String(value || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  if (s.startsWith("cumpl") || s.includes("termin") || s.includes("finaliz") || s.includes("aprob")) return "Cumplido";
+  if (s.includes("curso") || s.includes("progreso") || s.includes("desarrollo")) return "En curso";
+  return "Pendiente";
 }
 
 async function saveTeacherSchedule(email, data) {
@@ -1984,6 +2018,7 @@ function renderAdminBody() {
   if (ADMIN_STATE.tab === "marcaciones") return renderAdminMarcaciones(body);
   if (ADMIN_STATE.tab === "diario") return renderAdminDiario(body);
   if (ADMIN_STATE.tab === "mensual") return renderAdminMensual(body);
+  if (ADMIN_STATE.tab === "academica") return renderAdminAcademica(body);
   if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
 }
@@ -2427,6 +2462,111 @@ function openOverrideEditor(email, date) {
       toast("No se pudo eliminar el ajuste.");
     }
   });
+}
+
+/* ---- Pestaña Académica: estadísticas de tareas / bolsa de horas ---- */
+function renderAdminAcademica(body) {
+  const data = ADMIN_STATE.academic || { objectives: [], budgets: [], hourLogs: [] };
+  const filterEmail = ADMIN_STATE.filters.email;
+
+  const byEmail = (arr) => filterEmail ? arr.filter((x) => x.teacherEmail === filterEmail) : arr;
+  const objectives = byEmail(data.objectives);
+  const budgets = byEmail(data.budgets);
+  const hourLogs = byEmail(data.hourLogs);
+
+  if (!objectives.length && !budgets.length && !hourLogs.length) {
+    body.innerHTML = `<p>No hay datos de la Bitácora Académica todavía${filterEmail ? " para esa docente" : ""}. Aparecerán aquí cuando las docentes registren tareas y horas.</p>`;
+    return;
+  }
+
+  // Agrupar por docente.
+  const map = new Map();
+  const ensure = (email, name) => {
+    if (!map.has(email)) {
+      map.set(email, {
+        email,
+        name: name || email,
+        bolsa: 0, usado: 0, planeado: 0,
+        tareas: 0, completadas: 0, enCurso: 0, pendientes: 0
+      });
+    }
+    const row = map.get(email);
+    if (name && (!row.name || row.name === email)) row.name = name;
+    return row;
+  };
+
+  for (const b of budgets) {
+    const r = ensure(b.teacherEmail, b.teacherName);
+    r.bolsa += academicNum(b.hours);
+  }
+  for (const log of hourLogs) {
+    const r = ensure(log.teacherEmail, log.teacherName);
+    r.usado += academicNum(log.recognizedHours || log.durationHours);
+  }
+  for (const o of objectives) {
+    const r = ensure(o.teacherEmail, o.teacherName);
+    r.planeado += academicNum(o.estimatedHours);
+    r.tareas += 1;
+    const st = academicStateLabel(o.state);
+    if (st === "Cumplido") r.completadas += 1;
+    else if (st === "En curso") r.enCurso += 1;
+    else r.pendientes += 1;
+  }
+
+  const rows = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  // KPIs globales.
+  const totals = rows.reduce((acc, r) => {
+    acc.bolsa += r.bolsa; acc.usado += r.usado; acc.planeado += r.planeado;
+    acc.tareas += r.tareas; acc.completadas += r.completadas; acc.pendientes += r.pendientes + r.enCurso;
+    return acc;
+  }, { bolsa: 0, usado: 0, planeado: 0, tareas: 0, completadas: 0, pendientes: 0 });
+  const pctEjec = totals.tareas ? Math.round((totals.completadas / totals.tareas) * 100) : 0;
+
+  const kpis = `
+    <div class="adminKpis">
+      <div class="kpiCard kpiAvg"><span class="kpiNum">${rows.length}</span><span class="kpiLbl">Docentes activas</span></div>
+      <div class="kpiCard"><span class="kpiNum">${totals.tareas}</span><span class="kpiLbl">Tareas totales</span></div>
+      <div class="kpiCard kpiOk"><span class="kpiNum">${pctEjec}%</span><span class="kpiLbl">Ejecución</span></div>
+      <div class="kpiCard kpiLate"><span class="kpiNum">${academicHours(totals.usado)}</span><span class="kpiLbl">Horas usadas</span></div>
+      <div class="kpiCard kpiEarly"><span class="kpiNum">${academicHours(totals.bolsa)}</span><span class="kpiLbl">Bolsa asignada</span></div>
+    </div>
+  `;
+
+  const tableRows = rows.map((r) => {
+    const restante = r.bolsa - r.usado;
+    const over = r.bolsa > 0 && r.usado > r.bolsa;
+    const pct = r.tareas ? Math.round((r.completadas / r.tareas) * 100) : 0;
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${academicHours(r.bolsa)}</td>
+        <td>${academicHours(r.planeado)}</td>
+        <td>${academicHours(r.usado)}</td>
+        <td><span class="${over ? "danger-text" : ""}">${academicHours(restante)}</span></td>
+        <td>${r.tareas}</td>
+        <td>${r.completadas}</td>
+        <td>${r.enCurso}</td>
+        <td>${r.pendientes}</td>
+        <td>${pct}%</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    ${kpis}
+    <p class="adminMeta">${rows.length} docente(s) con actividad en la Bitácora Académica</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr>
+          <th>Docente</th><th>Bolsa</th><th>Planeado</th><th>Usado</th><th>Restante</th>
+          <th>Tareas</th><th>Cumplidas</th><th>En curso</th><th>Pendientes</th><th>% Ejec.</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+    <p class="adminNote">Datos del módulo Bitácora Académica (Firestore). “Restante” = bolsa asignada − horas usadas. Usa el filtro de docente para ver una sola.</p>
+  `;
 }
 
 /* ---- Pestaña Horarios: configurar tipo + gracia + semana ---- */

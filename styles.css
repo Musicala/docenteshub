@@ -2872,3 +2872,5 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   border:0;
   background:#fff;
 }
+
+.recordTable .danger-text{ color:#ce0039; font-weight:700; }
