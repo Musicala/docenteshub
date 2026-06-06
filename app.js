@@ -87,6 +87,10 @@ const HUB = {
     "emilybg0102@gmail.com": {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
+      // academica: habilita el módulo interno "Bitácora Académica" del HUB.
+      // El endpoint/datos de cada docente vive en
+      // modules/bitacora-academica/teachers.js (no se duplica la app).
+      academica: true,
       links: {
         horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
         bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
@@ -176,6 +180,14 @@ const HUB = {
       subtitle: "Pendientes",
       section: "Gestión docente",
       showWhenMissing: true
+    },
+    {
+      // Módulo interno (no abre app externa): Bitácora Académica / Trabajo por objetivos.
+      id: "academicModule",
+      icon: "🎯",
+      title: "Bitácora Académica",
+      subtitle: "Trabajo por objetivos",
+      section: "Gestión docente"
     },
 
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
@@ -2567,10 +2579,25 @@ function isAdminUser(user = APP_STATE.activeUser) {
   return ADMIN_EMAILS.includes(emailKey(user));
 }
 
+// ¿La docente activa tiene habilitado el módulo de Bitácora Académica?
+function isAcademicEnabled(user = APP_STATE.activeUser) {
+  const email = emailKey(user);
+  return !!HUB.USERS?.[email]?.academica;
+}
+
 function getResolvedButtonState(button, links = {}) {
-  const isSpecial = button?.id === "carnet" || button?.id === "jornada" || button?.id === "adminPanel";
+  const isSpecial =
+    button?.id === "carnet" ||
+    button?.id === "jornada" ||
+    button?.id === "adminPanel" ||
+    button?.id === "academicModule";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
+  }
+  // El módulo académico solo se muestra a docentes habilitadas (o admin).
+  if (button?.id === "academicModule") {
+    const allow = isAcademicEnabled() || isAdminUser();
+    return { isSpecial: true, url: "__SPECIAL__", available: allow, visible: allow };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
   const available = isSpecial || !!url;
@@ -2798,6 +2825,11 @@ async function handleButtonAction(id, trigger = null) {
     return;
   }
 
+  if (id === "academicModule") {
+    openAcademicModule();
+    return;
+  }
+
   const url = String(APP_STATE.activeLinks?.[id] || "").trim();
   if (!url) {
     toast(`Aún no tienes un link asignado para “${getButtonTitle(id)}” 🙃`);
@@ -2807,6 +2839,75 @@ async function handleButtonAction(id, trigger = null) {
   if (!openExternal(url)) {
     toast("Ese link está raro y lo bloqueé 😶‍🌫️");
   }
+}
+
+/* ============================================================================
+   11d) MÓDULO INTERNO: BITÁCORA ACADÉMICA (iframe overlay)
+   ----------------------------------------------------------------------------
+   Abre modules/bitacora-academica dentro del HUB, pasando el contexto de la
+   docente (correo, nombre, rol). El módulo resuelve su fuente de datos en
+   modules/bitacora-academica/teachers.js. No se abre una app externa.
+============================================================================ */
+let academicOverlay = null;
+let academicMsgWired = false;
+
+function buildAcademicModuleUrl() {
+  const user = APP_STATE.activeUser;
+  const email = emailKey(user);
+  const name = getTeacherName();
+  const role = isAdminUser() ? "admin" : "docente";
+  const params = new URLSearchParams({
+    email,
+    name,
+    role,
+    embedded: "1"
+  });
+  return `./modules/bitacora-academica/index.html?${params.toString()}`;
+}
+
+function openAcademicModule() {
+  if (!isAcademicEnabled() && !isAdminUser()) {
+    toast("El módulo de Bitácora Académica no está habilitado para tu cuenta.");
+    return;
+  }
+
+  // Escucha el "Volver al HUB" del iframe una sola vez.
+  if (!academicMsgWired) {
+    window.addEventListener("message", (event) => {
+      if (event?.data?.type === "closeAcademicModule") closeAcademicModule();
+    });
+    academicMsgWired = true;
+  }
+
+  if (!academicOverlay) {
+    academicOverlay = document.createElement("div");
+    academicOverlay.id = "academicOverlay";
+    academicOverlay.className = "academicOverlay";
+    academicOverlay.innerHTML = `
+      <div class="academicBar">
+        <span class="academicBarTitle">🎯 Bitácora Académica</span>
+        <button class="btnGhost" id="academicCloseBtn" type="button" aria-label="Cerrar módulo">Cerrar ✕</button>
+      </div>
+      <iframe id="academicFrame" class="academicFrame" title="Bitácora Académica"
+        referrerpolicy="no-referrer"></iframe>
+    `;
+    document.body.appendChild(academicOverlay);
+    $("#academicCloseBtn", academicOverlay)?.addEventListener("click", closeAcademicModule);
+  }
+
+  const frame = $("#academicFrame", academicOverlay);
+  if (frame) frame.src = buildAcademicModuleUrl();
+
+  academicOverlay.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closeAcademicModule() {
+  if (!academicOverlay) return;
+  academicOverlay.hidden = true;
+  document.body.style.overflow = "";
+  const frame = $("#academicFrame", academicOverlay);
+  if (frame) frame.src = "about:blank"; // libera recursos
 }
 
 /* ============================================================================
