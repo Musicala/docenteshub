@@ -6,18 +6,40 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email != null;
     }
 
+    // Lista base (en código). Sigue funcionando aunque la colección hubUsers
+    // esté vacía. Se puede inhabilitar a un docente base con un doc en hubUsers
+    // que tenga enabled == false.
+    function baseHubEmail() {
+      return request.auth.token.email in [
+        'alekcaballeromusic@gmail.com',
+        'catalina.medina.leal@gmail.com',
+        'emilybg0102@gmail.com',
+        'annitolad@gmail.com',
+        'lorenaduarte.404@gmail.com',
+        'malego2709@gmail.com',
+        'bagutierrezm@gmail.com',
+        'darasaxcifuentes@gmail.com'
+      ];
+    }
+
+    function hubUserPath() {
+      return /databases/$(database)/documents/hubUsers/$(request.auth.token.email);
+    }
+    function hubManagedEnabled() {
+      return exists(hubUserPath()) && get(hubUserPath()).data.enabled == true;
+    }
+    function hubManagedDisabled() {
+      return exists(hubUserPath()) && get(hubUserPath()).data.enabled == false;
+    }
+
+    // Tiene acceso si: es de la base (y no está inhabilitado), o tiene un doc
+    // gestionado habilitado. Los docentes se gestionan desde el panel admin.
     function isTeacherHubUser() {
       return signedIn()
-        && request.auth.token.email in [
-          'alekcaballeromusic@gmail.com',
-          'catalina.medina.leal@gmail.com',
-          'emilybg0102@gmail.com',
-          'annitolad@gmail.com',
-          'lorenaduarte.404@gmail.com',
-          'malego2709@gmail.com',
-          'bagutierrezm@gmail.com',
-          'darasaxcifuentes@gmail.com'
-        ];
+        && (
+          (baseHubEmail() && !hubManagedDisabled())
+          || hubManagedEnabled()
+        );
     }
 
     function isAdminReader() {
@@ -106,6 +128,14 @@ service cloud.firestore {
       allow read: if isAdminReader() || academicReadOwn();
       allow create, update: if isAdminReader() || academicWriteOwn();
       allow delete: if isAdminReader() || academicDeleteOwn();
+    }
+
+    // Gestión de acceso al HUB. Solo admins escriben/listan. Cada usuario puede
+    // leer su propio doc (lo usa el front para decidir si puede entrar).
+    match /hubUsers/{userEmail} {
+      allow get: if isAdminReader() || (signedIn() && userEmail == request.auth.token.email);
+      allow list: if isAdminReader();
+      allow create, update, delete: if isAdminReader();
     }
 
     match /{document=**} {

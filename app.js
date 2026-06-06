@@ -55,8 +55,9 @@ const HUB = {
     bitacoraClasesNueva: "https://musicalaescuela.github.io/bitacoradeclase/",
     musigym: "https://musicalaescuela.github.io/musigymtraininghub/",
 
+    calendario: "https://musicala.github.io/calendariomusicala/",
+
     // Por defecto vacíos para que aparezcan como "Pendiente"
-    calendario: "",
     bitacorasClasePendientes: "",
     bitacoraAcademica: "",
     documentosContratacion: "",
@@ -1600,6 +1601,7 @@ const ADMIN_STATE = {
   schedules: {},       // { email: scheduleDoc }
   overrides: {},       // { "email__date": overrideDoc }
   academic: { objectives: [], budgets: [], hourLogs: [] },
+  hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   loading: false,
   tab: "puntualidad",
   filters: {
@@ -1672,6 +1674,7 @@ function ensureAdminPanelModal() {
         <button class="adminTab" type="button" data-admin-tab="mensual" role="tab">Estadísticas</button>
         <button class="adminTab" type="button" data-admin-tab="academica" role="tab">Académica</button>
         <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
+        <button class="adminTab" type="button" data-admin-tab="docentes" role="tab">Docentes</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
 
@@ -1753,7 +1756,7 @@ function setAdminTab(tabId) {
   });
 
   const filters = $("#adminFilters", adminPanelModal);
-  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios") ? "none" : "";
+  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes") ? "none" : "";
 
   renderAdminBody();
 }
@@ -1771,6 +1774,8 @@ async function loadAdminData() {
       ADMIN_STATE.schedules = await fetchAdminSchedules();
     } else if (ADMIN_STATE.tab === "academica") {
       ADMIN_STATE.academic = await fetchAdminAcademic();
+    } else if (ADMIN_STATE.tab === "docentes") {
+      ADMIN_STATE.hubUsers = await fetchHubUsers();
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
@@ -2019,6 +2024,7 @@ function renderAdminBody() {
   if (ADMIN_STATE.tab === "diario") return renderAdminDiario(body);
   if (ADMIN_STATE.tab === "mensual") return renderAdminMensual(body);
   if (ADMIN_STATE.tab === "academica") return renderAdminAcademica(body);
+  if (ADMIN_STATE.tab === "docentes") return renderAdminDocentes(body);
   if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
 }
@@ -2569,6 +2575,178 @@ function renderAdminAcademica(body) {
   `;
 }
 
+/* ---- Pestaña Docentes: gestionar acceso al HUB desde el front ---- */
+async function fetchHubUsers() {
+  const map = {};
+  try {
+    const snap = await getDocs(collection(APP_STATE.db, "hubUsers"));
+    snap.forEach((d) => { map[d.id] = { email: d.id, ...(d.data() || {}) }; });
+  } catch (err) {
+    console.warn("No se pudieron leer hubUsers (¿reglas sin publicar?)", err);
+    ADMIN_STATE.hubUsersError = err?.message || "sin permiso";
+    return {};
+  }
+  ADMIN_STATE.hubUsersError = "";
+  return map;
+}
+
+async function saveHubUser(email, data) {
+  const ref = doc(APP_STATE.db, "hubUsers", email);
+  await setDoc(ref, {
+    email,
+    ...data,
+    updatedBy: emailKey(APP_STATE.activeUser),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function deleteHubUser(email) {
+  await deleteDoc(doc(APP_STATE.db, "hubUsers", email));
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+// Lista combinada: usuarios base (código) + gestionados (Firestore).
+function buildDocenteRows() {
+  const managed = ADMIN_STATE.hubUsers || {};
+  const emails = new Set([
+    ...Object.keys(HUB.USERS || {}),
+    ...Object.keys(managed)
+  ]);
+
+  const rows = [];
+  for (const email of emails) {
+    const base = HUB.USERS?.[email] || null;
+    const md = managed[email] || null;
+    const isAdmin = ADMIN_EMAILS.includes(email);
+    // Estado efectivo: gestionado manda; si no, base => activo.
+    const enabled = md ? md.enabled !== false : true;
+    rows.push({
+      email,
+      name: md?.label || md?.name || base?.label || email,
+      isAdmin,
+      inBase: !!base,
+      managed: !!md,
+      enabled: isAdmin ? true : enabled
+    });
+  }
+  rows.sort((a, b) => {
+    if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+    return a.name.localeCompare(b.name, "es");
+  });
+  return rows;
+}
+
+function renderAdminDocentes(body) {
+  const rows = buildDocenteRows();
+  const errorNote = ADMIN_STATE.hubUsersError
+    ? `<p class="adminNote" style="color:#ce0039">⚠️ No se pudo leer la lista gestionada (${escapeHtml(ADMIN_STATE.hubUsersError)}). Publica las reglas de Firestore para activar la gestión de docentes.</p>`
+    : "";
+
+  const tableRows = rows.map((r) => {
+    const estado = r.isAdmin
+      ? `<span class="puntBadge punt-excused">Admin</span>`
+      : (r.enabled
+        ? `<span class="puntBadge punt-ok">Activo</span>`
+        : `<span class="puntBadge punt-absent">Inhabilitado</span>`);
+    const origen = r.inBase ? "Código" : "Panel";
+
+    let actions = "";
+    if (r.isAdmin) {
+      actions = `<span class="adminNote">—</span>`;
+    } else {
+      const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
+      actions = `<button class="btnGhost docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
+      // "Quitar" solo para los creados en el panel (no base de código).
+      if (r.managed && !r.inBase) {
+        actions += ` <button class="btnGhost adminDanger docRemove" type="button" data-email="${escapeHtml(r.email)}">Quitar</button>`;
+      }
+    }
+
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td><span class="mono">${escapeHtml(r.email)}</span></td>
+        <td>${estado}</td>
+        <td>${origen}</td>
+        <td>${actions}</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="docAddCard">
+      <h3>Agregar docente</h3>
+      <p class="adminNote">Con esto le das acceso al HUB sin tocar el código. El correo debe ser el de su cuenta de Google.</p>
+      <div class="docAddForm">
+        <input type="text" id="docNewName" placeholder="Nombre (ej: Laura Sánchez)" />
+        <input type="email" id="docNewEmail" placeholder="correo@gmail.com" />
+        <button class="btnGoogle" id="docAddBtn" type="button">Agregar y habilitar</button>
+      </div>
+    </div>
+    ${errorNote}
+    <p class="adminMeta">${rows.length} docente(s) · base de código + gestionados</p>
+    <div class="recordTableWrap">
+      <table class="recordTable">
+        <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Origen</th><th>Acciones</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+    <p class="adminNote">“Activo” puede iniciar sesión y usar el HUB. “Inhabilitado” queda bloqueado. Los docentes de “Código” no se pueden borrar desde aquí, pero sí inhabilitar.</p>
+  `;
+
+  $("#docAddBtn", body)?.addEventListener("click", async () => {
+    const name = $("#docNewName", body).value.trim();
+    const email = $("#docNewEmail", body).value.trim().toLowerCase();
+    if (!isValidEmail(email)) { toast("Correo inválido 🙃"); return; }
+    try {
+      await saveHubUser(email, { label: name || email, role: "docente", enabled: true });
+      ADMIN_STATE.hubUsers[email] = { email, label: name || email, role: "docente", enabled: true };
+      toast("Docente agregada y habilitada ✅");
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo agregar. Revisa permisos/reglas.");
+    }
+  });
+
+  body.querySelectorAll(".docToggle").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const email = btn.dataset.email;
+      const enable = btn.dataset.enable === "1";
+      const base = HUB.USERS?.[email] || null;
+      const label = ADMIN_STATE.hubUsers[email]?.label || base?.label || email;
+      try {
+        await saveHubUser(email, { label, role: "docente", enabled: enable });
+        ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), email, label, enabled: enable };
+        toast(enable ? "Docente habilitada ✅" : "Docente inhabilitada");
+        renderAdminBody();
+      } catch (err) {
+        console.error(err);
+        toast("No se pudo actualizar. Revisa permisos/reglas.");
+      }
+    });
+  });
+
+  body.querySelectorAll(".docRemove").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const email = btn.dataset.email;
+      if (!confirm(`¿Quitar acceso a ${email}? Podrás volver a agregarla cuando quieras.`)) return;
+      try {
+        await deleteHubUser(email);
+        delete ADMIN_STATE.hubUsers[email];
+        toast("Docente quitada.");
+        renderAdminBody();
+      } catch (err) {
+        console.error(err);
+        toast("No se pudo quitar. Revisa permisos/reglas.");
+      }
+    });
+  });
+}
+
 /* ---- Pestaña Horarios: configurar tipo + gracia + semana ---- */
 function renderAdminHorarios(body) {
   const teachers = getAdminTeacherOptions().filter((t) => !ADMIN_EMAILS.includes(t.email));
@@ -3117,9 +3295,31 @@ function setUserLine(profile, user) {
   userLine.textContent = profile?.label || prettyName(user, emailKey(user));
 }
 
-async function handleAuthorizedUser(user) {
+// Resuelve si un usuario puede entrar al HUB. Fuente de verdad: colección
+// Firestore "hubUsers" (gestionable desde el panel admin). Si no hay doc o las
+// reglas aún no están publicadas, cae a la lista base del código (HUB.USERS).
+async function resolveHubAccess(user) {
   const email = emailKey(user);
-  const profile = HUB.USERS?.[email] || null;
+  if (isAdminUser(user)) return { allowed: true, managed: null };
+
+  let managed = null;
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, "hubUsers", email));
+    if (snap.exists()) managed = snap.data();
+  } catch (_) {
+    // Reglas no publicadas todavía o sin permiso: usamos la lista base.
+  }
+
+  if (managed) return { allowed: managed.enabled !== false, managed };
+  return { allowed: !!HUB.USERS?.[email], managed: null };
+}
+
+async function handleAuthorizedUser(user, managed = null) {
+  const email = emailKey(user);
+  const baseProfile = HUB.USERS?.[email] || null;
+  const profile = baseProfile || (managed
+    ? { label: managed.label || managed.name || email }
+    : null);
   const mergedLinks = buildLinksForUser(email);
 
   APP_STATE.activeUser = user;
@@ -3183,14 +3383,13 @@ async function mount() {
       return;
     }
 
-    const email = emailKey(user);
-
-    if (hasUserRestrictions() && !HUB.USERS[email]) {
+    const access = await resolveHubAccess(user);
+    if (!access.allowed) {
       await handleUnauthorizedUser(auth);
       return;
     }
 
-    await handleAuthorizedUser(user);
+    await handleAuthorizedUser(user, access.managed);
   });
 }
 

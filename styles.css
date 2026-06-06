@@ -2874,3 +2874,30 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 }
 
 .recordTable .danger-text{ color:#ce0039; font-weight:700; }
+
+/* ---- Pestaña Docentes (gestión de acceso) ---- */
+.docAddCard{
+  padding:14px 16px;
+  border-radius:var(--r);
+  background:var(--card2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow2);
+  margin-bottom:14px;
+}
+.docAddCard h3{ margin:0 0 4px; font-size:16px; }
+.docAddForm{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:10px;
+}
+.docAddForm input{
+  flex:1;
+  min-width:160px;
+  padding:9px 11px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:#fff;
+  font:inherit;
+}
+.docAddForm .btnGoogle{ white-space:nowrap; }
