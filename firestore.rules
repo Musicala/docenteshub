@@ -72,6 +72,42 @@ service cloud.firestore {
       allow read, write: if isAdminReader();
     }
 
+    /* ====================================================================
+       MÓDULO BITÁCORA ACADÉMICA (Trabajo por objetivos)
+       Cada docente lee/escribe SOLO su información (teacherEmail == su correo).
+       La coordinación (admin) puede leer y escribir todo.
+    ==================================================================== */
+    function academicReadOwn() {
+      return isTeacherHubUser()
+        && resource.data.teacherEmail == request.auth.token.email;
+    }
+    function academicWriteOwn() {
+      // El doc nuevo se marca como suyo y, si ya existía, también era suyo.
+      return isTeacherHubUser()
+        && request.resource.data.teacherEmail == request.auth.token.email
+        && (resource == null || resource.data.teacherEmail == request.auth.token.email);
+    }
+    function academicDeleteOwn() {
+      return isTeacherHubUser()
+        && resource.data.teacherEmail == request.auth.token.email;
+    }
+
+    match /academicObjectives/{docId} {
+      allow read: if isAdminReader() || academicReadOwn();
+      allow create, update: if isAdminReader() || academicWriteOwn();
+      allow delete: if isAdminReader() || academicDeleteOwn();
+    }
+    match /academicTaskBudgets/{docId} {
+      allow read: if isAdminReader() || academicReadOwn();
+      allow create, update: if isAdminReader() || academicWriteOwn();
+      allow delete: if isAdminReader() || academicDeleteOwn();
+    }
+    match /academicTaskHourLogs/{docId} {
+      allow read: if isAdminReader() || academicReadOwn();
+      allow create, update: if isAdminReader() || academicWriteOwn();
+      allow delete: if isAdminReader() || academicDeleteOwn();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

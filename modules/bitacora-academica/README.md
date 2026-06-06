@@ -1,79 +1,55 @@
 # Módulo: Bitácora Académica / Trabajo por Objetivos
 
 Módulo interno del **HUB Docentes Musicala**. Un solo módulo reutilizable para
-todas las docentes (no se crea una app por docente).
+todas las docentes (no se crea una app por docente). **Toda la información se
+guarda en Firebase/Firestore** (ya no usa Google Sheets ni localStorage).
 
 ## Cómo lo abre el HUB
-El HUB tiene el botón **"Bitácora Académica"** (sección *Gestión docente*). Al
-tocarlo abre este módulo en un overlay con `iframe`, pasando el contexto del
-usuario autenticado por la URL:
+El HUB tiene el botón **"Bitácora Académica"** (sección *Gestión docente*),
+visible para cualquier usuario con acceso al HUB. Lo abre en un overlay con
+`iframe`, pasando el contexto por la URL:
 
 ```
 modules/bitacora-academica/index.html?email=<correo>&name=<nombre>&role=<docente|admin>&embedded=1
 ```
 
-- `script.js` lee ese contexto (`readContextFromUrl`).
-- Resuelve la configuración de la docente en `teachers.js`
-  (`window.resolveAcademicTeacher`).
+Como el `iframe` es del **mismo origen** que el HUB, el módulo **reutiliza la
+sesión de Firebase Auth** ya iniciada (no pide volver a iniciar sesión).
+
+- `script.js` es un **módulo ES** que inicializa Firebase y espera el usuario
+  autenticado (`onAuthStateChanged`).
 - El botón **"Volver al HUB"** envía `postMessage({type:'closeAcademicModule'})`
   a la ventana padre; el HUB cierra el overlay.
+
+## Persistencia (Firestore)
+| Colección              | Contenido                          |
+|------------------------|------------------------------------|
+| `academicObjectives`   | tareas / objetivos (incluye estimación, categoría, estado) |
+| `academicTaskBudgets`  | bolsas de horas por periodo/responsable |
+| `academicTaskHourLogs` | registros de horas (avances)       |
+
+Cada documento lleva `teacherEmail` y `teacherName`. **Las reglas de Firestore**
+(`firestore.rules`) garantizan que cada docente solo lee/escribe lo suyo
+(`teacherEmail == token.email`) y que la coordinación (admin) ve y gestiona todo.
+
+> ⚠️ **Las reglas se despliegan aparte** del sitio (Firebase Console → Firestore
+> → Rules → Publicar). Sin ese paso, las lecturas/escrituras fallan.
+
+## Roles
+- **Docente** (`role=docente`): ve y gestiona solo su información. Los filtros de
+  responsable quedan fijados a su nombre.
+- **Coordinación** (`role=admin`): ve a todas las docentes y puede filtrar.
 
 ## Archivos
 - `index.html` — UI (resumen, tareas, bolsa de horas, modales).
 - `styles.css` — estilos en identidad Musicala (claro, azul/violeta).
-- `script.js` — lógica (tareas, estimaciones, bolsa, horas, historial).
-- `teachers.js` — **mapa de docentes → fuente de datos** (Apps Script). Aquí se
-  agregan nuevas docentes sin duplicar la app.
+- `script.js` — módulo ES: Firebase + lógica de datos y render.
 
-## Acceso
-El módulo está disponible para **cualquier usuario con acceso al HUB** (no hay
-que habilitar a nadie). Quien ya puede entrar al HUB, ve el botón.
-
-## Agregar hoja de tareas a una docente (opcional)
-Solo si una docente tiene una hoja de Google (Apps Script) propia que quieras
-mostrar como tareas de solo lectura:
-- En `teachers.js`: añadir su correo con `name` + `api.baseUrl` + `dataset`.
-
-Si no se agrega nada, la docente igual usa el módulo en **modo local**
-(objetivos, bolsa de horas, estimaciones e historial en su navegador).
-
-## Persistencia actual
-- **Tareas de hoja**: solo lectura vía Google Apps Script (`config.api`).
-- **Capa local** (estimaciones, objetivos, bolsas, registros de horas):
-  `localStorage`, **namespaceada por correo**
-  (`musicala_bitacora_horas_v2::<correo>`), así varias docentes en el mismo
-  navegador no mezclan datos.
-
-### ⚠️ Limitación
-Los datos locales viven en el navegador del dispositivo. No se comparten entre
-dispositivos ni los ve la coordinación de forma centralizada todavía.
-
-## Migración a Firestore (pendiente — Fases 4–7)
-El HUB ya usa Firebase/Firestore. Para centralizar, migrar la capa local a estas
-colecciones (admin escribe/lee; docente solo lo suyo):
-
-| Colección              | Reemplaza a        | Doc id sugerido            |
-|------------------------|--------------------|----------------------------|
-| `academicObjectives`   | `store.objectives` | auto                       |
-| `academicTaskEstimates`| `store.estimates`  | `<email>__<taskId>`        |
-| `academicTaskBudgets`  | `store.budgets`    | `<email>__<period>`        |
-| `academicTaskHourLogs` | `store.hourLogs`   | auto                       |
-| `academicTaskHistory`  | (auditoría/ajustes)| auto                       |
-
-Campos sugeridos por documento: `teacherEmail`, `teacherName`, `period`,
-`taskId`, `taskTitle`, `taskDescription`, `estimatedHours`, `recognizedHours`,
-`usedHours`, `status`, `evidence`, `notes`, `createdAt`, `updatedAt`,
-`createdBy`.
-
-Pasos:
-1. Crear un `firestore-academica.js` con lectura/escritura (reusar el `db` del
-   HUB; el módulo necesitaría cargarse como módulo ES o recibir un puente).
-2. Sustituir `readStore`/`saveStore` por funciones que sincronicen con Firestore
-   y dejen `localStorage` como caché/offline.
-3. Reglas en `firestore.rules`: docente escribe lo suyo (`teacherEmail ==
-   token.email`), admin (coordinación) lee/escribe todo.
-4. Roles: el módulo ya recibe `role`; con Firestore, el admin podrá ver y
-   aprobar/ajustar horas de todas las docentes.
-
-> Mientras tanto, el módulo **funciona** con la capa local + hoja. Migrar no es
-> bloqueante para la Fase 1.
+## Pendiente / mejoras futuras
+- **Admin asigna a una docente concreta**: hoy el admin escribe con su propio
+  `teacherEmail`. Para crear bolsas/tareas *a nombre de* otra docente, agregar
+  un selector de docente y permitir en reglas que el admin fije `teacherEmail`.
+- **Reportes centralizados** (Fase 7): acumulados por docente, % ejecución,
+  historial de ajustes — se pueden construir leyendo estas colecciones.
+- **Sincronización en vivo**: hoy carga al abrir y tras cada cambio; se puede
+  pasar a `onSnapshot` para tiempo real.

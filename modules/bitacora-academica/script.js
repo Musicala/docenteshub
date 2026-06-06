@@ -1,22 +1,56 @@
-/* Musicala · Bitácora académica Pro (módulo del HUB Docentes)
-   ----------------------------------------------------------------------------
-   INTEGRACIÓN HUB:
-   - Este módulo ya NO es una app por docente. El HUB lo abre (en un iframe)
-     pasando ?email=...&name=...&role=... y aquí resolvemos la configuración
-     de esa docente desde teachers.js (window.resolveAcademicTeacher).
-   - Si la docente tiene `api` (Apps Script), se cargan sus tareas de la hoja;
-     si no, funciona en modo LOCAL (objetivos/bolsa/horas en este navegador).
-   - localStorage se NAMESPACEA por correo, así varias docentes pueden usar el
-     mismo navegador sin mezclar datos.
-   - Botón "Volver al HUB": avisa a la ventana padre (postMessage) para cerrar.
+/* Musicala · Bitácora Académica / Trabajo por Objetivos — módulo del HUB
+   ============================================================================
+   PERSISTENCIA: 100% Firebase/Firestore (ya no usa Google Sheets ni localStorage).
+   - El módulo corre dentro del HUB (iframe, mismo origen) y reutiliza la sesión
+     de Firebase Auth ya iniciada. No requiere volver a iniciar sesión.
+   - Cada docente lee/escribe SOLO su información (reglas de Firestore por correo).
+     La coordinación (admin) puede ver todo.
 
-   PERSISTENCIA: la capa local sigue en localStorage, aislada por docente y
-   lista para migrar a Firestore (ver README.md del módulo). Las tareas de la
-   hoja siguen siendo de solo lectura vía Apps Script. */
+   Colecciones Firestore:
+     academicObjectives    → tareas / objetivos
+     academicTaskBudgets   → bolsas de horas
+     academicTaskHourLogs  → registros de horas (avances)
 
+   El "Volver al HUB" avisa a la ventana padre (postMessage) para cerrar.
+============================================================================ */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
+  query,
+  where,
+  setDoc,
+  deleteDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+/* Mismo proyecto que el HUB (config pública del cliente). */
+const firebaseConfig = {
+  apiKey: "AIzaSyC06dLl2Lig3-kD4OVmh4C9LpFW9AeTyOc",
+  authDomain: "musicala-docentes-hub.firebaseapp.com",
+  projectId: "musicala-docentes-hub",
+  storageBucket: "musicala-docentes-hub.firebasestorage.app",
+  messagingSenderId: "936379833270",
+  appId: "1:936379833270:web:512519cf318c919e3abf17"
+};
+
+const COL = {
+  objectives: "academicObjectives",
+  budgets: "academicTaskBudgets",
+  hourLogs: "academicTaskHourLogs"
+};
+
+/* ------------------------------ Utilidades ------------------------------ */
 const $ = (selector, ctx = document) => ctx.querySelector(selector);
 const $$ = (selector, ctx = document) => Array.from(ctx.querySelectorAll(selector));
-const norm = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const norm = value => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[char]));
@@ -36,50 +70,33 @@ const debounce = (fn, delay = 250) => {
   };
 };
 
-const DEFAULT_CONFIG_FILE = 'config.json';
-const LOCAL_KEY_BASE = 'musicala_bitacora_horas_v2';
+/* Contexto inyectado por el HUB (?email=&name=&role=&embedded=1). */
+const ACADEMIC_CTX = { email: '', name: '', role: 'Docente', embedded: false };
 
-/* Contexto inyectado por el HUB (o leído de la URL si se abre directo). */
-const ACADEMIC_CTX = {
-  email: '',
-  name: '',
-  role: 'Docente',   // 'Docente' | 'Admin'
-  embedded: false     // true cuando corre dentro del HUB (iframe)
+let DB = null;
+let AUTH = null;
+let ME = '';        // correo autenticado (fuente de verdad para escribir)
+let currentTask = null;
+let activeView = 'resumen';
+let dataReady = false;
+
+const store = {
+  objectives: [],
+  budgets: [],
+  hourLogs: []
 };
-
-/* localStorage por docente: evita que se mezclen datos de varias docentes. */
-function localKey() {
-  const suffix = ACADEMIC_CTX.email ? `::${ACADEMIC_CTX.email}` : '';
-  return `${LOCAL_KEY_BASE}${suffix}`;
-}
-
-/* Lee el contexto desde la URL (?email=&name=&role=&embedded=). */
-function readContextFromUrl() {
-  const p = new URL(location.href).searchParams;
-  ACADEMIC_CTX.email = String(p.get('email') || '').toLowerCase().trim();
-  ACADEMIC_CTX.name = String(p.get('name') || '').trim();
-  const role = String(p.get('role') || '').trim().toLowerCase();
-  ACADEMIC_CTX.role = role === 'admin' ? 'Admin' : 'Docente';
-  ACADEMIC_CTX.embedded = p.get('embedded') === '1' || window.parent !== window;
-}
 
 function isAdminContext() {
   return ACADEMIC_CTX.role === 'Admin';
 }
 
-let CONFIG = null;
-let RAW_HEADERS = [];
-let RAW_ROWS = [];
-let IDX = {};
-let currentTask = null;
-let activeView = 'resumen';
-
-const store = {
-  estimates: {},
-  objectives: [],
-  budgets: [],
-  hourLogs: []
-};
+function readContextFromUrl() {
+  const p = new URL(location.href).searchParams;
+  ACADEMIC_CTX.email = String(p.get('email') || '').toLowerCase().trim();
+  ACADEMIC_CTX.name = String(p.get('name') || '').trim();
+  ACADEMIC_CTX.role = String(p.get('role') || '').trim().toLowerCase() === 'admin' ? 'Admin' : 'Docente';
+  ACADEMIC_CTX.embedded = p.get('embedded') === '1' || window.parent !== window;
+}
 
 function setStatus(message, isError = false) {
   const el = $('#status');
@@ -88,78 +105,80 @@ function setStatus(message, isError = false) {
   el.className = isError ? 'status status--error' : 'status';
 }
 
-function readStore() {
-  try {
-    const raw = localStorage.getItem(localKey());
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    Object.assign(store, {
-      estimates: parsed.estimates || {},
-      objectives: parsed.objectives || [],
-      budgets: parsed.budgets || [],
-      hourLogs: parsed.hourLogs || []
-    });
-  } catch (err) {
-    console.warn('No se pudo leer localStorage:', err);
+function inferPerson() {
+  return ACADEMIC_CTX.name || ME || '';
+}
+
+function applyBranding() {
+  document.title = `Bitácora Académica · ${ACADEMIC_CTX.name || 'Musicala'}`;
+  const ctx = $('#site-context');
+  if (ctx) {
+    ctx.textContent = `${ACADEMIC_CTX.name || ME}${(ACADEMIC_CTX.name || ME) ? ' · ' : ''}${isAdminContext() ? 'Vista coordinación (todas las docentes)' : 'Docente'} · Datos en Firebase`;
+    ctx.hidden = false;
   }
 }
 
-function saveStore() {
-  localStorage.setItem(localKey(), JSON.stringify(store));
-}
-
-function emptyRow(colspan = 8, text = 'No hay información para mostrar todavía.') {
-  return `<tr><td colspan="${colspan}" class="empty-state">${esc(text)}</td></tr>`;
-}
-
-function downloadText(filename, content, mime = 'text/plain;charset=utf-8') {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function csvEscape(value) {
-  const text = String(value ?? '');
-  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function rowsToCsv(headers, rows) {
-  const all = [headers, ...rows];
-  return all.map(row => row.map(csvEscape).join(';')).join('\n');
-}
-
-function getIndex(...names) {
-  for (const name of names) {
-    const idx = IDX[norm(name)];
-    if (idx != null) return idx;
+/* ============================ Carga de datos ============================ */
+async function loadCollection(name) {
+  // Docente: solo lo suyo. Admin: todo.
+  let snap;
+  if (isAdminContext()) {
+    snap = await getDocs(collection(DB, name));
+  } else {
+    snap = await getDocs(query(collection(DB, name), where("teacherEmail", "==", ME)));
   }
-  return null;
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
 }
 
-function inferPersonFromConfig() {
-  // Prioridad: nombre del docente que abrió el módulo (contexto del HUB).
-  if (ACADEMIC_CTX.name) return ACADEMIC_CTX.name;
-  const text = `${CONFIG?.branding?.title || ''} ${CONFIG?.branding?.subtitle || ''}`;
-  const dash = text.split('—').pop()?.trim();
-  if (dash && dash.length < 60 && !norm(dash).includes('bitacora')) return dash;
-  return '';
+async function loadAll() {
+  setStatus('Cargando desde Firebase…');
+  const [objectives, budgets, hourLogs] = await Promise.all([
+    loadCollection(COL.objectives),
+    loadCollection(COL.budgets),
+    loadCollection(COL.hourLogs)
+  ]);
+  store.objectives = objectives;
+  store.budgets = budgets;
+  store.hourLogs = hourLogs;
+  dataReady = true;
+  const n = store.objectives.length;
+  setStatus(`${n} tarea${n === 1 ? '' : 's'} cargada${n === 1 ? '' : 's'} desde Firebase.`);
 }
 
-function getCell(row, ...names) {
-  const idx = getIndex(...names);
-  return idx != null ? row[idx] : '';
+/* ----------------------------- Escrituras ------------------------------ */
+function ownerFields() {
+  return {
+    teacherEmail: ME,
+    teacherName: ACADEMIC_CTX.name || ME,
+    updatedAt: serverTimestamp(),
+    createdBy: ME
+  };
 }
 
+async function dbSaveObjective(obj) {
+  const ref = doc(DB, COL.objectives, obj.id);
+  await setDoc(ref, { ...obj, ...ownerFields() }, { merge: true });
+}
+
+async function dbDeleteObjective(id) {
+  await deleteDoc(doc(DB, COL.objectives, id));
+}
+
+async function dbSaveBudget(budget) {
+  const ref = doc(DB, COL.budgets, budget.id);
+  await setDoc(ref, { ...budget, ...ownerFields() }, { merge: true });
+}
+
+async function dbSaveHourLog(log) {
+  const ref = doc(DB, COL.hourLogs, log.id);
+  await setDoc(ref, { ...log, ...ownerFields() }, { merge: true });
+}
+
+/* ============================ Modelo de tareas ========================== */
 function normalizeState(value) {
   const s = norm(value);
   if (!s) return 'Pendiente';
-  if (s.startsWith('cumpl') || s.includes('termin') || s.includes('hecha') || s.includes('finaliz')) return 'Cumplido';
+  if (s.startsWith('cumpl') || s.includes('termin') || s.includes('hecha') || s.includes('finaliz') || s.includes('aprob')) return 'Cumplido';
   if (s.includes('curso') || s.includes('progreso') || s.includes('desarrollo')) return 'En curso';
   return 'Pendiente';
 }
@@ -179,54 +198,22 @@ function urgencyClass(value) {
   return 'pill pill--neutral';
 }
 
-function getSheetTasks() {
-  const iId = getIndex('id', 'ID', 'Código', 'Codigo');
-  return RAW_ROWS.map((row, index) => {
-    const id = String(iId != null ? row[iId] : `TAREA-${index + 1}`).trim() || `TAREA-${index + 1}`;
-    const title = String(getCell(row, 'Tarea', 'Actividad', 'Objetivo', 'Nombre') || `Tarea ${index + 1}`).trim();
-    const person = String(getCell(row, 'Persona encargada', 'Responsable', 'Docente', 'Encargado') || inferPersonFromConfig()).trim();
-    const state = String(getCell(row, 'Estado', 'Estado tarea') || '').trim();
-    const urgency = String(getCell(row, 'Urgencia', 'Prioridad') || '').trim();
-    const dueDate = String(getCell(row, 'Fecha límite', 'Fecha limite', 'Fecha entrega', 'Entrega') || '').trim();
-    const sheetEstimated = toNumber(getCell(row, 'Horas estimadas', 'Estimado horas', 'Estimación horas', 'Estimacion horas', 'Tiempo estimado'));
-    const estimate = store.estimates[id] || {};
-    return {
-      source: 'sheet',
-      id,
-      title,
-      person,
-      state: state || 'Pendiente',
-      urgency,
-      dueDate,
-      raw: row,
-      estimatedHours: estimate.hours != null && estimate.hours !== '' ? toNumber(estimate.hours) : sheetEstimated,
-      period: estimate.period || todayMonth(),
-      category: estimate.category || '',
-      criteria: estimate.criteria || '',
-      createdAt: '',
-      description: String(getCell(row, 'Descripción', 'Descripcion', 'Observaciones', 'Documento y Herramientas') || '').trim()
-    };
-  });
-}
-
 function getAllTasks() {
-  const localTasks = store.objectives.map(task => ({
-    source: 'local',
+  return store.objectives.map(task => ({
+    source: 'firestore',
     id: task.id,
-    title: task.title,
-    person: task.person || inferPersonFromConfig(),
+    title: task.title || 'Tarea sin título',
+    person: task.person || task.teacherName || inferPerson(),
     state: task.state || 'Pendiente',
     urgency: task.urgency || '',
     dueDate: task.dueDate || '',
-    raw: [],
     estimatedHours: toNumber(task.estimatedHours),
     period: task.period || todayMonth(),
     category: task.category || '',
-    criteria: task.description || '',
-    createdAt: task.createdAt || '',
-    description: task.description || ''
+    criteria: task.criteria || task.description || '',
+    description: task.description || '',
+    createdAt: task.createdAt || ''
   }));
-  return [...getSheetTasks(), ...localTasks];
 }
 
 function getTaskById(id) {
@@ -250,95 +237,18 @@ function usedHoursForTask(taskId) {
 function getSelectedObjectiveTasks() {
   const period = $('#fBolsaPeriodo')?.value || '';
   const person = $('#fBolsaPersona')?.value || '';
-  const query = norm($('#qBolsa')?.value || '');
+  const queryStr = norm($('#qBolsa')?.value || '');
   return getAllTasks().filter(task => {
     if (period && task.period !== period) return false;
     if (person && task.person !== person) return false;
-    if (query && !norm(`${task.id} ${task.title} ${task.person} ${task.category} ${task.description}`).includes(query)) return false;
+    if (queryStr && !norm(`${task.id} ${task.title} ${task.person} ${task.category} ${task.description}`).includes(queryStr)) return false;
     return true;
   });
 }
 
-async function loadConfig() {
-  setStatus('Cargando configuración…');
-
-  // 1) Camino normal: el HUB pasó ?email=. Resolvemos desde teachers.js.
-  if (ACADEMIC_CTX.email && typeof window.resolveAcademicTeacher === 'function') {
-    const teacher = window.resolveAcademicTeacher(ACADEMIC_CTX.email, ACADEMIC_CTX.name);
-    if (!ACADEMIC_CTX.name) ACADEMIC_CTX.name = teacher.name || '';
-    CONFIG = teacher.api
-      ? { api: teacher.api, dataset: teacher.dataset, branding: { title: `Bitácora Académica · ${teacher.name}` } }
-      : null; // sin hoja: modo local
-    applyBranding(teacher);
-    return;
-  }
-
-  // 2) Respaldo: abierto directo con config.json (modo standalone histórico).
-  const url = new URL(location.href);
-  const confFile = url.searchParams.get('config') || DEFAULT_CONFIG_FILE;
-  try {
-    const response = await fetch(confFile, { cache: 'no-store' });
-    if (response.ok) {
-      const json = await response.json();
-      if (json?.api?.baseUrl && json?.dataset) {
-        CONFIG = json;
-        if (CONFIG?.branding?.title) {
-          $('#site-title').textContent = CONFIG.branding.title.replace('—', '·');
-          document.title = CONFIG.branding.title;
-        }
-        if (CONFIG?.branding?.subtitle) $('#site-subtitle').textContent = CONFIG.branding.subtitle;
-        return;
-      }
-    }
-  } catch (_) { /* sin config.json → modo local */ }
-
-  // 3) Nada configurado: modo local puro.
-  CONFIG = null;
-}
-
-/* Pinta encabezado/contexto con el docente activo. */
-function applyBranding(teacher) {
-  document.title = `Bitácora Académica · ${teacher.name || 'Musicala'}`;
-  const ctx = $('#site-context');
-  if (ctx) {
-    const modeTxt = teacher.api ? 'Conectada a hoja de tareas' : 'Modo local (este navegador)';
-    ctx.textContent = `${teacher.name || ''}${teacher.name ? ' · ' : ''}${isAdminContext() ? 'Vista coordinación' : 'Docente'} · ${modeTxt}`;
-    ctx.hidden = false;
-  }
-}
-
-async function fetchData() {
-  // Modo local: no hay hoja conectada para esta docente.
-  if (!CONFIG || !CONFIG.api?.baseUrl) {
-    RAW_HEADERS = [];
-    RAW_ROWS = [];
-    IDX = {};
-    setStatus('Modo local: usa “Nueva tarea objetivo” para empezar. (Sin hoja conectada.)');
-    return;
-  }
-  setStatus('Cargando datos…');
-
-  const base = CONFIG.api.baseUrl.replace(/\?+$/, '');
-  const keyName = (CONFIG.api.paramName || 'consulta').trim();
-  const dataset = encodeURIComponent(CONFIG.dataset);
-  const extraQS = CONFIG.api.queryString ? `&${CONFIG.api.queryString.replace(/^\&/, '')}` : '';
-  const url = `${base}?${encodeURIComponent(keyName)}=${dataset}${extraQS}`;
-
-  const response = await fetch(url, { cache: 'no-store' });
-  const text = await response.text();
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`Respuesta no-JSON del Web App: ${text.slice(0, 180)}`);
-  }
-  if (payload.ok === false) throw new Error(payload.error || 'Error backend');
-
-  RAW_HEADERS = payload.headers || [];
-  RAW_ROWS = payload.rows || [];
-  IDX = {};
-  RAW_HEADERS.forEach((header, index) => { IDX[norm(header)] = index; });
-  setStatus(`${RAW_ROWS.length} tarea${RAW_ROWS.length === 1 ? '' : 's'} cargada${RAW_ROWS.length === 1 ? '' : 's'}.`);
+/* ============================== Render ================================= */
+function emptyRow(colspan = 8, text = 'No hay información para mostrar todavía.') {
+  return `<tr><td colspan="${colspan}" class="empty-state">${esc(text)}</td></tr>`;
 }
 
 function renderTabs() {
@@ -359,7 +269,9 @@ function uniqueSorted(values) {
 
 function fillSelect(select, options, placeholder) {
   if (!select) return;
+  const prev = select.value;
   select.innerHTML = `<option value="">${esc(placeholder)}</option>` + options.map(option => `<option value="${esc(option)}">${esc(option)}</option>`).join('');
+  if (prev && options.includes(prev)) select.value = prev;
   select.style.display = options.length ? '' : 'none';
 }
 
@@ -372,18 +284,17 @@ function fillFilters() {
   fillSelect($('#fBolsaPersona'), uniqueSorted(tasks.map(t => t.person).concat(store.budgets.map(b => b.person))), 'Responsable: todos');
 }
 
-function filteredSheetRows() {
-  const tasks = getSheetTasks();
+function filteredTaskRows() {
+  const tasks = getAllTasks();
   const selPerson = $('#fPersona')?.value || '';
   const selState = $('#fEstado')?.value || '';
   const selUrgency = $('#fUrgencia')?.value || '';
-  const query = norm($('#q')?.value || '');
-
+  const queryStr = norm($('#q')?.value || '');
   return tasks.filter(task => {
     if (selPerson && task.person !== selPerson) return false;
     if (selState && normalizeState(task.state) !== selState) return false;
     if (selUrgency && task.urgency !== selUrgency) return false;
-    if (query && !norm(`${task.id} ${task.title} ${task.person} ${task.state} ${task.urgency} ${task.dueDate} ${task.description} ${task.raw.join(' ')}`).includes(query)) return false;
+    if (queryStr && !norm(`${task.id} ${task.title} ${task.person} ${task.state} ${task.urgency} ${task.dueDate} ${task.description}`).includes(queryStr)) return false;
     return true;
   });
 }
@@ -393,29 +304,29 @@ function renderMainTable() {
   const tbody = $('#tbl tbody');
   if (!thead || !tbody) return;
 
-  const headers = RAW_HEADERS.length ? RAW_HEADERS : ['ID', 'Tarea', 'Responsable', 'Estado'];
-  const rows = filteredSheetRows();
-
-  thead.innerHTML = '<tr>' + headers.map(header => `<th>${esc(header)}</th>`).join('') + '<th>Horas</th><th>Acciones</th></tr>';
+  thead.innerHTML = '<tr><th>ID</th><th>Tarea</th><th>Responsable</th><th>Periodo</th><th>Estado</th><th>Horas</th><th>Acciones</th></tr>';
+  const rows = filteredTaskRows();
 
   if (!rows.length) {
-    tbody.innerHTML = emptyRow(headers.length + 2, 'No encontré tareas con esos filtros. El filtro hizo lo suyo, demasiado bien.');
+    tbody.innerHTML = emptyRow(7, dataReady
+      ? 'No hay tareas con esos filtros. Crea una con “＋ Nueva tarea objetivo”.'
+      : 'Cargando…');
     return;
   }
 
   tbody.innerHTML = rows.map(task => {
-    const cells = headers.map((header, index) => {
-      let value = task.raw[index] ?? '';
-      const headerNorm = norm(header);
-      if (headerNorm.includes('estado')) value = `<span class="${stateClass(value)}">${esc(normalizeState(value))}</span>`;
-      else if (headerNorm.includes('urgencia') || headerNorm.includes('prioridad')) value = `<span class="${urgencyClass(value)}">${esc(value || 'Sin dato')}</span>`;
-      else value = esc(value);
-      return `<td class="wrap" data-th="${esc(header)}">${value}</td>`;
-    }).join('');
     const used = usedHoursForTask(task.id);
-    const hours = `<td data-th="Horas"><div class="hours-cell"><strong>${fmtHours(used)}</strong><small>de ${fmtHours(task.estimatedHours)}</small></div></td>`;
-    const actions = `<td data-th="Acciones"><button class="btn btn-dark btn-detail" data-id="${esc(task.id)}" type="button">📝 Abrir</button></td>`;
-    return `<tr data-id="${esc(task.id)}">${cells}${hours}${actions}</tr>`;
+    return `
+      <tr data-id="${esc(task.id)}">
+        <td data-th="ID"><span class="mono">${esc(task.id)}</span></td>
+        <td data-th="Tarea" class="wrap"><strong>${esc(task.title)}</strong><small>${esc(task.description || task.criteria || '')}</small></td>
+        <td data-th="Responsable">${esc(task.person || '—')}</td>
+        <td data-th="Periodo">${esc(task.period || '—')}</td>
+        <td data-th="Estado"><span class="${stateClass(task.state)}">${esc(normalizeState(task.state))}</span></td>
+        <td data-th="Horas"><div class="hours-cell"><strong>${fmtHours(used)}</strong><small>de ${fmtHours(task.estimatedHours)}</small></div></td>
+        <td data-th="Acciones"><button class="btn btn-dark btn-detail" data-id="${esc(task.id)}" type="button">📝 Abrir</button></td>
+      </tr>
+    `;
   }).join('');
 }
 
@@ -450,26 +361,10 @@ function renderInsights() {
   const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
 
   const items = [
-    {
-      title: 'Tareas activas',
-      value: pending.length,
-      text: pending.length ? 'Hay trabajo pendiente o en curso. Sirve revisar si todo tiene entregable claro.' : 'No hay tareas activas registradas.'
-    },
-    {
-      title: 'Sin estimación',
-      value: withoutEstimate.length,
-      text: withoutEstimate.length ? 'Estas son las candidatas a conversación: “¿cuánto tiempo reconocemos por esto?”' : 'Todas las tareas visibles tienen una estimación.'
-    },
-    {
-      title: 'Horas usadas vs. estimadas',
-      value: `${fmtHours(used)} / ${fmtHours(estimated)}`,
-      text: used > estimated && estimated > 0 ? 'El uso superó lo estimado. No es tragedia griega, pero sí pide ajuste.' : 'El uso todavía está dentro de lo planeado o falta estimar más tareas.'
-    },
-    {
-      title: 'Tareas pasadas de horas',
-      value: overBudgetTasks.length,
-      text: overBudgetTasks.length ? 'Conviene revisar si hubo retrabajo, mala estimación o una tarea mutante.' : 'No hay tareas por encima de su estimado local.'
-    }
+    { title: 'Tareas activas', value: pending.length, text: pending.length ? 'Hay trabajo pendiente o en curso. Revisa que cada una tenga entregable claro.' : 'No hay tareas activas registradas.' },
+    { title: 'Sin estimación', value: withoutEstimate.length, text: withoutEstimate.length ? 'Candidatas a acordar: “¿cuánto tiempo reconocemos por esto?”' : 'Todas las tareas tienen una estimación.' },
+    { title: 'Horas usadas vs. estimadas', value: `${fmtHours(used)} / ${fmtHours(estimated)}`, text: used > estimated && estimated > 0 ? 'El uso superó lo estimado. Conviene ajustar.' : 'El uso está dentro de lo planeado o falta estimar más tareas.' },
+    { title: 'Tareas pasadas de horas', value: overBudgetTasks.length, text: overBudgetTasks.length ? 'Revisar si hubo retrabajo o mala estimación.' : 'Ninguna tarea por encima de su estimado.' }
   ];
 
   box.innerHTML = items.map(item => `
@@ -494,7 +389,7 @@ function renderNeedsEstimate() {
       <td data-th="Estado"><span class="${stateClass(task.state)}">${esc(normalizeState(task.state))}</span></td>
       <td data-th="Acción"><button class="btn btn-soft btn-detail" data-id="${esc(task.id)}" type="button">Estimar</button></td>
     </tr>
-  `).join('') : emptyRow(5, 'Todas las tareas visibles tienen estimación. Raro, pero hermoso.');
+  `).join('') : emptyRow(5, 'Todas las tareas visibles tienen estimación.');
 }
 
 function budgetTotals() {
@@ -540,14 +435,12 @@ function renderBudgetSummary() {
     <p class="helper-text">${hasBudget ? (over ? 'La bolsa está sobrepasada. Toca revisar si se aprueba más tiempo o se recortan objetivos.' : 'La bolsa aún tiene margen frente al uso registrado.') : 'Aún no hay una bolsa asignada para los filtros actuales.'}</p>
   `;
 
-  const budgetRows = totals.budgets.length ? totals.budgets.map(budget => `
+  balance.innerHTML = totals.budgets.length ? totals.budgets.map(budget => `
     <div class="balance-row">
       <div><strong>${esc(budget.person)}</strong><small>${esc(budget.period)} · ${esc(budget.note || 'Sin nota')}</small></div>
       <span>${fmtHours(budget.hours)}</span>
     </div>
   `).join('') : '<p class="helper-text">Crea una bolsa de horas para empezar a comparar acuerdo vs. uso real.</p>';
-
-  balance.innerHTML = budgetRows;
 }
 
 function renderObjectivesTable() {
@@ -557,7 +450,7 @@ function renderObjectivesTable() {
   table.querySelector('thead').innerHTML = '<tr><th>ID</th><th>Tarea / objetivo</th><th>Responsable</th><th>Periodo</th><th>Categoría</th><th>Estimado</th><th>Usado</th><th>Estado</th><th>Acción</th></tr>';
 
   if (!tasks.length) {
-    table.querySelector('tbody').innerHTML = emptyRow(9, 'No hay tareas en esta bolsa. La bolsa existe, pero está filosofando sola.');
+    table.querySelector('tbody').innerHTML = emptyRow(9, 'No hay tareas en esta bolsa todavía.');
     return;
   }
 
@@ -583,13 +476,12 @@ function renderObjectivesTable() {
 function renderHourLogs() {
   const table = $('#tblHourLogs');
   if (!table) return;
-  table.querySelector('thead').innerHTML = '<tr><th>Fecha</th><th>Tarea</th><th>Responsable</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th><th>Sync</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Fecha</th><th>Tarea</th><th>Responsable</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th></tr>';
   const logs = [...store.hourLogs].sort((a, b) => String(b.start).localeCompare(String(a.start)));
   if (!logs.length) {
-    table.querySelector('tbody').innerHTML = emptyRow(8, 'Todavía no hay horas registradas. La bolsa está intacta, casi inocente.');
+    table.querySelector('tbody').innerHTML = emptyRow(7, 'Todavía no hay horas registradas.');
     return;
   }
-
   table.querySelector('tbody').innerHTML = logs.map(log => `
     <tr>
       <td data-th="Fecha"><span class="mono">${esc(formatDateTime(log.start))}</span></td>
@@ -599,7 +491,6 @@ function renderHourLogs() {
       <td data-th="Duración">${fmtHours(log.durationHours)}</td>
       <td data-th="Reconocidas"><strong>${fmtHours(log.recognizedHours || log.durationHours)}</strong></td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
-      <td data-th="Sync"><span class="pill ${log.backendSynced ? 'pill--ok' : 'pill--neutral'}">${log.backendSynced ? 'Backend' : 'Local'}</span></td>
     </tr>
   `).join('');
 }
@@ -622,6 +513,7 @@ function renderAll() {
   renderHourLogs();
 }
 
+/* ============================== Modales ================================ */
 function showModal(id) {
   const modal = $(id);
   if (!modal) return;
@@ -634,10 +526,10 @@ function hideModal(id) {
   if (!modal) return;
   modal.classList.remove('show');
   modal.setAttribute('aria-hidden', 'true');
-  $('#logStatus') && ($('#logStatus').textContent = '');
+  if ($('#logStatus')) $('#logStatus').textContent = '';
 }
 
-async function openDetailById(id) {
+function openDetailById(id) {
   const task = getTaskById(id);
   if (!task) return;
   currentTask = task;
@@ -657,7 +549,7 @@ async function openDetailById(id) {
 
   setDefaultLogTimes();
   updateDurationPreview();
-  await loadLogs(task.id, task.source);
+  loadLogs(task.id);
   showModal('#modalLog');
 }
 
@@ -670,56 +562,27 @@ function setDefaultLogTimes() {
   if (!$('#logFin').value) $('#logFin').value = end;
 }
 
-async function loadLogs(id, source = 'sheet') {
+function loadLogs(id) {
   const table = $('#tblLogs');
-  const localLogs = store.hourLogs.filter(log => String(log.taskId) === String(id));
+  const logs = store.hourLogs
+    .filter(log => String(log.taskId) === String(id))
+    .sort((a, b) => String(b.start).localeCompare(String(a.start)));
 
-  let backendHeaders = [];
-  let backendRows = [];
-  let backendError = '';
-
-  if (source === 'sheet' && CONFIG?.api?.baseUrl) {
-    try {
-      const base = CONFIG.api.baseUrl.replace(/\?+$/, '');
-      const keyName = (CONFIG.api.paramName || 'consulta').trim();
-      const url = `${base}?${encodeURIComponent(keyName)}=logs_tarea&id=${encodeURIComponent(id)}`;
-      const response = await fetch(url, { cache: 'no-store' });
-      const text = await response.text();
-      const payload = JSON.parse(text);
-      if (payload.ok === false) throw new Error(payload.error || 'Error backend');
-      backendHeaders = payload.headers || [];
-      backendRows = payload.rows || [];
-    } catch (err) {
-      backendError = err.message;
-    }
-  }
-
-  const headers = backendHeaders.length ? [...backendHeaders, 'Origen'] : ['Inicio', 'Fin', 'Horas', 'Avance', 'Estado', 'Origen'];
-  table.querySelector('thead').innerHTML = '<tr>' + headers.map(header => `<th>${esc(header)}</th>`).join('') + '</tr>';
-
-  const backendHtml = backendRows.map(row => `<tr>${backendHeaders.map((header, index) => `<td class="wrap" data-th="${esc(header)}">${esc(row[index])}</td>`).join('')}<td data-th="Origen"><span class="pill pill--ok">Backend</span></td></tr>`).join('');
-
-  const localHtml = localLogs.map(log => `
+  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
+  table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => `
     <tr>
       <td data-th="Inicio">${esc(formatDateTime(log.start))}</td>
       <td data-th="Fin">${esc(formatDateTime(log.end))}</td>
       <td data-th="Horas">${fmtHours(log.recognizedHours || log.durationHours)}</td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
       <td data-th="Estado">${esc(log.state || '')}</td>
-      <td data-th="Origen"><span class="pill ${log.backendSynced ? 'pill--ok' : 'pill--neutral'}">${log.backendSynced ? 'Backend + local' : 'Local'}</span></td>
     </tr>
-  `).join('');
-
-  table.querySelector('tbody').innerHTML = backendHtml + localHtml || emptyRow(headers.length, 'No hay registros para esta tarea todavía. Hora de producir evidencia, ese ritual moderno.');
-  $('#logStatus').textContent = backendError
-    ? `Registros locales: ${localLogs.length}. Backend no disponible: ${backendError}`
-    : `${backendRows.length + localLogs.length} registro${backendRows.length + localLogs.length === 1 ? '' : 's'}`;
+  `).join('') : emptyRow(5, 'No hay registros para esta tarea todavía.');
+  $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
 }
 
 function updateDurationPreview() {
-  const start = $('#logInicio')?.value;
-  const end = $('#logFin')?.value;
-  const hours = durationHours(start, end);
+  const hours = durationHours($('#logInicio')?.value, $('#logFin')?.value);
   const preview = $('#durationPreview');
   if (preview) preview.textContent = hours ? `Duración calculada: ${fmtHours(hours)}` : 'Duración: revisa inicio y fin';
 }
@@ -727,13 +590,9 @@ function updateDurationPreview() {
 async function submitLog(event) {
   event.preventDefault();
   const form = $('#logForm');
-  if (!form.checkValidity()) {
-    form.reportValidity();
-    return;
-  }
+  if (!form.checkValidity()) { form.reportValidity(); return; }
 
   const id = $('#logTaskId').value.trim();
-  const source = $('#logTaskSource').value || 'sheet';
   const task = getTaskById(id) || currentTask;
   const start = $('#logInicio').value;
   const end = $('#logFin').value;
@@ -747,68 +606,44 @@ async function submitLog(event) {
 
   if (!id) return showFormMessage('Falta el ID de la tarea.', true);
   if (calculated <= 0) return showFormMessage('La fecha de fin debe ser posterior al inicio.', true);
-  if (!advanced) return showFormMessage('Describe qué se avanzó. El misterio está sobrevalorado.', true);
+  if (!advanced) return showFormMessage('Describe qué se avanzó.', true);
 
   const submitButton = $('#logForm button[type="submit"]');
   submitButton.disabled = true;
-  showFormMessage('Guardando registro…');
+  showFormMessage('Guardando en Firebase…');
 
-  let backendSynced = false;
-  let backendError = '';
-
-  if (source === 'sheet' && CONFIG?.api?.baseUrl) {
-    try {
-      const body = new URLSearchParams({
-        action: 'add_log',
-        id,
-        tarea: task?.title || $('#logTaskName').textContent.trim(),
-        inicio: start,
-        fin: end,
-        avanzo: advanced,
-        falta: missing,
-        mejorar: improve,
-        estado: state,
-        horasReconocidas: String(recognized),
-        tipoTrabajo: workType
-      });
-      const response = await fetch(CONFIG.api.baseUrl.replace(/\?+$/, ''), { method: 'POST', body });
-      const text = await response.text();
-      const payload = JSON.parse(text);
-      if (payload.ok === false) throw new Error(payload.error || 'Error backend');
-      backendSynced = true;
-    } catch (err) {
-      backendError = err.message;
-    }
-  }
-
-  store.hourLogs.push({
+  const log = {
     id: uid('LOG'),
     taskId: id,
     taskTitle: task?.title || $('#logTaskName').textContent.trim(),
     person: task?.person || $('#logTaskPerson').textContent.trim(),
     period: task?.period || todayMonth(),
-    source,
-    start,
-    end,
+    start, end,
     durationHours: calculated,
     recognizedHours: recognized,
-    workType,
-    state,
-    advanced,
-    missing,
-    improve,
-    backendSynced,
-    backendError,
+    workType, state,
+    advanced, missing, improve,
     createdAt: new Date().toISOString()
-  });
+  };
 
-  if (source === 'local') updateLocalTaskState(id, state);
-  saveStore();
-  clearLogFormKeepTask();
-  await loadLogs(id, source);
-  renderAll();
-  showFormMessage(backendSynced ? 'Guardado y sincronizado ✔' : (backendError ? `Guardado localmente. Backend no sincronizó: ${backendError}` : 'Guardado localmente ✔'), Boolean(backendError));
-  submitButton.disabled = false;
+  try {
+    await dbSaveHourLog(log);
+    store.hourLogs.push(log);
+    // Actualiza el estado de la tarea según el último cierre.
+    await dbSaveObjective({ id, state });
+    const localTask = store.objectives.find(item => String(item.id) === String(id));
+    if (localTask) localTask.state = state;
+
+    clearLogFormKeepTask();
+    loadLogs(id);
+    renderAll();
+    showFormMessage('Guardado en Firebase ✔');
+  } catch (err) {
+    console.error(err);
+    showFormMessage(`No se pudo guardar: ${err.message}`, true);
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 function showFormMessage(message, isError = false) {
@@ -819,90 +654,77 @@ function showFormMessage(message, isError = false) {
 }
 
 function clearLogFormKeepTask() {
-  $('#logInicio').value = '';
-  $('#logFin').value = '';
-  $('#logHorasReconocidas').value = '';
-  $('#logAvanzo').value = '';
-  $('#logFalta').value = '';
-  $('#logMejorar').value = '';
+  ['#logInicio', '#logFin', '#logHorasReconocidas', '#logAvanzo', '#logFalta', '#logMejorar'].forEach(sel => {
+    if ($(sel)) $(sel).value = '';
+  });
   setDefaultLogTimes();
   updateDurationPreview();
 }
 
-function updateLocalTaskState(id, state) {
-  const task = store.objectives.find(item => String(item.id) === String(id));
-  if (task) task.state = state;
-}
-
-function saveEstimate(event) {
+async function saveEstimate(event) {
   event.preventDefault();
   const id = $('#estimateTaskId').value.trim();
   if (!id) return;
 
-  const task = getTaskById(id);
-  const data = {
+  const patch = {
+    id,
     period: $('#estimatePeriod').value || todayMonth(),
-    hours: $('#estimateHours').value ? toNumber($('#estimateHours').value) : 0,
+    estimatedHours: $('#estimateHours').value ? toNumber($('#estimateHours').value) : 0,
     category: $('#estimateCategory').value || '',
-    criteria: $('#estimateCriteria').value.trim(),
-    updatedAt: new Date().toISOString()
+    criteria: $('#estimateCriteria').value.trim()
   };
 
-  if (task?.source === 'local') {
+  try {
+    await dbSaveObjective(patch);
     const localTask = store.objectives.find(item => String(item.id) === String(id));
-    if (localTask) {
-      localTask.period = data.period;
-      localTask.estimatedHours = data.hours;
-      localTask.category = data.category;
-      localTask.description = data.criteria || localTask.description;
-    }
-  } else {
-    store.estimates[id] = data;
+    if (localTask) Object.assign(localTask, patch);
+    currentTask = getTaskById(id);
+    renderAll();
+    showFormMessage('Estimación guardada en Firebase ✔');
+  } catch (err) {
+    console.error(err);
+    showFormMessage(`No se pudo guardar: ${err.message}`, true);
   }
-
-  saveStore();
-  currentTask = getTaskById(id);
-  renderAll();
-  showFormMessage('Estimación guardada ✔');
 }
 
-function createObjective(event) {
+async function createObjective(event) {
   event.preventDefault();
   const form = $('#objectiveForm');
-  if (!form.checkValidity()) {
-    form.reportValidity();
-    return;
-  }
+  if (!form.checkValidity()) { form.reportValidity(); return; }
 
   const task = {
     id: uid('OBJ'),
     title: $('#objTitle').value.trim(),
-    person: $('#objPerson').value.trim() || inferPersonFromConfig(),
+    person: $('#objPerson').value.trim() || inferPerson(),
     period: $('#objPeriod').value || todayMonth(),
     estimatedHours: toNumber($('#objHours').value),
     category: $('#objCategory').value,
     state: $('#objState').value,
     description: $('#objDescription').value.trim(),
+    urgency: '',
+    dueDate: '',
     createdAt: new Date().toISOString()
   };
 
-  store.objectives.push(task);
-  saveStore();
-  form.reset();
-  $('#objPeriod').value = todayMonth();
-  $('#objPerson').value = inferPersonFromConfig();
-  hideModal('#modalObjective');
-  switchView('bolsa');
-  openDetailById(task.id);
+  try {
+    await dbSaveObjective(task);
+    store.objectives.push(task);
+    form.reset();
+    $('#objPeriod').value = todayMonth();
+    $('#objPerson').value = inferPerson();
+    hideModal('#modalObjective');
+    switchView('bolsa');
+    openDetailById(task.id);
+  } catch (err) {
+    console.error(err);
+    alert(`No se pudo crear la tarea en Firebase: ${err.message}`);
+  }
 }
 
-function saveBudget(event) {
+async function saveBudget(event) {
   event.preventDefault();
   const form = $('#budgetForm');
-  if (!form.checkValidity()) {
-    form.reportValidity();
-    return;
-  }
+  if (!form.checkValidity()) { form.reportValidity(); return; }
 
   const period = $('#budgetPeriod').value;
   const person = $('#budgetPerson').value.trim();
@@ -910,103 +732,100 @@ function saveBudget(event) {
   const note = $('#budgetNote').value.trim();
   const existing = store.budgets.find(budget => budget.period === period && norm(budget.person) === norm(person));
 
-  if (existing) {
-    existing.hours = hours;
-    existing.note = note;
-    existing.updatedAt = new Date().toISOString();
-  } else {
-    store.budgets.push({ id: uid('BOLSA'), period, person, hours, note, createdAt: new Date().toISOString() });
-  }
+  const budget = existing
+    ? { ...existing, hours, note }
+    : { id: uid('BOLSA'), period, person, hours, note, createdAt: new Date().toISOString() };
 
-  saveStore();
-  renderAll();
-  form.reset();
-  $('#budgetPeriod').value = period;
-  $('#budgetPerson').value = person;
+  try {
+    await dbSaveBudget(budget);
+    if (existing) Object.assign(existing, budget);
+    else store.budgets.push(budget);
+    renderAll();
+    form.reset();
+    $('#budgetPeriod').value = period;
+    $('#budgetPerson').value = person;
+  } catch (err) {
+    console.error(err);
+    alert(`No se pudo guardar la bolsa en Firebase: ${err.message}`);
+  }
+}
+
+/* --------------------------- Export / utilidades ----------------------- */
+function downloadText(filename, content, mime = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function rowsToCsv(headers, rows) {
+  return [headers, ...rows].map(row => row.map(csvEscape).join(';')).join('\n');
 }
 
 function exportHoursCsv() {
-  const headers = ['ID registro', 'ID tarea', 'Tarea', 'Responsable', 'Periodo', 'Inicio', 'Fin', 'Duración horas', 'Horas reconocidas', 'Tipo de trabajo', 'Estado', 'Avance', 'Falta', 'Mejora', 'Origen', 'Sincronizado backend'];
+  const headers = ['ID registro', 'ID tarea', 'Tarea', 'Responsable', 'Periodo', 'Inicio', 'Fin', 'Duración horas', 'Horas reconocidas', 'Tipo de trabajo', 'Estado', 'Avance', 'Falta', 'Mejora'];
   const rows = store.hourLogs.map(log => [
-    log.id,
-    log.taskId,
-    log.taskTitle,
-    log.person,
-    log.period,
-    log.start,
-    log.end,
-    round2(log.durationHours),
-    round2(log.recognizedHours || log.durationHours),
-    log.workType,
-    log.state,
-    log.advanced,
-    log.missing,
-    log.improve,
-    log.source,
-    log.backendSynced ? 'Sí' : 'No'
+    log.id, log.taskId, log.taskTitle, log.person, log.period, log.start, log.end,
+    round2(log.durationHours), round2(log.recognizedHours || log.durationHours),
+    log.workType, log.state, log.advanced, log.missing, log.improve
   ]);
   downloadText(`bolsa-horas-musicala-${new Date().toISOString().slice(0, 10)}.csv`, rowsToCsv(headers, rows), 'text/csv;charset=utf-8');
 }
 
 function exportJson() {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    app: 'Bitácora Musicala · Bolsa de horas',
-    data: store
-  };
-  downloadText(`respaldo-bitacora-horas-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  const payload = { exportedAt: new Date().toISOString(), app: 'Bitácora Musicala · Firebase', teacher: ME, data: store };
+  downloadText(`respaldo-bitacora-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
 }
 
-function importJson(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      const data = parsed.data || parsed;
-      if (!data || typeof data !== 'object') throw new Error('Archivo inválido');
-      store.estimates = data.estimates || {};
-      store.objectives = data.objectives || [];
-      store.budgets = data.budgets || [];
-      store.hourLogs = data.hourLogs || [];
-      saveStore();
-      renderAll();
-      setStatus('Respaldo importado correctamente.');
-    } catch (err) {
-      setStatus(`No pude importar el respaldo: ${err.message}`, true);
+/* ============================== Eventos =============================== */
+function goBackToHub() {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'closeAcademicModule' }, '*');
+      return;
     }
-  };
-  reader.readAsText(file);
+  } catch (_) { /* cross-origin */ }
+  if (history.length > 1) history.back();
 }
 
-function clearLocalData() {
-  const ok = confirm('Esto borra estimaciones, bolsas y registros locales de horas en este navegador. Las tareas de Google Sheets no se borran. ¿Continuar?');
-  if (!ok) return;
-  store.estimates = {};
-  store.objectives = [];
-  store.budgets = [];
-  store.hourLogs = [];
-  saveStore();
-  renderAll();
+function applyRoleScope() {
+  const back = $('#btnBackHub');
+  if (back) back.hidden = !ACADEMIC_CTX.embedded;
+  if (isAdminContext()) return; // admin ve y filtra todo
+
+  const me = inferPerson();
+  if (!me) return;
+  ['#fPersona', '#fBolsaPersona'].forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    el.value = me;
+    el.dataset.locked = '1';
+    el.title = 'Filtrado a tu información';
+  });
 }
 
 function attachEvents() {
   $$('.tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.view)));
 
   $('#btnReload')?.addEventListener('click', async () => {
-    try {
-      await fetchData();
-      renderAll();
-    } catch (err) {
-      console.error(err);
-      setStatus(`Error: ${err.message}`, true);
-    }
+    try { await loadAll(); renderAll(); applyRoleScope(); }
+    catch (err) { console.error(err); setStatus(`Error: ${err.message}`, true); }
   });
 
   $('#btnNewObjective')?.addEventListener('click', () => {
     $('#objectiveForm')?.reset();
     $('#objPeriod').value = todayMonth();
-    $('#objPerson').value = inferPersonFromConfig();
+    $('#objPerson').value = inferPerson();
     showModal('#modalObjective');
   });
 
@@ -1024,9 +843,7 @@ function attachEvents() {
     if (event.target.dataset.close) hideModal(event.target.closest('.modal') ? `#${event.target.closest('.modal').id}` : null);
   });
 
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') hideModal();
-  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hideModal(); });
 
   $('#logForm')?.addEventListener('submit', submitLog);
   $('#estimateForm')?.addEventListener('submit', saveEstimate);
@@ -1034,72 +851,51 @@ function attachEvents() {
   $('#budgetForm')?.addEventListener('submit', saveBudget);
   $('#btnExportHours')?.addEventListener('click', exportHoursCsv);
   $('#btnExportJson')?.addEventListener('click', exportJson);
-  $('#btnClearLocal')?.addEventListener('click', clearLocalData);
-  $('#importJson')?.addEventListener('change', event => importJson(event.target.files?.[0]));
   $('#logInicio')?.addEventListener('change', updateDurationPreview);
   $('#logFin')?.addEventListener('change', updateDurationPreview);
-
-  // Volver al HUB: si está embebido, avisa al padre; si no, intenta history.back.
   $('#btnBackHub')?.addEventListener('click', goBackToHub);
-}
 
-function goBackToHub() {
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: 'closeAcademicModule' }, '*');
-      return;
-    }
-  } catch (_) { /* cross-origin: ignore */ }
-  if (history.length > 1) history.back();
-}
-
-/* Bloquea el filtro de responsable a la docente activa (los docentes solo ven
-   lo suyo). La coordinación (Admin) sí puede ver y filtrar a todas. */
-function applyRoleScope() {
-  const back = $('#btnBackHub');
-  if (back) back.hidden = !ACADEMIC_CTX.embedded;
-
-  if (isAdminContext()) return; // admin ve todo
-
-  const me = ACADEMIC_CTX.name || inferPersonFromConfig();
-  if (!me) return;
-  ['#fPersona', '#fBolsaPersona'].forEach(sel => {
-    const el = $(sel);
-    if (!el) return;
-    el.value = me;
-    el.dataset.locked = '1';
-    el.title = 'Filtrado a tu información';
-  });
-  // Si intentan cambiarlo, lo regresamos a la docente.
-  document.addEventListener('change', (e) => {
-    if (!isAdminContext() && e.target?.dataset?.locked === '1' && e.target.value !== me) {
-      e.target.value = me;
-      renderAll();
-    }
-  });
+  // Estos botones eran de la era localStorage; ya no aplican (todo va a Firebase).
+  $('#btnClearLocal')?.setAttribute('hidden', '');
+  $('#importJson')?.closest('.file-btn')?.setAttribute('hidden', '');
 }
 
 async function init() {
   readContextFromUrl();
-  readStore();
   attachEvents();
   $('#budgetPeriod').value = todayMonth();
-  $('#budgetPerson').value = inferPersonFromConfig();
   $('#objPeriod').value = todayMonth();
 
-  try {
-    await loadConfig();
-    $('#budgetPerson').value = inferPersonFromConfig();
-    $('#objPerson').value = inferPersonFromConfig();
-    await fetchData();
-  } catch (err) {
-    console.error(err);
-    setStatus(`Error: ${err.message}`, true);
-  } finally {
-    renderTabs();
-    renderAll();
-    applyRoleScope();
-  }
+  // Firebase: reutiliza la sesión del HUB (mismo origen).
+  const app = initializeApp(firebaseConfig);
+  AUTH = getAuth(app);
+  DB = getFirestore(app);
+
+  setStatus('Verificando sesión…');
+  onAuthStateChanged(AUTH, async (user) => {
+    if (!user) {
+      setStatus('No hay sesión activa. Vuelve al HUB e inicia sesión.', true);
+      return;
+    }
+    ME = String(user.email || '').toLowerCase();
+    if (!ACADEMIC_CTX.name) ACADEMIC_CTX.name = user.displayName || ME;
+    if (!ACADEMIC_CTX.email) ACADEMIC_CTX.email = ME;
+
+    applyBranding();
+    $('#budgetPerson').value = inferPerson();
+    $('#objPerson').value = inferPerson();
+
+    try {
+      await loadAll();
+    } catch (err) {
+      console.error(err);
+      setStatus(`No se pudieron cargar los datos: ${err.message}`, true);
+    } finally {
+      renderTabs();
+      renderAll();
+      applyRoleScope();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
