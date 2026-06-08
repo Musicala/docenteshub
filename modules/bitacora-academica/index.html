@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bitácora de tareas académicas · Musicala</title>
+  <title>Bitácora Académica · Musicala</title>
   <meta name="description" content="Bitácora de tareas académicas, seguimiento de avances y bolsa de horas por objetivos para Musicala." />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2026-06-07.1" />
 </head>
 <body>
   <header class="hero" role="banner">
@@ -27,7 +27,7 @@
       <div class="hero-actions" aria-label="Acciones principales">
         <button id="btnBackHub" class="btn btn-light btn-back" type="button" hidden>← Volver al HUB</button>
         <button id="btnReload" class="btn btn-light" type="button">↻ Recargar datos</button>
-        <button id="btnNewObjective" class="btn btn-dark" type="button">＋ Nueva tarea objetivo</button>
+        <button id="btnNewObjective" class="btn btn-dark" type="button">＋ Asignar tarea</button>
       </div>
     </div>
   </header>
@@ -57,13 +57,13 @@
       <div class="metric">
         <span class="metric__label">Horas usadas</span>
         <strong id="mUsadas">0 h</strong>
-        <small>Registros locales de trabajo</small>
+        <small>Horas registradas</small>
       </div>
     </section>
 
     <nav class="tabs" aria-label="Secciones">
       <button class="tab active" data-view="resumen" type="button">Resumen</button>
-      <button class="tab" data-view="tareas" type="button">Tareas</button>
+      <button class="tab" data-view="tareas" type="button">Tareas académicas</button>
       <button class="tab" data-view="bolsa" type="button">Bolsa de horas</button>
     </nav>
 
@@ -83,7 +83,7 @@
         <article class="panel">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Control sano, no persecución rara</p>
+              <p class="eyebrow">Resumen</p>
               <h2>Uso de la bolsa</h2>
             </div>
             <button id="btnExportHours" class="btn btn-soft" type="button">Exportar CSV</button>
@@ -92,11 +92,11 @@
         </article>
       </div>
 
-      <article class="panel">
+      <article class="panel" id="panelNeedsEstimate">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Próximas conversaciones</p>
-            <h2>Tareas que necesitan acuerdo de horas</h2>
+            <p class="eyebrow">Planeación</p>
+            <h2>Tareas sin horas estimadas</h2>
           </div>
         </div>
         <div class="table-wrap table-wrap--soft">
@@ -149,25 +149,33 @@
             </div>
           </div>
           <p class="helper-text">
-            Define una bolsa por periodo, estima cada tarea y registra el uso real. Así nadie siente que regaló media vida por una tarea de diez minutos ni que una tarea de diez minutos se volvió tesis doctoral. Bendita administración, ¿no? 🧾
+            La <strong>bolsa de horas</strong> son horas que la docente debe reponer en un <strong>rango de fechas</strong> definido (reposiciones, trabajo remoto por objetivos). No importa qué tarea trabaje: lo que cuenta para la bolsa son los <strong>avances marcados como “Bolsa de horas”</strong> dentro del rango. La misma tarea, si la trabajas en tu jornada normal, no descuenta de la bolsa.
           </p>
 
           <form id="budgetForm" class="mini-form" novalidate>
-            <label>
-              <span>Periodo</span>
-              <input id="budgetPeriod" type="month" required />
+            <label class="admin-only-field">
+              <span>Docente asignada</span>
+              <select id="budgetTeacherEmail"></select>
             </label>
             <label>
               <span>Responsable</span>
-              <input id="budgetPerson" type="text" placeholder="Ej.: Emily Bejarano" required />
+              <input id="budgetPerson" type="text" placeholder="Ej.: Emily Bejarano" readonly />
             </label>
             <label>
               <span>Horas asignadas</span>
-              <input id="budgetHours" type="number" min="0" step="0.25" placeholder="Ej.: 16" required />
+              <input id="budgetHours" type="number" min="0" step="0.25" placeholder="Ej.: 4" required />
+            </label>
+            <label>
+              <span>Cumplir desde <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
+              <input id="budgetStart" type="date" required />
+            </label>
+            <label>
+              <span>Cumplir hasta <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
+              <input id="budgetEnd" type="date" required />
             </label>
             <label class="mini-form__full">
               <span>Nota del acuerdo</span>
-              <input id="budgetNote" type="text" placeholder="Ej.: Semana del 8 al 14 / tareas académicas remotas" />
+              <input id="budgetNote" type="text" placeholder="Ej.: Reposición de jornada / tareas académicas remotas" />
             </label>
             <div class="mini-form__actions">
               <button class="btn btn-dark" type="submit">Guardar bolsa</button>
@@ -194,9 +202,6 @@
             <h2>Tareas con estimación</h2>
           </div>
           <div class="toolbar">
-            <select id="fBolsaPeriodo" class="control">
-              <option value="">Periodo: todos</option>
-            </select>
             <select id="fBolsaPersona" class="control">
               <option value="">Responsable: todos</option>
             </select>
@@ -348,6 +353,18 @@
             </label>
 
             <label>
+              <span>¿Cómo se trabajó? <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
+              <select id="logScope" required aria-required="true">
+                <option value="jornada">Jornada normal (no cuenta para bolsa)</option>
+                <option value="bolsa">Bolsa de horas (remoto · cuenta para las horas que debo)</option>
+              </select>
+            </label>
+
+            <label class="full">
+              <span class="status" id="logScopeHint">Marca “Bolsa de horas” solo si este rato es trabajo remoto que repone horas pendientes.</span>
+            </label>
+
+            <label>
               <span>Tipo de trabajo</span>
               <select id="logTipoTrabajo">
                 <option>Trabajo por objetivos</option>
@@ -400,27 +417,31 @@
     <div class="modal__dialog modal__dialog--small" role="dialog" aria-modal="true" aria-labelledby="modalObjectiveTitle">
       <header class="modal__header">
         <div>
-          <p class="eyebrow">Nuevo acuerdo</p>
-          <h3 id="modalObjectiveTitle">Nueva tarea por objetivos</h3>
+          <p class="eyebrow">Asignación académica</p>
+          <h3 id="modalObjectiveTitle">Nueva tarea académica</h3>
         </div>
         <button class="btn btn-icon modal__close" type="button" aria-label="Cerrar" data-close="1">✕</button>
       </header>
 
       <form id="objectiveForm" class="modal__content form-grid form-grid--compact" novalidate>
+        <label class="full admin-only-field">
+          <span>Docente asignada</span>
+          <select id="objTeacherEmail"></select>
+        </label>
         <label class="full">
           <span>Tarea / objetivo <abbr title="Obligatorio">*</abbr></span>
           <input id="objTitle" type="text" required placeholder="Ej.: Preparar guía de lectura rítmica para ciclo I" />
         </label>
         <label>
           <span>Responsable</span>
-          <input id="objPerson" type="text" placeholder="Ej.: Emily Bejarano" />
+          <input id="objPerson" type="text" placeholder="Ej.: Emily Bejarano" readonly />
         </label>
         <label>
           <span>Periodo</span>
           <input id="objPeriod" type="month" />
         </label>
         <label>
-          <span>Horas estimadas</span>
+          <span>Horas estimadas (opcional)</span>
           <input id="objHours" type="number" min="0" step="0.25" placeholder="Ej.: 3" />
         </label>
         <label>
@@ -447,7 +468,7 @@
           <textarea id="objDescription" rows="3" placeholder="Qué debe quedar hecho para considerar cumplida la tarea."></textarea>
         </label>
         <div class="form-actions full">
-          <button class="btn btn-dark" type="submit">Crear tarea</button>
+          <button class="btn btn-dark" type="submit">Crear / asignar tarea</button>
           <button class="btn btn-soft" type="button" data-close="1">Cancelar</button>
         </div>
       </form>
@@ -462,6 +483,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js"></script>
+  <script type="module" src="script.js?v=2026-06-07.3"></script>
 </body>
 </html>

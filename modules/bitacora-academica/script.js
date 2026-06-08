@@ -44,7 +44,26 @@ const firebaseConfig = {
 const COL = {
   objectives: "academicObjectives",
   budgets: "academicTaskBudgets",
-  hourLogs: "academicTaskHourLogs"
+  hourLogs: "academicTaskHourLogs",
+  hubUsers: "hubUsers"
+};
+
+const ADMIN_EMAILS = [
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com"
+];
+
+// Base local para que el módulo funcione aunque todavía no existan docs en hubUsers.
+// Los docentes nuevos agregados desde el panel se suman desde Firestore.
+const BASE_TEACHERS = {
+  "emilybg0102@gmail.com": "Emily Bejarano",
+  "annitolad@gmail.com": "Angie Nitola",
+  "lorenaduarte.404@gmail.com": "Laura Sánchez",
+  "malego2709@gmail.com": "María Alejandra Gómez",
+  "bagutierrezm@gmail.com": "Brian Alexander Gutiérrez",
+  "darasaxcifuentes@gmail.com": "Dara Natalia Cifuentes Rojas",
+  "alekcaballeromusic@gmail.com": "Alek Caballero",
+  "catalina.medina.leal@gmail.com": "Catalina Medina"
 };
 
 /* ------------------------------ Utilidades ------------------------------ */
@@ -79,6 +98,7 @@ let ME = '';        // correo autenticado (fuente de verdad para escribir)
 let currentTask = null;
 let activeView = 'resumen';
 let dataReady = false;
+let teacherDirectory = [];
 
 const store = {
   objectives: [],
@@ -87,7 +107,7 @@ const store = {
 };
 
 function isAdminContext() {
-  return ACADEMIC_CTX.role === 'Admin';
+  return ACADEMIC_CTX.role === 'Admin' && ADMIN_EMAILS.includes(ME);
 }
 
 function readContextFromUrl() {
@@ -113,9 +133,206 @@ function applyBranding() {
   document.title = `Bitácora Académica · ${ACADEMIC_CTX.name || 'Musicala'}`;
   const ctx = $('#site-context');
   if (ctx) {
-    ctx.textContent = `${ACADEMIC_CTX.name || ME}${(ACADEMIC_CTX.name || ME) ? ' · ' : ''}${isAdminContext() ? 'Vista coordinación (todas las docentes)' : 'Docente'} · Datos en Firebase`;
+    ctx.textContent = `${ACADEMIC_CTX.name || ME}${(ACADEMIC_CTX.name || ME) ? ' · ' : ''}${isAdminContext() ? 'Vista coordinación (todas las docentes)' : 'Tu bitácora académica'}`;
     ctx.hidden = false;
   }
+}
+
+
+function buildBaseTeacherDirectory() {
+  return Object.entries(BASE_TEACHERS).map(([email, label]) => ({
+    email,
+    label,
+    enabled: true,
+    isAdmin: ADMIN_EMAILS.includes(email),
+    source: 'base'
+  }));
+}
+
+async function loadTeacherDirectory() {
+  if (!isAdminContext()) {
+    teacherDirectory = [{ email: ME, label: ACADEMIC_CTX.name || ME, enabled: true, isAdmin: false, source: 'self' }];
+    return teacherDirectory;
+  }
+
+  const map = new Map();
+  for (const item of buildBaseTeacherDirectory()) map.set(item.email, item);
+
+  try {
+    const snap = await getDocs(collection(DB, COL.hubUsers));
+    snap.forEach((d) => {
+      const data = d.data() || {};
+      const email = String(d.id || data.email || '').toLowerCase().trim();
+      if (!email) return;
+      map.set(email, {
+        email,
+        label: data.label || data.name || map.get(email)?.label || email,
+        enabled: data.enabled !== false,
+        isAdmin: ADMIN_EMAILS.includes(email),
+        source: 'panel'
+      });
+    });
+  } catch (error) {
+    console.warn('No se pudo cargar hubUsers para asignación académica', error);
+  }
+
+  teacherDirectory = Array.from(map.values())
+    .filter(item => item.enabled && !item.isAdmin)
+    .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  return teacherDirectory;
+}
+
+function getTeacherFromDirectory(emailOrName = '') {
+  const value = String(emailOrName || '').toLowerCase().trim();
+  return teacherDirectory.find(t => t.email === value)
+    || teacherDirectory.find(t => norm(t.label) === norm(emailOrName))
+    || null;
+}
+
+function teacherOptionsHtml(selectedEmail = '') {
+  const selected = String(selectedEmail || '').toLowerCase();
+  return teacherDirectory.map(t => `<option value="${esc(t.email)}" ${t.email === selected ? 'selected' : ''}>${esc(t.label)} · ${esc(t.email)}</option>`).join('');
+}
+
+function fillTeacherSelect(select, selectedEmail = '') {
+  if (!select) return;
+  if (!isAdminContext()) {
+    select.innerHTML = `<option value="${esc(ME)}">${esc(ACADEMIC_CTX.name || ME)}</option>`;
+    select.value = ME;
+    select.closest('label')?.setAttribute('hidden', '');
+    return;
+  }
+  select.closest('label')?.removeAttribute('hidden');
+  select.innerHTML = `<option value="">Selecciona docente</option>${teacherOptionsHtml(selectedEmail)}`;
+  if (selectedEmail && Array.from(select.options).some(o => o.value === selectedEmail)) select.value = selectedEmail;
+}
+
+function selectedTeacherFor(kind = 'objective') {
+  if (!isAdminContext()) return { email: ME, label: ACADEMIC_CTX.name || ME };
+  const id = kind === 'budget' ? '#budgetTeacherEmail' : '#objTeacherEmail';
+  const select = $(id);
+  const email = String(select?.value || '').toLowerCase().trim();
+  const found = getTeacherFromDirectory(email);
+  return found ? { email: found.email, label: found.label } : { email: '', label: '' };
+}
+
+function normalizeWorkScope(value, estimatedHours = 0) {
+  const s = norm(value);
+  if (s.includes('bolsa') || s.includes('objetivo') || s.includes('extra')) return 'bolsa';
+  if (s.includes('academ') || s.includes('jornada') || s.includes('pendiente')) return 'academica';
+  // Compatibilidad con registros anteriores: si tenían horas estimadas, probablemente eran de bolsa.
+  return toNumber(estimatedHours) > 0 ? 'bolsa' : 'academica';
+}
+
+function workScopeLabel(scope) {
+  return normalizeWorkScope(scope) === 'bolsa' ? 'Bolsa de horas' : 'Tarea académica';
+}
+
+function workScopeClass(scope) {
+  return normalizeWorkScope(scope) === 'bolsa' ? 'pill pill--warn' : 'pill pill--neutral';
+}
+
+/* Ámbito de un REGISTRO de avance: 'jornada' (no cuenta a la bolsa) o 'bolsa'
+   (trabajo remoto que repone horas pendientes). Es la etiqueta clave del modelo:
+   la misma tarea puede tener avances de jornada y avances de bolsa. */
+function logScopeOf(log) {
+  if (log && log.logScope) return norm(log.logScope).includes('bolsa') ? 'bolsa' : 'jornada';
+  // Compatibilidad con registros anteriores (cuando el ámbito vivía en la tarea):
+  const task = store.objectives.find(item => String(item.id) === String(log?.taskId));
+  return task && normalizeWorkScope(task.workScope, task.estimatedHours) === 'bolsa' ? 'bolsa' : 'jornada';
+}
+
+function logScopeLabel(scope) {
+  return scope === 'bolsa' ? 'Bolsa de horas' : 'Jornada';
+}
+
+function logScopeClass(scope) {
+  return scope === 'bolsa' ? 'pill pill--warn' : 'pill pill--neutral';
+}
+
+/* ----------------------- Fechas y rangos de bolsa ---------------------- */
+const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
+const dateOnly = value => String(value || '').slice(0, 10);
+function daysBetween(fromISO, toISO) {
+  const a = new Date(`${fromISO}T00:00`);
+  const b = new Date(`${toISO}T00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  return Math.round((b - a) / 86400000);
+}
+function fmtShortDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${dateOnly(iso)}T00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+}
+function fmtBudgetRange(budget) {
+  const start = dateOnly(budget.startDate);
+  const end = dateOnly(budget.endDate);
+  if (start && end) {
+    const year = new Date(`${end}T00:00`).getFullYear();
+    return `${fmtShortDate(start)} – ${fmtShortDate(end)} ${year}`;
+  }
+  // Compatibilidad con bolsas viejas que solo tenían periodo (mes).
+  return budget.period || 'Sin fechas';
+}
+
+/* ¿Este avance de bolsa cae dentro del rango de esta bolsa y es del mismo docente? */
+function logBelongsToBudget(log, budget) {
+  if (logScopeOf(log) !== 'bolsa') return false;
+  const budgetEmail = String(budget.teacherEmail || '').toLowerCase();
+  const sameTeacher = budgetEmail
+    ? String(log.teacherEmail || '').toLowerCase() === budgetEmail
+    : norm(log.person) === norm(budget.person);
+  if (!sameTeacher) return false;
+  const start = dateOnly(budget.startDate);
+  const end = dateOnly(budget.endDate);
+  const when = dateOnly(log.start);
+  if (start && when < start) return false;
+  if (end && when > end) return false;
+  // Bolsa vieja sin rango: caer al periodo (mes).
+  if (!start && !end && budget.period && String(log.period || '') !== budget.period) return false;
+  return true;
+}
+
+function budgetUsage(budget) {
+  const used = store.hourLogs
+    .filter(log => logBelongsToBudget(log, budget))
+    .reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
+  return { used: round2(used), remaining: round2(toNumber(budget.hours) - used) };
+}
+
+function budgetStatus(budget) {
+  const today = todayISO();
+  const start = dateOnly(budget.startDate);
+  const end = dateOnly(budget.endDate);
+  if (start && today < start) {
+    const d = daysBetween(today, start);
+    return { label: d === 1 ? 'Empieza mañana' : `Empieza en ${d} días`, cls: 'pill pill--neutral' };
+  }
+  if (end && today > end) return { label: 'Vencida', cls: 'pill pill--danger' };
+  if (end) {
+    const d = daysBetween(today, end);
+    if (d === 0) return { label: 'Vence hoy', cls: 'pill pill--warn' };
+    return { label: `Vence en ${d} día${d === 1 ? '' : 's'}`, cls: d <= 2 ? 'pill pill--warn' : 'pill pill--ok' };
+  }
+  return { label: 'Activa', cls: 'pill pill--ok' };
+}
+
+/* Avances marcados como bolsa, filtrados por el responsable de la pestaña. */
+function bolsaLogsInScope() {
+  const person = $('#fBolsaPersona')?.value || '';
+  return store.hourLogs.filter(log => {
+    if (logScopeOf(log) !== 'bolsa') return false;
+    if (person && String(log.person || '') !== person) return false;
+    return true;
+  });
+}
+
+/* Horas de bolsa registradas para una tarea concreta (respetando filtros de la bolsa). */
+function bolsaUsedForTask(taskId, logs = bolsaLogsInScope()) {
+  return logs
+    .filter(log => String(log.taskId) === String(taskId))
+    .reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
 }
 
 /* ============================ Carga de datos ============================ */
@@ -131,7 +348,7 @@ async function loadCollection(name) {
 }
 
 async function loadAll() {
-  setStatus('Cargando desde Firebase…');
+  setStatus('Cargando…');
   const [objectives, budgets, hourLogs] = await Promise.all([
     loadCollection(COL.objectives),
     loadCollection(COL.budgets),
@@ -142,22 +359,38 @@ async function loadAll() {
   store.hourLogs = hourLogs;
   dataReady = true;
   const n = store.objectives.length;
-  setStatus(`${n} tarea${n === 1 ? '' : 's'} cargada${n === 1 ? '' : 's'} desde Firebase.`);
+  setStatus(`${n} tarea${n === 1 ? '' : 's'} cargada${n === 1 ? '' : 's'}.`);
 }
 
 /* ----------------------------- Escrituras ------------------------------ */
-function ownerFields() {
+function ownerFields(data = {}, existing = null) {
+  const teacherEmail = String(
+    data.teacherEmail || existing?.teacherEmail || (isAdminContext() ? '' : ME) || ME
+  ).toLowerCase().trim();
+  const teacher = getTeacherFromDirectory(teacherEmail);
+  const teacherName = data.teacherName || data.person || existing?.teacherName || existing?.person || teacher?.label || ACADEMIC_CTX.name || teacherEmail || ME;
+
   return {
-    teacherEmail: ME,
-    teacherName: ACADEMIC_CTX.name || ME,
+    teacherEmail,
+    teacherName,
+    person: data.person || existing?.person || teacherName,
     updatedAt: serverTimestamp(),
-    createdBy: ME
+    updatedBy: ME,
+    createdBy: existing?.createdBy || data.createdBy || ME
   };
 }
 
 async function dbSaveObjective(obj) {
+  const existing = store.objectives.find(item => String(item.id) === String(obj.id)) || null;
+  const owner = ownerFields(obj, existing);
+  if (!owner.teacherEmail) throw new Error('Selecciona una docente responsable.');
+  const payload = {
+    ...obj,
+    workScope: normalizeWorkScope(obj.workScope ?? existing?.workScope, obj.estimatedHours ?? existing?.estimatedHours),
+    ...owner
+  };
   const ref = doc(DB, COL.objectives, obj.id);
-  await setDoc(ref, { ...obj, ...ownerFields() }, { merge: true });
+  await setDoc(ref, payload, { merge: true });
 }
 
 async function dbDeleteObjective(id) {
@@ -165,13 +398,18 @@ async function dbDeleteObjective(id) {
 }
 
 async function dbSaveBudget(budget) {
+  const existing = store.budgets.find(item => String(item.id) === String(budget.id)) || null;
+  const owner = ownerFields(budget, existing);
+  if (!owner.teacherEmail) throw new Error('Selecciona una docente para la bolsa.');
   const ref = doc(DB, COL.budgets, budget.id);
-  await setDoc(ref, { ...budget, ...ownerFields() }, { merge: true });
+  await setDoc(ref, { ...budget, ...owner, workScope: 'bolsa' }, { merge: true });
 }
 
 async function dbSaveHourLog(log) {
+  const task = store.objectives.find(item => String(item.id) === String(log.taskId)) || null;
+  const owner = ownerFields(log, task);
   const ref = doc(DB, COL.hourLogs, log.id);
-  await setDoc(ref, { ...log, ...ownerFields() }, { merge: true });
+  await setDoc(ref, { ...log, ...owner }, { merge: true });
 }
 
 /* ============================ Modelo de tareas ========================== */
@@ -203,7 +441,10 @@ function getAllTasks() {
     source: 'firestore',
     id: task.id,
     title: task.title || 'Tarea sin título',
+    teacherEmail: String(task.teacherEmail || '').toLowerCase(),
+    teacherName: task.teacherName || task.person || inferPerson(),
     person: task.person || task.teacherName || inferPerson(),
+    workScope: normalizeWorkScope(task.workScope, task.estimatedHours),
     state: task.state || 'Pendiente',
     urgency: task.urgency || '',
     dueDate: task.dueDate || '',
@@ -235,12 +476,13 @@ function usedHoursForTask(taskId) {
 }
 
 function getSelectedObjectiveTasks() {
-  const period = $('#fBolsaPeriodo')?.value || '';
-  const person = $('#fBolsaPersona')?.value || '';
+  // Las tareas de la bolsa son aquellas con al menos un avance marcado como
+  // "bolsa" dentro del periodo/responsable filtrado (modelo por registro).
   const queryStr = norm($('#qBolsa')?.value || '');
+  const logs = bolsaLogsInScope();
+  const taskIds = new Set(logs.map(log => String(log.taskId)));
   return getAllTasks().filter(task => {
-    if (period && task.period !== period) return false;
-    if (person && task.person !== person) return false;
+    if (!taskIds.has(String(task.id))) return false;
     if (queryStr && !norm(`${task.id} ${task.title} ${task.person} ${task.category} ${task.description}`).includes(queryStr)) return false;
     return true;
   });
@@ -280,7 +522,6 @@ function fillFilters() {
   fillSelect($('#fPersona'), uniqueSorted(tasks.map(t => t.person)), 'Responsable: todos');
   fillSelect($('#fEstado'), uniqueSorted(tasks.map(t => normalizeState(t.state))), 'Estado: todos');
   fillSelect($('#fUrgencia'), uniqueSorted(tasks.map(t => t.urgency)), 'Urgencia: todas');
-  fillSelect($('#fBolsaPeriodo'), uniqueSorted(tasks.map(t => t.period).concat(store.budgets.map(b => b.period))), 'Periodo: todos');
   fillSelect($('#fBolsaPersona'), uniqueSorted(tasks.map(t => t.person).concat(store.budgets.map(b => b.person))), 'Responsable: todos');
 }
 
@@ -309,13 +550,16 @@ function renderMainTable() {
 
   if (!rows.length) {
     tbody.innerHTML = emptyRow(7, dataReady
-      ? 'No hay tareas con esos filtros. Crea una con “＋ Nueva tarea objetivo”.'
+      ? 'No hay tareas con esos filtros. Crea una con “＋ Asignar tarea”.'
       : 'Cargando…');
     return;
   }
 
   tbody.innerHTML = rows.map(task => {
     const used = usedHoursForTask(task.id);
+    const hoursHtml = toNumber(task.estimatedHours) > 0
+      ? `<div class="hours-cell"><strong>${fmtHours(used)}</strong><small>de ${fmtHours(task.estimatedHours)} est.</small></div>`
+      : `<div class="hours-cell"><strong>${fmtHours(used)}</strong><small>registradas</small></div>`;
     return `
       <tr data-id="${esc(task.id)}">
         <td data-th="ID"><span class="mono">${esc(task.id)}</span></td>
@@ -323,7 +567,7 @@ function renderMainTable() {
         <td data-th="Responsable">${esc(task.person || '—')}</td>
         <td data-th="Periodo">${esc(task.period || '—')}</td>
         <td data-th="Estado"><span class="${stateClass(task.state)}">${esc(normalizeState(task.state))}</span></td>
-        <td data-th="Horas"><div class="hours-cell"><strong>${fmtHours(used)}</strong><small>de ${fmtHours(task.estimatedHours)}</small></div></td>
+        <td data-th="Horas">${hoursHtml}</td>
         <td data-th="Acciones"><button class="btn btn-dark btn-detail" data-id="${esc(task.id)}" type="button">📝 Abrir</button></td>
       </tr>
     `;
@@ -361,10 +605,10 @@ function renderInsights() {
   const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
 
   const items = [
-    { title: 'Tareas activas', value: pending.length, text: pending.length ? 'Hay trabajo pendiente o en curso. Revisa que cada una tenga entregable claro.' : 'No hay tareas activas registradas.' },
-    { title: 'Sin estimación', value: withoutEstimate.length, text: withoutEstimate.length ? 'Candidatas a acordar: “¿cuánto tiempo reconocemos por esto?”' : 'Todas las tareas tienen una estimación.' },
-    { title: 'Horas usadas vs. estimadas', value: `${fmtHours(used)} / ${fmtHours(estimated)}`, text: used > estimated && estimated > 0 ? 'El uso superó lo estimado. Conviene ajustar.' : 'El uso está dentro de lo planeado o falta estimar más tareas.' },
-    { title: 'Tareas pasadas de horas', value: overBudgetTasks.length, text: overBudgetTasks.length ? 'Revisar si hubo retrabajo o mala estimación.' : 'Ninguna tarea por encima de su estimado.' }
+    { title: 'Tareas activas', value: pending.length, text: pending.length ? 'Tienes trabajo pendiente o en curso.' : 'No hay tareas activas registradas.' },
+    { title: 'Sin horas estimadas', value: withoutEstimate.length, text: withoutEstimate.length ? 'Hay tareas sin horas estimadas todavía.' : 'Todas las tareas tienen horas estimadas.' },
+    { title: 'Horas usadas vs. estimadas', value: `${fmtHours(used)} / ${fmtHours(estimated)}`, text: used > estimated && estimated > 0 ? 'Las horas registradas superan lo estimado.' : 'Las horas registradas están dentro de lo estimado.' },
+    { title: 'Tareas sobre lo estimado', value: overBudgetTasks.length, text: overBudgetTasks.length ? 'Hay tareas que superaron sus horas estimadas.' : 'Ninguna tarea superó sus horas estimadas.' }
   ];
 
   box.innerHTML = items.map(item => `
@@ -389,25 +633,21 @@ function renderNeedsEstimate() {
       <td data-th="Estado"><span class="${stateClass(task.state)}">${esc(normalizeState(task.state))}</span></td>
       <td data-th="Acción"><button class="btn btn-soft btn-detail" data-id="${esc(task.id)}" type="button">Estimar</button></td>
     </tr>
-  `).join('') : emptyRow(5, 'Todas las tareas visibles tienen estimación.');
+  `).join('') : emptyRow(5, 'Todas las tareas tienen horas estimadas.');
 }
 
 function budgetTotals() {
-  const selectedPeriod = $('#fBolsaPeriodo')?.value || '';
   const selectedPerson = $('#fBolsaPersona')?.value || '';
   const tasks = getSelectedObjectiveTasks();
-  const budgets = store.budgets.filter(budget => {
-    if (selectedPeriod && budget.period !== selectedPeriod) return false;
-    if (selectedPerson && budget.person !== selectedPerson) return false;
-    return true;
+  const budgets = store.budgets.filter(budget => !selectedPerson || budget.person === selectedPerson);
+  let budgetHours = 0;
+  let used = 0;
+  budgets.forEach(budget => {
+    budgetHours += toNumber(budget.hours);
+    used += budgetUsage(budget).used; // solo avances de bolsa dentro del rango
   });
-  const budgetHours = budgets.reduce((sum, budget) => sum + toNumber(budget.hours), 0);
   const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
-  const taskIds = new Set(tasks.map(task => String(task.id)));
-  const used = store.hourLogs
-    .filter(log => taskIds.has(String(log.taskId)))
-    .reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
-  return { budgetHours, estimated, used, remaining: budgetHours - used, tasks, budgets };
+  return { budgetHours: round2(budgetHours), estimated, used: round2(used), remaining: round2(budgetHours - used), tasks, budgets };
 }
 
 function progressBar(value, max) {
@@ -432,30 +672,46 @@ function renderBudgetSummary() {
       <div><span>Saldo</span><strong class="${over ? 'danger-text' : ''}">${fmtHours(totals.remaining)}</strong></div>
     </div>
     ${progressBar(totals.used, totals.budgetHours || totals.estimated || 1)}
-    <p class="helper-text">${hasBudget ? (over ? 'La bolsa está sobrepasada. Toca revisar si se aprueba más tiempo o se recortan objetivos.' : 'La bolsa aún tiene margen frente al uso registrado.') : 'Aún no hay una bolsa asignada para los filtros actuales.'}</p>
+    <p class="helper-text">${hasBudget ? (over ? 'Se registraron más horas de las asignadas a la bolsa.' : 'La bolsa todavía tiene horas por cumplir.') : 'Aún no hay una bolsa de horas asignada.'}</p>
   `;
 
-  balance.innerHTML = totals.budgets.length ? totals.budgets.map(budget => `
-    <div class="balance-row">
-      <div><strong>${esc(budget.person)}</strong><small>${esc(budget.period)} · ${esc(budget.note || 'Sin nota')}</small></div>
-      <span>${fmtHours(budget.hours)}</span>
-    </div>
-  `).join('') : '<p class="helper-text">Crea una bolsa de horas para empezar a comparar acuerdo vs. uso real.</p>';
+  const sortedBudgets = [...totals.budgets].sort((a, b) => String(b.startDate || b.period || '').localeCompare(String(a.startDate || a.period || '')));
+  balance.innerHTML = sortedBudgets.length ? sortedBudgets.map(budget => {
+    const usage = budgetUsage(budget);
+    const st = budgetStatus(budget);
+    const done = usage.remaining <= 0;
+    const faltanCls = done ? '' : (st.label === 'Vencida' ? 'danger-text' : '');
+    return `
+    <div class="balance-card">
+      <div class="balance-card__head">
+        <strong>${esc(budget.person)}</strong>
+        <span class="${done ? 'pill pill--ok' : st.cls}">${esc(done ? 'Cumplida' : st.label)}</span>
+      </div>
+      <small class="balance-card__range">📅 ${esc(fmtBudgetRange(budget))} · ${esc(budget.note || 'Sin nota')}</small>
+      <div class="budget-kpis budget-kpis--mini">
+        <div><span>Asignadas</span><strong>${fmtHours(budget.hours)}</strong></div>
+        <div><span>Cumplidas</span><strong>${fmtHours(usage.used)}</strong></div>
+        <div><span>Faltan</span><strong class="${faltanCls}">${fmtHours(Math.max(0, usage.remaining))}</strong></div>
+      </div>
+      ${progressBar(usage.used, toNumber(budget.hours) || 1)}
+    </div>`;
+  }).join('') : '<p class="helper-text">Crea una bolsa de horas (con su rango de fechas) para empezar a comparar acuerdo vs. uso real.</p>';
 }
 
 function renderObjectivesTable() {
   const table = $('#tblObjectives');
   if (!table) return;
   const tasks = getSelectedObjectiveTasks();
-  table.querySelector('thead').innerHTML = '<tr><th>ID</th><th>Tarea / objetivo</th><th>Responsable</th><th>Periodo</th><th>Categoría</th><th>Estimado</th><th>Usado</th><th>Estado</th><th>Acción</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>ID</th><th>Tarea / objetivo</th><th>Responsable</th><th>Periodo</th><th>Categoría</th><th>Estimado</th><th>Usado (bolsa)</th><th>Estado</th><th>Acción</th></tr>';
 
   if (!tasks.length) {
-    table.querySelector('tbody').innerHTML = emptyRow(9, 'No hay tareas en esta bolsa todavía.');
+    table.querySelector('tbody').innerHTML = emptyRow(9, 'Aún no hay avances cargados a esta bolsa. Aparecerán aquí cuando un docente registre un avance marcado como “Bolsa de horas”.');
     return;
   }
 
+  const logs = bolsaLogsInScope();
   table.querySelector('tbody').innerHTML = tasks.map(task => {
-    const used = usedHoursForTask(task.id);
+    const used = bolsaUsedForTask(task.id, logs);
     const over = toNumber(task.estimatedHours) > 0 && used > toNumber(task.estimatedHours);
     return `
       <tr>
@@ -476,23 +732,27 @@ function renderObjectivesTable() {
 function renderHourLogs() {
   const table = $('#tblHourLogs');
   if (!table) return;
-  table.querySelector('thead').innerHTML = '<tr><th>Fecha</th><th>Tarea</th><th>Responsable</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Fecha</th><th>Tarea</th><th>Responsable</th><th>Ámbito</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th></tr>';
   const logs = [...store.hourLogs].sort((a, b) => String(b.start).localeCompare(String(a.start)));
   if (!logs.length) {
-    table.querySelector('tbody').innerHTML = emptyRow(7, 'Todavía no hay horas registradas.');
+    table.querySelector('tbody').innerHTML = emptyRow(8, 'Todavía no hay horas registradas.');
     return;
   }
-  table.querySelector('tbody').innerHTML = logs.map(log => `
+  table.querySelector('tbody').innerHTML = logs.map(log => {
+    const scope = logScopeOf(log);
+    return `
     <tr>
       <td data-th="Fecha"><span class="mono">${esc(formatDateTime(log.start))}</span></td>
       <td data-th="Tarea" class="wrap"><strong>${esc(log.taskTitle || log.taskId)}</strong><small>${esc(log.taskId)}</small></td>
       <td data-th="Responsable">${esc(log.person || '—')}</td>
+      <td data-th="Ámbito"><span class="${logScopeClass(scope)}">${esc(logScopeLabel(scope))}</span></td>
       <td data-th="Tipo">${esc(log.workType || '—')}</td>
       <td data-th="Duración">${fmtHours(log.durationHours)}</td>
       <td data-th="Reconocidas"><strong>${fmtHours(log.recognizedHours || log.durationHours)}</strong></td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function formatDateTime(value) {
@@ -546,6 +806,10 @@ function openDetailById(id) {
   $('#estimateCategory').value = task.category || '';
   $('#estimateCriteria').value = task.criteria || task.description || '';
   $('#logEstado').value = normalizeState(task.state);
+  if ($('#logScope')) {
+    $('#logScope').value = task.workScope === 'bolsa' ? 'bolsa' : 'jornada';
+    updateLogScopeHint();
+  }
 
   setDefaultLogTimes();
   updateDurationPreview();
@@ -568,17 +832,30 @@ function loadLogs(id) {
     .filter(log => String(log.taskId) === String(id))
     .sort((a, b) => String(b.start).localeCompare(String(a.start)));
 
-  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
-  table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => `
+  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
+  table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => {
+    const scope = logScopeOf(log);
+    return `
     <tr>
       <td data-th="Inicio">${esc(formatDateTime(log.start))}</td>
       <td data-th="Fin">${esc(formatDateTime(log.end))}</td>
+      <td data-th="Ámbito"><span class="${logScopeClass(scope)}">${esc(logScopeLabel(scope))}</span></td>
       <td data-th="Horas">${fmtHours(log.recognizedHours || log.durationHours)}</td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
       <td data-th="Estado">${esc(log.state || '')}</td>
     </tr>
-  `).join('') : emptyRow(5, 'No hay registros para esta tarea todavía.');
+  `;
+  }).join('') : emptyRow(6, 'No hay registros para esta tarea todavía.');
   $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
+}
+
+function updateLogScopeHint() {
+  const hint = $('#logScopeHint');
+  if (!hint) return;
+  const isBolsa = norm($('#logScope')?.value).includes('bolsa');
+  hint.textContent = isBolsa
+    ? 'Este rato cuenta para la bolsa de horas: descuenta de las horas que el docente debe reponer.'
+    : 'Jornada normal: se trabaja dentro del horario y NO descuenta de la bolsa de horas.';
 }
 
 function updateDurationPreview() {
@@ -603,6 +880,7 @@ async function submitLog(event) {
   const missing = $('#logFalta').value.trim();
   const improve = $('#logMejorar').value.trim();
   const workType = $('#logTipoTrabajo').value;
+  const logScope = norm($('#logScope')?.value).includes('bolsa') ? 'bolsa' : 'jornada';
 
   if (!id) return showFormMessage('Falta el ID de la tarea.', true);
   if (calculated <= 0) return showFormMessage('La fecha de fin debe ser posterior al inicio.', true);
@@ -610,18 +888,20 @@ async function submitLog(event) {
 
   const submitButton = $('#logForm button[type="submit"]');
   submitButton.disabled = true;
-  showFormMessage('Guardando en Firebase…');
+  showFormMessage('Guardando…');
 
   const log = {
     id: uid('LOG'),
     taskId: id,
     taskTitle: task?.title || $('#logTaskName').textContent.trim(),
+    teacherEmail: task?.teacherEmail || ME,
+    teacherName: task?.teacherName || task?.person || $('#logTaskPerson').textContent.trim(),
     person: task?.person || $('#logTaskPerson').textContent.trim(),
     period: task?.period || todayMonth(),
     start, end,
     durationHours: calculated,
     recognizedHours: recognized,
-    workType, state,
+    workType, logScope, state,
     advanced, missing, improve,
     createdAt: new Date().toISOString()
   };
@@ -637,7 +917,7 @@ async function submitLog(event) {
     clearLogFormKeepTask();
     loadLogs(id);
     renderAll();
-    showFormMessage('Guardado en Firebase ✔');
+    showFormMessage('Avance guardado ✔');
   } catch (err) {
     console.error(err);
     showFormMessage(`No se pudo guardar: ${err.message}`, true);
@@ -663,6 +943,10 @@ function clearLogFormKeepTask() {
 
 async function saveEstimate(event) {
   event.preventDefault();
+  if (!isAdminContext()) {
+    showFormMessage('Solo coordinación puede modificar la estimación o la bolsa de horas.', true);
+    return;
+  }
   const id = $('#estimateTaskId').value.trim();
   if (!id) return;
 
@@ -680,7 +964,7 @@ async function saveEstimate(event) {
     if (localTask) Object.assign(localTask, patch);
     currentTask = getTaskById(id);
     renderAll();
-    showFormMessage('Estimación guardada en Firebase ✔');
+    showFormMessage('Estimación guardada ✔');
   } catch (err) {
     console.error(err);
     showFormMessage(`No se pudo guardar: ${err.message}`, true);
@@ -689,13 +973,25 @@ async function saveEstimate(event) {
 
 async function createObjective(event) {
   event.preventDefault();
+  if (!isAdminContext()) {
+    alert('Solo coordinación puede asignar tareas desde este módulo.');
+    return;
+  }
   const form = $('#objectiveForm');
   if (!form.checkValidity()) { form.reportValidity(); return; }
+
+  const assigned = selectedTeacherFor('objective');
+  if (!assigned.email) {
+    alert('Selecciona la docente responsable de la tarea.');
+    return;
+  }
 
   const task = {
     id: uid('OBJ'),
     title: $('#objTitle').value.trim(),
-    person: $('#objPerson').value.trim() || inferPerson(),
+    teacherEmail: assigned.email,
+    teacherName: assigned.label,
+    person: assigned.label,
     period: $('#objPeriod').value || todayMonth(),
     estimatedHours: toNumber($('#objHours').value),
     category: $('#objCategory').value,
@@ -713,28 +1009,49 @@ async function createObjective(event) {
     $('#objPeriod').value = todayMonth();
     $('#objPerson').value = inferPerson();
     hideModal('#modalObjective');
-    switchView('bolsa');
+    switchView('tareas');
     openDetailById(task.id);
   } catch (err) {
     console.error(err);
-    alert(`No se pudo crear la tarea en Firebase: ${err.message}`);
+    alert(`No se pudo crear la tarea: ${err.message}`);
   }
 }
 
 async function saveBudget(event) {
   event.preventDefault();
+  if (!isAdminContext()) {
+    alert('Solo coordinación puede asignar o modificar bolsas de horas.');
+    return;
+  }
   const form = $('#budgetForm');
   if (!form.checkValidity()) { form.reportValidity(); return; }
 
-  const period = $('#budgetPeriod').value;
-  const person = $('#budgetPerson').value.trim();
+  const assigned = selectedTeacherFor('budget');
+  if (!assigned.email) {
+    alert('Selecciona la docente de la bolsa de horas.');
+    return;
+  }
+  const startDate = $('#budgetStart').value;
+  const endDate = $('#budgetEnd').value;
+  if (!startDate || !endDate) {
+    alert('Define el rango de fechas (desde / hasta) en que se deben cumplir las horas.');
+    return;
+  }
+  if (endDate < startDate) {
+    alert('La fecha "hasta" no puede ser anterior a la fecha "desde".');
+    return;
+  }
+  const person = assigned.label;
   const hours = toNumber($('#budgetHours').value);
   const note = $('#budgetNote').value.trim();
-  const existing = store.budgets.find(budget => budget.period === period && norm(budget.person) === norm(person));
+  const period = String(startDate).slice(0, 7); // mes de inicio (compatibilidad)
+  const existing = store.budgets.find(budget =>
+    String(budget.teacherEmail || '').toLowerCase() === assigned.email &&
+    dateOnly(budget.startDate) === startDate && dateOnly(budget.endDate) === endDate);
 
   const budget = existing
-    ? { ...existing, hours, note }
-    : { id: uid('BOLSA'), period, person, hours, note, createdAt: new Date().toISOString() };
+    ? { ...existing, teacherEmail: assigned.email, teacherName: assigned.label, person, hours, note, startDate, endDate, period }
+    : { id: uid('BOLSA'), teacherEmail: assigned.email, teacherName: assigned.label, person, hours, note, startDate, endDate, period, createdAt: new Date().toISOString() };
 
   try {
     await dbSaveBudget(budget);
@@ -742,13 +1059,14 @@ async function saveBudget(event) {
     else store.budgets.push(budget);
     renderAll();
     form.reset();
-    $('#budgetPeriod').value = period;
+    fillTeacherSelect($('#budgetTeacherEmail'), assigned.email);
     $('#budgetPerson').value = person;
   } catch (err) {
     console.error(err);
-    alert(`No se pudo guardar la bolsa en Firebase: ${err.message}`);
+    alert(`No se pudo guardar la bolsa: ${err.message}`);
   }
 }
+
 
 /* --------------------------- Export / utilidades ----------------------- */
 function downloadText(filename, content, mime = 'text/plain;charset=utf-8') {
@@ -773,9 +1091,9 @@ function rowsToCsv(headers, rows) {
 }
 
 function exportHoursCsv() {
-  const headers = ['ID registro', 'ID tarea', 'Tarea', 'Responsable', 'Periodo', 'Inicio', 'Fin', 'Duración horas', 'Horas reconocidas', 'Tipo de trabajo', 'Estado', 'Avance', 'Falta', 'Mejora'];
+  const headers = ['ID registro', 'ID tarea', 'Tarea', 'Responsable', 'Periodo', 'Ámbito', 'Inicio', 'Fin', 'Duración horas', 'Horas reconocidas', 'Tipo de trabajo', 'Estado', 'Avance', 'Falta', 'Mejora'];
   const rows = store.hourLogs.map(log => [
-    log.id, log.taskId, log.taskTitle, log.person, log.period, log.start, log.end,
+    log.id, log.taskId, log.taskTitle, log.person, log.period, logScopeLabel(logScopeOf(log)), log.start, log.end,
     round2(log.durationHours), round2(log.recognizedHours || log.durationHours),
     log.workType, log.state, log.advanced, log.missing, log.improve
   ]);
@@ -801,7 +1119,19 @@ function goBackToHub() {
 function applyRoleScope() {
   const back = $('#btnBackHub');
   if (back) back.hidden = !ACADEMIC_CTX.embedded;
-  if (isAdminContext()) return; // admin ve y filtra todo
+
+  const admin = isAdminContext();
+  ['#btnNewObjective', '#budgetForm', '#estimateForm'].forEach(sel => {
+    const el = $(sel);
+    if (el) el.hidden = !admin;
+  });
+  // Paneles que solo usa coordinación (planeación / estimación de horas):
+  const needsEstimatePanel = $('#panelNeedsEstimate');
+  if (needsEstimatePanel) needsEstimatePanel.hidden = !admin;
+  const estimateSubpanel = $('#estimateForm')?.closest('.subpanel');
+  if (estimateSubpanel) estimateSubpanel.hidden = !admin;
+
+  if (admin) return; // admin ve y filtra todo
 
   const me = inferPerson();
   if (!me) return;
@@ -825,7 +1155,8 @@ function attachEvents() {
   $('#btnNewObjective')?.addEventListener('click', () => {
     $('#objectiveForm')?.reset();
     $('#objPeriod').value = todayMonth();
-    $('#objPerson').value = inferPerson();
+    fillTeacherSelect($('#objTeacherEmail'), isAdminContext() ? '' : ME);
+    $('#objPerson').value = isAdminContext() ? '' : inferPerson();
     showModal('#modalObjective');
   });
 
@@ -833,9 +1164,16 @@ function attachEvents() {
   $('#fEstado')?.addEventListener('change', renderAll);
   $('#fUrgencia')?.addEventListener('change', renderAll);
   $('#q')?.addEventListener('input', debounce(renderAll, 180));
-  $('#fBolsaPeriodo')?.addEventListener('change', renderAll);
   $('#fBolsaPersona')?.addEventListener('change', renderAll);
   $('#qBolsa')?.addEventListener('input', debounce(renderAll, 180));
+  $('#objTeacherEmail')?.addEventListener('change', () => {
+    const t = getTeacherFromDirectory($('#objTeacherEmail').value);
+    if (t) $('#objPerson').value = t.label;
+  });
+  $('#budgetTeacherEmail')?.addEventListener('change', () => {
+    const t = getTeacherFromDirectory($('#budgetTeacherEmail').value);
+    if (t) $('#budgetPerson').value = t.label;
+  });
 
   document.addEventListener('click', event => {
     const detail = event.target.closest('.btn-detail');
@@ -853,6 +1191,7 @@ function attachEvents() {
   $('#btnExportJson')?.addEventListener('click', exportJson);
   $('#logInicio')?.addEventListener('change', updateDurationPreview);
   $('#logFin')?.addEventListener('change', updateDurationPreview);
+  $('#logScope')?.addEventListener('change', updateLogScopeHint);
   $('#btnBackHub')?.addEventListener('click', goBackToHub);
 
   // Estos botones eran de la era localStorage; ya no aplican (todo va a Firebase).
@@ -863,7 +1202,13 @@ function attachEvents() {
 async function init() {
   readContextFromUrl();
   attachEvents();
-  $('#budgetPeriod').value = todayMonth();
+  // Rango por defecto de la bolsa: de hoy a una semana.
+  if ($('#budgetStart')) $('#budgetStart').value = todayISO();
+  if ($('#budgetEnd')) {
+    const week = new Date();
+    week.setDate(week.getDate() + 7);
+    $('#budgetEnd').value = week.toLocaleDateString('en-CA');
+  }
   $('#objPeriod').value = todayMonth();
 
   // Firebase: reutiliza la sesión del HUB (mismo origen).
@@ -882,8 +1227,11 @@ async function init() {
     if (!ACADEMIC_CTX.email) ACADEMIC_CTX.email = ME;
 
     applyBranding();
-    $('#budgetPerson').value = inferPerson();
-    $('#objPerson').value = inferPerson();
+    await loadTeacherDirectory();
+    fillTeacherSelect($('#objTeacherEmail'), isAdminContext() ? '' : ME);
+    fillTeacherSelect($('#budgetTeacherEmail'), isAdminContext() ? '' : ME);
+    $('#budgetPerson').value = isAdminContext() ? '' : inferPerson();
+    $('#objPerson').value = isAdminContext() ? '' : inferPerson();
 
     try {
       await loadAll();

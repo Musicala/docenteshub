@@ -257,6 +257,14 @@ tbody tr:last-child td{border-bottom:0}
 .balance-row small{display:block;margin-top:3px;color:var(--muted)}
 .balance-row span{font-weight:950;color:#4b2fd7}
 
+/* Tarjeta de bolsa con rango de fechas y semáforo */
+.balance-card{border:1px solid var(--line);border-radius:16px;padding:14px;background:#fff;display:grid;gap:10px}
+.balance-card__head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.balance-card__head strong{font-size:15px}
+.balance-card__range{color:var(--muted);font-weight:700}
+.budget-kpis--mini{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.budget-kpis--mini strong{font-size:17px}
+
 .mini-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
 .mini-form--one{grid-template-columns:1fr}
 .mini-form label,.form-grid label{display:flex;flex-direction:column;gap:6px;color:#312a43;font-weight:900}
@@ -353,3 +361,14 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
   .empty-state{display:block!important}
   .empty-state::before{content:""}
 }
+
+.field-hint{
+  display:block;
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.35;
+  font-weight:700;
+}
+
+.admin-only-field[hidden]{display:none!important}

@@ -11,7 +11,7 @@
    - Bitácora de clases (nueva versión)
 */
 
-const BUILD = "2026-05-28.1";
+const BUILD = "2026-06-07.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -171,19 +171,11 @@ const HUB = {
       section: "Gestión docente"
     },
     {
+      // Módulo interno unificado: tareas académicas + bolsa de horas.
       id: "bitacoraAcademica",
       icon: "✅",
-      title: "Bitácora tareas académicas",
-      subtitle: "Pendientes",
-      section: "Gestión docente",
-      showWhenMissing: true
-    },
-    {
-      // Módulo interno (no abre app externa): Bitácora Académica / Trabajo por objetivos.
-      id: "academicModule",
-      icon: "🎯",
       title: "Bitácora Académica",
-      subtitle: "Trabajo por objetivos",
+      subtitle: "Tareas y bolsa de horas",
       section: "Gestión docente"
     },
 
@@ -932,7 +924,9 @@ function getTeacherShiftSourceLabel(source = "") {
     qr_sede: "QR",
     manual_hogar: "Manual hogar",
     manual_virtual: "Manual virtual",
-    manual_fin: "Cierre manual"
+    manual_fin: "Cierre manual",
+    auto_cierre: "Cierre automático",
+    auto_fin_sin_cierre: "Cierre automático"
   }[source] || source || "-";
 }
 
@@ -943,6 +937,201 @@ function getTeacherShiftModeLabel(modalidad = "") {
     virtual: "Virtual",
     jornada: "Jornada"
   }[modalidad] || modalidad || "-";
+}
+
+
+/* -------------------------------------------------------------------------
+   Cierre automático de jornadas olvidadas
+   - Si una jornada queda abierta y ya cambió el día en Bogotá, se crea una
+     salida automática con la hora esperada de cierre del horario configurado.
+   - Si no hay horario/override con hora final, se usa 23:59 para no dejar
+     sesiones eternas flotando por la vida, que bastante tiene uno con la DIAN.
+------------------------------------------------------------------------- */
+let teacherShiftAutoCloseTimer = null;
+let teacherShiftAutoCloseWired = false;
+
+function compareDateStrings(a = "", b = "") {
+  if (!a || !b) return 0;
+  return String(a).localeCompare(String(b));
+}
+
+function bogotaLocalMs(dateStr, timeStr = "23:59") {
+  const safeTime = /^\d{1,2}:\d{2}$/.test(String(timeStr || "")) ? String(timeStr) : "23:59";
+  const ms = new Date(`${dateStr}T${safeTime}:00-05:00`).getTime();
+  return Number.isFinite(ms) ? ms : Date.now();
+}
+
+function msUntilNextBogotaDayCheck() {
+  const now = new Date();
+  const { date } = bogotaParts(now);
+  const [y, m, d] = date.split("-").map(Number);
+  // 00:01 del día siguiente en Bogotá. La validación usa date < today.
+  const target = new Date(Date.UTC(y, m - 1, d + 1, 5, 1, 0));
+  return Math.max(60_000, target.getTime() - now.getTime());
+}
+
+async function getExpectedScheduleForAutoClose(email, date) {
+  if (!APP_STATE.db || !email || !date) return null;
+
+  try {
+    const ovSnap = await getDoc(doc(APP_STATE.db, "teacherScheduleOverrides", overrideId(email, date)));
+    if (ovSnap.exists()) {
+      const ov = ovSnap.data() || {};
+      return { start: ov.start || "", end: ov.end || "", source: "override" };
+    }
+  } catch (_) {}
+
+  try {
+    const schedSnap = await getDoc(doc(APP_STATE.db, "teacherSchedules", email));
+    if (schedSnap.exists()) {
+      const sched = schedSnap.data() || {};
+      if (sched.type === "fijo" && sched.weekly) {
+        const day = sched.weekly[weekdayKeyFromDate(date)] || {};
+        return { start: day.start || "", end: day.end || "", source: "weekly" };
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
+
+async function getAutoCloseTimeForSession(session = {}) {
+  const openRecord = session.openRecord || session.lastRecord || {};
+  const email = String(session.email || openRecord.email || "").toLowerCase();
+  const date = openRecord.date || session.date || "";
+  const expected = await getExpectedScheduleForAutoClose(email, date);
+  return expected?.end || "23:59";
+}
+
+function isStaleOpenSession(session = {}, todayDate = bogotaParts().date) {
+  if (!session.open) return false;
+  const openRecord = session.openRecord || session.lastRecord || {};
+  const openDate = openRecord.date || session.date || "";
+  return !!openDate && compareDateStrings(openDate, todayDate) < 0;
+}
+
+async function closeOpenSessionAutomatically(sessionId, session = {}) {
+  if (!APP_STATE.db || !sessionId || !session.open) return false;
+
+  const openRecord = session.openRecord || session.lastRecord || {};
+  const closeDate = openRecord.date || session.date || bogotaParts().date;
+  const closeTime = await getAutoCloseTimeForSession(session);
+  const closedAtClient = bogotaLocalMs(closeDate, closeTime);
+  const recordRef = doc(collection(APP_STATE.db, "teacherClassStartRecords"));
+  const sessionRef = doc(APP_STATE.db, "teacherOpenShiftSessions", sessionId);
+
+  const payload = {
+    role: "docente",
+    email: String(session.email || openRecord.email || "").toLowerCase(),
+    name: session.name || openRecord.name || "Docente",
+    uid: session.uid || openRecord.uid || sessionId,
+    date: closeDate,
+    time: closeTime,
+    stamp: new Date(closedAtClient).toISOString(),
+    createdAt: serverTimestamp(),
+    createdAtClient: closedAtClient,
+    action: "fin_jornada",
+    modalidad: openRecord.modalidad || "jornada",
+    source: "auto_cierre",
+    raw: "AUTO_CIERRE_SIN_MARCA_MANUAL",
+    autoClosed: true,
+    missingManualClose: true,
+    autoCloseReason: "sin_cierre_al_finalizar_dia",
+    openRecordId: session.openRecordId || openRecord.id || "",
+    openedAtClient: session.openedAtClient || openRecord.createdAtClient || null
+  };
+
+  if (!payload.email) return false;
+
+  await runTransaction(APP_STATE.db, async (transaction) => {
+    const fresh = await transaction.get(sessionRef);
+    const freshSession = fresh.exists() ? fresh.data() || {} : {};
+    if (!freshSession.open) return;
+
+    transaction.set(recordRef, payload);
+    transaction.set(sessionRef, {
+      open: false,
+      email: payload.email,
+      uid: payload.uid,
+      name: payload.name,
+      closedAt: serverTimestamp(),
+      closedAtClient,
+      closeRecordId: recordRef.id,
+      lastRecord: payload,
+      autoClosed: true,
+      missingManualClose: true
+    }, { merge: true });
+  });
+
+  return true;
+}
+
+async function autoCloseStaleOpenShifts({ includeAll = false, silent = true } = {}) {
+  if (!APP_STATE.db || !APP_STATE.activeUser) return 0;
+  const today = bogotaParts().date;
+  const sessions = [];
+
+  try {
+    if (includeAll && isAdminUser()) {
+      const snap = await getDocs(query(
+        collection(APP_STATE.db, "teacherOpenShiftSessions"),
+        where("open", "==", true),
+        limit(200)
+      ));
+      snap.forEach((d) => sessions.push({ id: d.id, ...(d.data() || {}) }));
+    } else {
+      const sessionId = getTeacherShiftSessionId(APP_STATE.activeUser);
+      const snap = await getDoc(doc(APP_STATE.db, "teacherOpenShiftSessions", sessionId));
+      if (snap.exists()) sessions.push({ id: snap.id, ...(snap.data() || {}) });
+    }
+  } catch (error) {
+    console.warn("No se pudieron revisar jornadas abiertas antiguas", error);
+    return 0;
+  }
+
+  let closed = 0;
+  for (const session of sessions) {
+    if (!isStaleOpenSession(session, today)) continue;
+    try {
+      const didClose = await closeOpenSessionAutomatically(session.id, session);
+      if (didClose) closed += 1;
+    } catch (error) {
+      console.warn("No se pudo cerrar automáticamente una jornada", session?.email || session?.id, error);
+    }
+  }
+
+  if (closed && !silent) {
+    toast(`${closed} jornada${closed === 1 ? "" : "s"} antigua${closed === 1 ? "" : "s"} cerrada${closed === 1 ? "" : "s"} automáticamente.`);
+  }
+
+  return closed;
+}
+
+function scheduleTeacherShiftAutoCloseCheck() {
+  clearTimeout(teacherShiftAutoCloseTimer);
+  teacherShiftAutoCloseTimer = null;
+
+  if (!APP_STATE.teacherShiftStatus.open) return;
+  teacherShiftAutoCloseTimer = setTimeout(async () => {
+    await autoCloseStaleOpenShifts({ includeAll: isAdminUser(), silent: false });
+    await refreshTeacherJornadaStatus();
+  }, msUntilNextBogotaDayCheck());
+}
+
+function wireTeacherShiftAutoCloseWatchers() {
+  if (teacherShiftAutoCloseWired) return;
+  teacherShiftAutoCloseWired = true;
+
+  const run = async () => {
+    if (!APP_STATE.activeUser || !APP_STATE.db) return;
+    await autoCloseStaleOpenShifts({ includeAll: isAdminUser(), silent: true });
+    await refreshTeacherJornadaStatus();
+  };
+
+  window.addEventListener("focus", run);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) run();
+  });
 }
 
 const MUSIPROFE_SUGGESTIONS = [
@@ -1267,6 +1456,7 @@ async function refreshTeacherJornadaStatus() {
   }
 
   updateHeroJornadaButton();
+  scheduleTeacherShiftAutoCloseCheck();
 }
 
 function setSelectedShiftMode(mode) {
@@ -1487,6 +1677,10 @@ async function saveTeacherClassStartRecord({
     return;
   }
 
+  if (action === "inicio_clase") {
+    await autoCloseStaleOpenShifts({ includeAll: false, silent: false });
+  }
+
   const user = APP_STATE.activeUser;
   const parts = bogotaParts();
   const payload = {
@@ -1631,12 +1825,40 @@ function adminDefaultDateRange() {
   return { from: `${yyyy}-${mm}-${dd}`, to: today };
 }
 
-function getAdminTeacherOptions() {
-  const entries = Object.entries(HUB.USERS || {})
-    .map(([email, profile]) => ({ email, label: profile?.label || email }))
-    .filter((item) => !ADMIN_EMAILS.includes(item.email) || true)
+function getAdminTeacherOptions({ includeDisabled = true } = {}) {
+  const managed = ADMIN_STATE.hubUsers || {};
+  const emails = new Set([
+    ...Object.keys(HUB.USERS || {}),
+    ...Object.keys(managed)
+  ]);
+
+  const entries = Array.from(emails).map((email) => {
+    const base = HUB.USERS?.[email] || {};
+    const md = managed[email] || {};
+    const enabled = md.enabled === false ? false : true;
+    return {
+      email,
+      label: md.label || md.name || base.label || email,
+      enabled,
+      managed: !!managed[email],
+      isAdmin: ADMIN_EMAILS.includes(email)
+    };
+  })
+    .filter((item) => includeDisabled || item.enabled)
     .sort((a, b) => a.label.localeCompare(b.label, "es"));
+
   return entries;
+}
+
+function refreshAdminTeacherFilterOptions() {
+  const select = adminPanelModal ? $("#adminFilterEmail", adminPanelModal) : null;
+  if (!select) return;
+  const current = select.value || "";
+  const options = getAdminTeacherOptions()
+    .map((item) => `<option value="${escapeHtml(item.email)}">${escapeHtml(item.label)}${item.enabled ? "" : " · inhabilitado"}</option>`)
+    .join("");
+  select.innerHTML = `<option value="">Todos</option>${options}`;
+  if (current && Array.from(select.options).some((opt) => opt.value === current)) select.value = current;
 }
 
 function ensureAdminPanelModal() {
@@ -1737,6 +1959,7 @@ function openAdminPanel() {
   const modal = ensureAdminPanelModal();
   modal.hidden = false;
   document.body.style.overflow = "hidden";
+  autoCloseStaleOpenShifts({ includeAll: true, silent: true });
   setAdminTab(ADMIN_STATE.tab || "marcaciones");
   loadAdminData();
 }
@@ -1768,6 +1991,11 @@ async function loadAdminData() {
   ADMIN_STATE.loading = true;
 
   try {
+    if (!Object.keys(ADMIN_STATE.hubUsers || {}).length) {
+      ADMIN_STATE.hubUsers = await fetchHubUsers();
+      refreshAdminTeacherFilterOptions();
+    }
+
     if (ADMIN_STATE.tab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
     } else if (ADMIN_STATE.tab === "horarios") {
@@ -1776,6 +2004,7 @@ async function loadAdminData() {
       ADMIN_STATE.academic = await fetchAdminAcademic();
     } else if (ADMIN_STATE.tab === "docentes") {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
+      refreshAdminTeacherFilterOptions();
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
@@ -2216,7 +2445,7 @@ function renderAdminMensual(body) {
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. Si una jornada quedó sin cerrar no se contabiliza.</p>
+    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. Si una jornada quedó sin cierre manual, el sistema puede cerrarla automáticamente con marca “sin cierre”.</p>
   `;
 }
 
@@ -2591,6 +2820,7 @@ async function fetchHubUsers() {
 }
 
 async function saveHubUser(email, data) {
+  email = String(email || "").toLowerCase().trim();
   const ref = doc(APP_STATE.db, "hubUsers", email);
   await setDoc(ref, {
     email,
@@ -2598,6 +2828,12 @@ async function saveHubUser(email, data) {
     updatedBy: emailKey(APP_STATE.activeUser),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  // Verificación inmediata: si esto falla, el panel lo dice ahí mismo y no queda
+  // esa ilusión tan humana de “guardó” cuando Firebase estaba diciendo “pues no”.
+  const check = await getDoc(ref);
+  if (!check.exists()) throw new Error("No se pudo verificar el docente guardado en Firestore.");
+  return { email, ...(check.data() || {}) };
 }
 
 async function deleteHubUser(email) {
@@ -2702,8 +2938,9 @@ function renderAdminDocentes(body) {
     const email = $("#docNewEmail", body).value.trim().toLowerCase();
     if (!isValidEmail(email)) { toast("Correo inválido 🙃"); return; }
     try {
-      await saveHubUser(email, { label: name || email, role: "docente", enabled: true });
-      ADMIN_STATE.hubUsers[email] = { email, label: name || email, role: "docente", enabled: true };
+      const saved = await saveHubUser(email, { label: name || email, role: "docente", enabled: true });
+      ADMIN_STATE.hubUsers[email] = { email, label: saved.label || name || email, role: saved.role || "docente", enabled: saved.enabled !== false };
+      refreshAdminTeacherFilterOptions();
       toast("Docente agregada y habilitada ✅");
       renderAdminBody();
     } catch (err) {
@@ -2719,8 +2956,9 @@ function renderAdminDocentes(body) {
       const base = HUB.USERS?.[email] || null;
       const label = ADMIN_STATE.hubUsers[email]?.label || base?.label || email;
       try {
-        await saveHubUser(email, { label, role: "docente", enabled: enable });
-        ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), email, label, enabled: enable };
+        const saved = await saveHubUser(email, { label, role: "docente", enabled: enable });
+        ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), ...saved, email, label: saved.label || label, enabled: saved.enabled !== false };
+        refreshAdminTeacherFilterOptions();
         toast(enable ? "Docente habilitada ✅" : "Docente inhabilitada");
         renderAdminBody();
       } catch (err) {
@@ -2737,6 +2975,7 @@ function renderAdminDocentes(body) {
       try {
         await deleteHubUser(email);
         delete ADMIN_STATE.hubUsers[email];
+        refreshAdminTeacherFilterOptions();
         toast("Docente quitada.");
         renderAdminBody();
       } catch (err) {
@@ -2898,12 +3137,13 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "carnet" ||
     button?.id === "jornada" ||
     button?.id === "adminPanel" ||
+    button?.id === "bitacoraAcademica" ||
     button?.id === "academicModule";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   // El módulo académico está disponible para cualquier usuario con acceso al HUB.
-  if (button?.id === "academicModule") {
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
@@ -3132,7 +3372,7 @@ async function handleButtonAction(id, trigger = null) {
     return;
   }
 
-  if (id === "academicModule") {
+  if (id === "bitacoraAcademica" || id === "academicModule") {
     openAcademicModule();
     return;
   }
@@ -3329,6 +3569,8 @@ async function handleAuthorizedUser(user, managed = null) {
   setUserLine(profile, user);
   setDrawerProfile(profile, user);
 
+  await autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true });
+
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
   await refreshTeacherJornadaStatus();
@@ -3364,6 +3606,7 @@ async function mount() {
   const auth = getAuth(app);
   const db = getFirestore(app);
   APP_STATE.db = db;
+  wireTeacherShiftAutoCloseWatchers();
 
   await ensureAuthPersistence(auth);
 

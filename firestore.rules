@@ -56,7 +56,7 @@ service cloud.firestore {
         && request.resource.data.role == 'docente'
         && request.resource.data.action in ['inicio_clase', 'fin_jornada']
         && request.resource.data.modalidad in ['sede', 'hogar', 'virtual', 'jornada']
-        && request.resource.data.source in ['qr_sede', 'manual_hogar', 'manual_virtual', 'manual_fin'];
+        && request.resource.data.source in ['qr_sede', 'manual_hogar', 'manual_virtual', 'manual_fin', 'auto_cierre', 'auto_fin_sin_cierre'];
     }
 
     function readsOwnRecord() {
@@ -71,7 +71,7 @@ service cloud.firestore {
     }
 
     match /teacherClassStartRecords/{recordId} {
-      allow create: if writesOwnTeacherRecord();
+      allow create: if writesOwnTeacherRecord() || isAdminReader();
       allow read: if readsOwnRecord() || isAdminReader();
       allow update, delete: if false;
     }
@@ -80,18 +80,20 @@ service cloud.firestore {
       allow get: if (isTeacherHubUser() && sessionId == request.auth.uid)
         || isAdminReader();
       allow list: if isAdminReader();
-      allow create, update: if writesOwnTeacherShiftSession(sessionId);
+      allow create, update: if writesOwnTeacherShiftSession(sessionId) || isAdminReader();
       allow delete: if false;
     }
 
     // Horarios esperados por docente (config base). Solo admins.
     match /teacherSchedules/{email} {
-      allow read, write: if isAdminReader();
+      allow get: if isAdminReader() || (signedIn() && email == request.auth.token.email);
+      allow list, create, update, delete: if isAdminReader();
     }
 
-    // Ajustes de horario por día puntual (overrides). Solo admins.
+    // Ajustes de horario por día puntual (overrides). Admins ven todo; cada docente puede leer sus propios ajustes.
     match /teacherScheduleOverrides/{overrideId} {
-      allow read, write: if isAdminReader();
+      allow get: if isAdminReader() || (signedIn() && resource.data.email == request.auth.token.email);
+      allow list, create, update, delete: if isAdminReader();
     }
 
     /* ====================================================================
