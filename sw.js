@@ -8,7 +8,7 @@
    - Limpieza de cachés viejos + mensajes para UI
 */
 
-const BUILD = "2026-06-10.1"; // Súbelo cada vez que despliegues cambios (fuerza re-instalación del SW).
+const BUILD = "2026-06-10.2"; // Súbelo cada vez que despliegues cambios (fuerza re-instalación del SW).
 const VERSION = `v5-${BUILD}`;
 
 const CACHE_STATIC  = `musicala-static`;   // sin versión para no acumular basura
