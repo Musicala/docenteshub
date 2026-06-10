@@ -11,7 +11,7 @@
    - Bitácora de clases (nueva versión)
 */
 
-const BUILD = "2026-06-10.2";
+const BUILD = "2026-06-10.3";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -29,6 +29,23 @@ const firebaseConfig = {
   messagingSenderId: "936379833270",
   appId: "1:936379833270:web:512519cf318c919e3abf17"
 };
+
+/* ============================================================================
+   1b) FIREBASE BIBLIOTECA DE RECURSOS (proyecto aparte, solo lectura)
+   La biblioteca vive en otro proyecto Firebase con lectura pública. El HUB la
+   lee con una segunda app nombrada; no se escribe nada desde aquí.
+============================================================================ */
+const BIBLIOTECA_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD8p1Ges94PMBPE-wuFVjeE5uGzeUQYBS0",
+  authDomain: "biblioteca-guitarra-fa182.firebaseapp.com",
+  projectId: "biblioteca-guitarra-fa182",
+  storageBucket: "biblioteca-guitarra-fa182.firebasestorage.app",
+  messagingSenderId: "803045423554",
+  appId: "1:803045423554:web:9bd5bda0d45f9e33f07e5b"
+};
+
+// Áreas macro que se asignan a cada docente desde el panel admin.
+const BIBLIOTECA_MACRO_AREAS = ["Música", "Danzas", "Artes plásticas", "Teatro"];
 
 /* ============================================================================
    2) CONFIG DOCENTES HUB
@@ -180,6 +197,7 @@ const HUB = {
       section: "Gestión docente"
     },
 
+    { id: "bibliotecaRecursos", icon: "📚", title: "Biblioteca de Recursos", subtitle: "Materiales por área", section: "Recursos" },
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
     { id: "muestras", icon: "🎭", title: "Info Muestras de proceso", subtitle: "Planeación", section: "Recursos" },
@@ -239,7 +257,10 @@ const APP_STATE = {
   activeLinks: {},
   activeProfile: null,
   activeUser: null,
+  hubUserDoc: null,    // doc de hubUsers del usuario activo (areas, especialidades…)
   db: null,
+  bibliotecaDb: null,  // Firestore del proyecto biblioteca (solo lectura)
+  bibliotecaCache: { recursos: null, areasConfig: null },
   teacherShiftStatus: {
     open: false,
     record: null
@@ -2867,7 +2888,9 @@ function buildDocenteRows() {
       isAdmin,
       inBase: !!base,
       managed: !!md,
-      enabled: isAdmin ? true : enabled
+      enabled: isAdmin ? true : enabled,
+      areas: Array.isArray(md?.areas) ? md.areas : [],
+      especialidades: Array.isArray(md?.especialidades) ? md.especialidades : []
     });
   }
   rows.sort((a, b) => {
@@ -2891,12 +2914,19 @@ function renderAdminDocentes(body) {
         : `<span class="puntBadge punt-absent">Inhabilitado</span>`);
     const origen = r.inBase ? "Código" : "Panel";
 
+    const areasLabel = r.isAdmin
+      ? `<span class="adminNote">Todas (admin)</span>`
+      : (r.areas.length
+        ? `${r.areas.map((a) => `<span class="puntBadge punt-excused">${escapeHtml(a)}</span>`).join(" ")}${r.especialidades.length ? ` <span class="adminNote">+${r.especialidades.length} esp.</span>` : ""}`
+        : `<span class="adminNote">Sin asignar</span>`);
+
     let actions = "";
     if (r.isAdmin) {
       actions = `<span class="adminNote">—</span>`;
     } else {
       const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
-      actions = `<button class="btnGhost docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
+      actions = `<button class="btnGhost docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
+      actions += ` <button class="btnGhost docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
       // "Quitar" solo para los creados en el panel (no base de código).
       if (r.managed && !r.inBase) {
         actions += ` <button class="btnGhost adminDanger docRemove" type="button" data-email="${escapeHtml(r.email)}">Quitar</button>`;
@@ -2908,6 +2938,7 @@ function renderAdminDocentes(body) {
         <td>${escapeHtml(r.name)}</td>
         <td><span class="mono">${escapeHtml(r.email)}</span></td>
         <td>${estado}</td>
+        <td>${areasLabel}</td>
         <td>${origen}</td>
         <td>${actions}</td>
       </tr>
@@ -2928,11 +2959,11 @@ function renderAdminDocentes(body) {
     <p class="adminMeta">${rows.length} docente(s) · base de código + gestionados</p>
     <div class="recordTableWrap">
       <table class="recordTable">
-        <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Origen</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Áreas</th><th>Origen</th><th>Acciones</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
     </div>
-    <p class="adminNote">“Activo” puede iniciar sesión y usar el HUB. “Inhabilitado” queda bloqueado. Los docentes de “Código” no se pueden borrar desde aquí, pero sí inhabilitar.</p>
+    <p class="adminNote">“Activo” puede iniciar sesión y usar el HUB. “Inhabilitado” queda bloqueado. Los docentes de “Código” no se pueden borrar desde aquí, pero sí inhabilitar. Con “Áreas” defines qué ve cada quien en la Biblioteca de Recursos.</p>
   `;
 
   $("#docAddBtn", body)?.addEventListener("click", async () => {
@@ -2970,6 +3001,10 @@ function renderAdminDocentes(body) {
     });
   });
 
+  body.querySelectorAll(".docAreas").forEach((btn) => {
+    btn.addEventListener("click", () => openDocenteAreasEditor(btn.dataset.email));
+  });
+
   body.querySelectorAll(".docRemove").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const email = btn.dataset.email;
@@ -2985,6 +3020,77 @@ function renderAdminDocentes(body) {
         toast("No se pudo quitar. Revisa permisos/reglas.");
       }
     });
+  });
+}
+
+/* ---- Editor de áreas para la Biblioteca de Recursos ---- */
+async function openDocenteAreasEditor(email) {
+  const md = ADMIN_STATE.hubUsers?.[email] || {};
+  const base = HUB.USERS?.[email] || null;
+  const name = md.label || base?.label || email;
+  const currentAreas = Array.isArray(md.areas) ? md.areas : [];
+  const currentEsp = (Array.isArray(md.especialidades) ? md.especialidades : []).map(normalizeText);
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Áreas · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">Define qué ve esta docente en la Biblioteca de Recursos. Si marcas especialidades dentro de un área, verá solo esas; si dejas el área sin especialidades, la verá completa.</p>
+      <p class="adminNote" style="margin:0 0 6px"><strong>Áreas</strong></p>
+      <div class="areasMacroGrid">
+        ${BIBLIOTECA_MACRO_AREAS.map((a) => `
+          <label class="adminCheck areaCheck">
+            <input type="checkbox" data-macro="${escapeHtml(a)}" ${currentAreas.includes(a) ? "checked" : ""} />
+            <span>${escapeHtml(a)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <p class="adminNote" style="margin:10px 0 6px"><strong>Especialidades</strong> (opcional)</p>
+      <div class="areasEspGrid" id="areasEspGrid"><span class="adminNote">Cargando especialidades de la biblioteca…</span></div>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="areasCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="areasSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
+  $("#areasCancel", dialog)?.addEventListener("click", close);
+
+  // Especialidades disponibles según el catálogo real de la biblioteca.
+  try {
+    const lista = await fetchBibliotecaAreasConfig();
+    const grid = $("#areasEspGrid", dialog);
+    if (grid) {
+      grid.innerHTML = lista.length
+        ? lista.map((a) => `
+            <label class="adminCheck areaCheck">
+              <input type="checkbox" data-esp="${escapeHtml(a)}" ${currentEsp.includes(normalizeText(a)) ? "checked" : ""} />
+              <span>${escapeHtml(a)}</span>
+            </label>
+          `).join("")
+        : `<span class="adminNote">No se pudo cargar el catálogo de la biblioteca. Puedes asignar solo áreas macro.</span>`;
+    }
+  } catch (_) { /* el grid queda con el mensaje de carga/fallo */ }
+
+  $("#areasSave", dialog)?.addEventListener("click", async () => {
+    const areas = $$("input[data-macro]", dialog).filter((i) => i.checked).map((i) => i.dataset.macro);
+    const especialidades = $$("input[data-esp]", dialog).filter((i) => i.checked).map((i) => i.dataset.esp);
+    try {
+      const saved = await saveHubUser(email, { label: name, areas, especialidades, enabled: md.enabled !== false });
+      ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), ...saved, email };
+      toast("Áreas guardadas ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudieron guardar las áreas. Revisa permisos/reglas.");
+    }
   });
 }
 
@@ -3140,12 +3246,13 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "jornada" ||
     button?.id === "adminPanel" ||
     button?.id === "bitacoraAcademica" ||
-    button?.id === "academicModule";
+    button?.id === "academicModule" ||
+    button?.id === "bibliotecaRecursos";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
-  // El módulo académico está disponible para cualquier usuario con acceso al HUB.
-  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule") {
+  // Módulos internos disponibles para cualquier usuario con acceso al HUB.
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "bibliotecaRecursos") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
@@ -3379,6 +3486,11 @@ async function handleButtonAction(id, trigger = null) {
     return;
   }
 
+  if (id === "bibliotecaRecursos") {
+    openBibliotecaModule();
+    return;
+  }
+
   const url = String(APP_STATE.activeLinks?.[id] || "").trim();
   if (!url) {
     toast(`Aún no tienes un link asignado para “${getButtonTitle(id)}” 🙃`);
@@ -3453,6 +3565,426 @@ function closeAcademicModule() {
   document.body.style.overflow = "";
   const frame = $("#academicFrame", academicOverlay);
   if (frame) frame.src = "about:blank"; // libera recursos
+}
+
+/* ============================================================================
+   11e) MÓDULO INTERNO: BIBLIOTECA DE RECURSOS
+   ----------------------------------------------------------------------------
+   Lee la colección "recursos" del proyecto Firebase de la biblioteca (lectura
+   pública) y muestra solo lo que corresponde a las áreas del docente:
+   - Admins ven todo.
+   - Docente con especialidades dentro de un área macro: solo esas especialidades.
+   - Docente con área macro sin especialidades: toda el área macro.
+   - Recursos "generales" (sala de profesores, vacacionales, sin área): todos.
+============================================================================ */
+function getBibliotecaDb() {
+  if (APP_STATE.bibliotecaDb) return APP_STATE.bibliotecaDb;
+  const app = initializeApp(BIBLIOTECA_FIREBASE_CONFIG, "biblioteca");
+  APP_STATE.bibliotecaDb = getFirestore(app);
+  return APP_STATE.bibliotecaDb;
+}
+
+// Mapea un área granular de la biblioteca (guitarra, ballet, dibujo…) a su
+// área macro. "*" significa recurso general visible para cualquier docente.
+function macroAreaForBibliotecaArea(areaRaw) {
+  const area = normalizeText(areaRaw);
+  if (!area) return "*";
+  if (/(sala de profesores|vacacional)/.test(area)) return "*";
+  if (/(ballet|danza|baile)/.test(area)) return "Danzas";
+  if (/(dibujo|pintura|escultura|plastic|manualidad|ceramica)/.test(area)) return "Artes plásticas";
+  if (/(teatro|actuacion|impro|dramat)/.test(area)) return "Teatro";
+  return "Música";
+}
+
+function getBibliotecaAccess() {
+  if (isAdminUser()) return { all: true, areas: [], especialidades: [] };
+  const docData = APP_STATE.hubUserDoc || {};
+  const areas = Array.isArray(docData.areas) ? docData.areas : [];
+  const especialidades = Array.isArray(docData.especialidades)
+    ? docData.especialidades.map(normalizeText).filter(Boolean)
+    : [];
+  return { all: false, areas, especialidades };
+}
+
+function canSeeRecurso(recurso, access) {
+  if (access.all) return true;
+  const hasConfig = access.areas.length > 0 || access.especialidades.length > 0;
+  if (!hasConfig) return false;
+
+  const area = normalizeText(recurso?.area);
+  const macro = macroAreaForBibliotecaArea(area);
+  if (macro === "*") return true;
+
+  if (!access.areas.includes(macro)) {
+    // No tiene el área macro: solo ve la especialidad si está asignada explícitamente.
+    return access.especialidades.includes(area);
+  }
+  // Tiene el área macro: si definió especialidades dentro de ese macro, restringe a esas.
+  const espInMacro = access.especialidades.filter((e) => macroAreaForBibliotecaArea(e) === macro);
+  return espInMacro.length ? espInMacro.includes(area) : true;
+}
+
+async function fetchBibliotecaRecursos(force = false) {
+  if (!force && Array.isArray(APP_STATE.bibliotecaCache.recursos)) {
+    return APP_STATE.bibliotecaCache.recursos;
+  }
+  const snap = await getDocs(collection(getBibliotecaDb(), "recursos"));
+  const list = [];
+  snap.forEach((d) => {
+    const data = d.data() || {};
+    const estado = String(data.estado || "publicado").toLowerCase();
+    if (estado !== "publicado") return;
+    list.push({ id: d.id, ...data });
+  });
+  list.sort((a, b) => String(a.titulo || "").localeCompare(String(b.titulo || ""), "es"));
+  APP_STATE.bibliotecaCache.recursos = list;
+  return list;
+}
+
+async function fetchBibliotecaAreasConfig() {
+  if (Array.isArray(APP_STATE.bibliotecaCache.areasConfig)) {
+    return APP_STATE.bibliotecaCache.areasConfig;
+  }
+  try {
+    const snap = await getDoc(doc(getBibliotecaDb(), "config", "areas"));
+    const lista = snap.exists() ? snap.data()?.lista : null;
+    APP_STATE.bibliotecaCache.areasConfig = Array.isArray(lista) ? lista : [];
+  } catch (err) {
+    console.warn("No se pudo leer config/areas de la biblioteca", err);
+    APP_STATE.bibliotecaCache.areasConfig = [];
+  }
+  return APP_STATE.bibliotecaCache.areasConfig;
+}
+
+const BIBLIO_STATE = {
+  search: "",
+  tipo: "",
+  shown: 60,
+  // Navegación tipo carpetas: null = vista de áreas; area sin tema = vista de temas.
+  navArea: null,
+  navTema: null
+};
+
+let bibliotecaOverlay = null;
+
+function openBibliotecaModule() {
+  if (!bibliotecaOverlay) {
+    bibliotecaOverlay = document.createElement("div");
+    bibliotecaOverlay.id = "bibliotecaOverlay";
+    bibliotecaOverlay.className = "academicOverlay";
+    bibliotecaOverlay.innerHTML = `
+      <div class="academicBar">
+        <span class="academicBarTitle">📚 Biblioteca de Recursos</span>
+        <button class="btnGhost" id="bibliotecaCloseBtn" type="button" aria-label="Cerrar módulo">Cerrar ✕</button>
+      </div>
+      <div class="biblioBody" id="biblioBody">
+        <p class="biblioLoading">Cargando recursos…</p>
+      </div>
+    `;
+    document.body.appendChild(bibliotecaOverlay);
+    $("#bibliotecaCloseBtn", bibliotecaOverlay)?.addEventListener("click", closeBibliotecaModule);
+  }
+
+  bibliotecaOverlay.hidden = false;
+  document.body.style.overflow = "hidden";
+  BIBLIO_STATE.search = "";
+  BIBLIO_STATE.tipo = "";
+  BIBLIO_STATE.shown = 60;
+  BIBLIO_STATE.navArea = null;
+  BIBLIO_STATE.navTema = null;
+  loadBiblioteca();
+}
+
+function closeBibliotecaModule() {
+  if (!bibliotecaOverlay) return;
+  bibliotecaOverlay.hidden = true;
+  document.body.style.overflow = "";
+}
+
+async function loadBiblioteca() {
+  const body = $("#biblioBody", bibliotecaOverlay);
+  if (!body) return;
+
+  const access = getBibliotecaAccess();
+  if (!access.all && !access.areas.length && !access.especialidades.length) {
+    body.innerHTML = `
+      <div class="biblioEmpty">
+        <h2>Aún no tienes áreas asignadas 🎨🎵</h2>
+        <p>Pídele a coordinación que te asigne tu(s) área(s) — Música, Danzas, Artes plásticas o Teatro — desde el panel admin, pestaña <strong>Docentes</strong>. Apenas las tengas, aquí verás los recursos de tus clases.</p>
+      </div>
+    `;
+    return;
+  }
+
+  body.innerHTML = `<p class="biblioLoading">Cargando recursos…</p>`;
+  let recursos;
+  try {
+    recursos = await fetchBibliotecaRecursos();
+  } catch (err) {
+    console.error("Biblioteca:", err);
+    body.innerHTML = `<div class="biblioEmpty"><h2>No se pudo cargar la biblioteca 😞</h2><p>Revisa tu conexión e inténtalo de nuevo.</p></div>`;
+    return;
+  }
+
+  const visibles = recursos.filter((r) => canSeeRecurso(r, access));
+  renderBiblioteca(body, visibles, access);
+}
+
+// Color estable por área (tono HSL derivado del nombre) para reconocerlas de un vistazo.
+function biblioAreaHue(area) {
+  const s = normalizeText(area || "general");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+function biblioAreaEmoji(area) {
+  const a = normalizeText(area || "");
+  if (a.includes("guitarra")) return "🎸";
+  if (a.includes("bajo")) return "🎸";
+  if (a.includes("piano")) return "🎹";
+  if (a.includes("bateria") || a.includes("percusion")) return "🥁";
+  if (a.includes("violin") || a.includes("cuerdas")) return "🎻";
+  if (a.includes("canto") || a.includes("voz") || a.includes("coro")) return "🎤";
+  if (a.includes("danza") || a.includes("ballet") || a.includes("baile")) return "💃";
+  if (a.includes("teatro")) return "🎭";
+  if (a.includes("plastica") || a.includes("dibujo") || a.includes("pintura") || a.includes("arte")) return "🎨";
+  if (a.includes("musica")) return "🎵";
+  return "📁";
+}
+
+function renderBiblioteca(body, visibles, access) {
+  // Agrupación área → tema → recursos para la navegación tipo carpetas.
+  const byArea = new Map();
+  visibles.forEach((r) => {
+    const area = String(r.area || "").trim() || "General";
+    const tema = String(r.tema || "").trim() || "Sin tema";
+    if (!byArea.has(area)) byArea.set(area, new Map());
+    const temas = byArea.get(area);
+    if (!temas.has(tema)) temas.set(tema, []);
+    temas.get(tema).push(r);
+  });
+  const areaNames = [...byArea.keys()].sort((a, b) => a.localeCompare(b, "es"));
+  const tipos = [...new Set(visibles.map((r) => String(r.tipo || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es"));
+
+  const accessLabel = access.all
+    ? "Vista de administrador: biblioteca completa"
+    : `Tus áreas: ${access.areas.join(", ") || "—"}${access.especialidades.length ? ` · Especialidades: ${access.especialidades.join(", ")}` : ""}`;
+
+  // Si la carpeta guardada ya no existe (cambio de filtros/datos), vuelve al inicio.
+  if (BIBLIO_STATE.navArea && !byArea.has(BIBLIO_STATE.navArea)) {
+    BIBLIO_STATE.navArea = null;
+    BIBLIO_STATE.navTema = null;
+  }
+  if (BIBLIO_STATE.navTema && !byArea.get(BIBLIO_STATE.navArea)?.has(BIBLIO_STATE.navTema)) {
+    BIBLIO_STATE.navTema = null;
+  }
+
+  body.innerHTML = `
+    <div class="biblioToolbar">
+      <input type="search" id="biblioSearch" placeholder="Buscar en toda la biblioteca…" value="${escapeHtml(BIBLIO_STATE.search)}" />
+      <select id="biblioTipo">
+        <option value="">Tipo: todos</option>
+        ${tipos.map((t) => `<option value="${escapeHtml(t)}" ${BIBLIO_STATE.tipo === t ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
+      </select>
+    </div>
+    <nav class="biblioCrumbs" id="biblioCrumbs"></nav>
+    <p class="biblioMeta">${accessLabel}</p>
+    <div class="biblioGrid" id="biblioGrid"></div>
+    <div class="biblioMore" id="biblioMoreWrap" hidden>
+      <button class="btnGoogle" id="biblioMoreBtn" type="button">Mostrar más</button>
+    </div>
+  `;
+
+  const folderCard = ({ emoji, name, count, sub, nav }) => `
+    <button class="biblioFolder" type="button" data-nav="${escapeHtml(nav)}" style="--folderHue:${biblioAreaHue(name)}">
+      <span class="biblioFolderIcon">${emoji}</span>
+      <span class="biblioFolderName">${escapeHtml(name)}</span>
+      <span class="biblioFolderMeta">${sub ? `${escapeHtml(sub)} · ` : ""}${count} recurso(s)</span>
+    </button>
+  `;
+
+  const paintCrumbs = () => {
+    const crumbs = $("#biblioCrumbs", body);
+    if (!crumbs) return;
+    const searching = !!normalizeText(BIBLIO_STATE.search);
+    const parts = [`<button class="biblioCrumb" type="button" data-crumb="root">📚 Inicio</button>`];
+    if (searching) {
+      parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">🔎 Resultados de búsqueda</span>`);
+    } else {
+      if (BIBLIO_STATE.navArea) {
+        parts.push(`<span class="biblioCrumbSep">›</span>`);
+        parts.push(BIBLIO_STATE.navTema
+          ? `<button class="biblioCrumb" type="button" data-crumb="area">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</button>`
+          : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</span>`);
+      }
+      if (BIBLIO_STATE.navTema) {
+        parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">📂 ${escapeHtml(BIBLIO_STATE.navTema)}</span>`);
+      }
+    }
+    crumbs.innerHTML = parts.join("");
+    crumbs.querySelectorAll("[data-crumb]").forEach((b) => {
+      b.addEventListener("click", () => {
+        if (b.dataset.crumb === "root") {
+          BIBLIO_STATE.navArea = null;
+          BIBLIO_STATE.navTema = null;
+          BIBLIO_STATE.search = "";
+          const input = $("#biblioSearch", body);
+          if (input) input.value = "";
+        } else {
+          BIBLIO_STATE.navTema = null;
+        }
+        BIBLIO_STATE.shown = 60;
+        paint();
+      });
+    });
+  };
+
+  const paintRecursos = (lista, grid, moreWrap) => {
+    const filtered = BIBLIO_STATE.tipo
+      ? lista.filter((r) => String(r.tipo || "").trim() === BIBLIO_STATE.tipo)
+      : lista;
+    if (!filtered.length) {
+      grid.innerHTML = `<div class="biblioEmpty"><h2>Sin resultados</h2><p>Prueba con otra búsqueda o quita los filtros.</p></div>`;
+      if (moreWrap) moreWrap.hidden = true;
+      return 0;
+    }
+    grid.classList.remove("biblioGridFolders");
+    grid.innerHTML = filtered.slice(0, BIBLIO_STATE.shown).map(renderRecursoCard).join("");
+    if (moreWrap) moreWrap.hidden = filtered.length <= BIBLIO_STATE.shown;
+    return filtered.length;
+  };
+
+  const paint = () => {
+    const grid = $("#biblioGrid", body);
+    const moreWrap = $("#biblioMoreWrap", body);
+    const meta = $(".biblioMeta", body);
+    if (!grid) return;
+    paintCrumbs();
+
+    const term = normalizeText(BIBLIO_STATE.search);
+    if (term) {
+      // Búsqueda global: resultados planos sobre toda la biblioteca visible.
+      const matches = visibles.filter((r) => {
+        const haystack = normalizeText([
+          r.titulo, r.tema, r.descripcion, r.area,
+          ...(Array.isArray(r.etiquetas) ? r.etiquetas : [])
+        ].join(" "));
+        return haystack.includes(term);
+      });
+      const n = paintRecursos(matches, grid, moreWrap);
+      if (meta) meta.textContent = `${accessLabel} · ${n} resultado(s)`;
+      return;
+    }
+
+    if (!BIBLIO_STATE.navArea) {
+      // Nivel 1: carpetas de áreas.
+      grid.classList.add("biblioGridFolders");
+      grid.innerHTML = areaNames.map((a) => {
+        const temas = byArea.get(a);
+        const total = [...temas.values()].reduce((acc, arr) => acc + arr.length, 0);
+        return folderCard({ emoji: biblioAreaEmoji(a), name: a, count: total, sub: `${temas.size} tema(s)`, nav: `area:${a}` });
+      }).join("");
+      if (moreWrap) moreWrap.hidden = true;
+      if (meta) meta.textContent = `${accessLabel} · ${areaNames.length} área(s) · ${visibles.length} recurso(s)`;
+    } else if (!BIBLIO_STATE.navTema) {
+      // Nivel 2: carpetas de temas dentro del área.
+      const temas = byArea.get(BIBLIO_STATE.navArea);
+      const temaNames = [...temas.keys()].sort((a, b) => a.localeCompare(b, "es"));
+      grid.classList.add("biblioGridFolders");
+      grid.innerHTML = temaNames.map((t) =>
+        folderCard({ emoji: "📂", name: t, count: temas.get(t).length, sub: "", nav: `tema:${t}` })
+      ).join("");
+      if (moreWrap) moreWrap.hidden = true;
+      if (meta) meta.textContent = `${accessLabel} · ${temaNames.length} tema(s)`;
+    } else {
+      // Nivel 3: recursos del tema.
+      const lista = byArea.get(BIBLIO_STATE.navArea).get(BIBLIO_STATE.navTema) || [];
+      const n = paintRecursos(lista, grid, moreWrap);
+      if (meta) meta.textContent = `${accessLabel} · ${n} recurso(s)`;
+    }
+
+    grid.querySelectorAll("[data-nav]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const [kind, ...rest] = b.dataset.nav.split(":");
+        const value = rest.join(":");
+        if (kind === "area") BIBLIO_STATE.navArea = value;
+        else BIBLIO_STATE.navTema = value;
+        BIBLIO_STATE.shown = 60;
+        paint();
+      });
+    });
+  };
+
+  $("#biblioSearch", body)?.addEventListener("input", (e) => {
+    BIBLIO_STATE.search = e.target.value;
+    BIBLIO_STATE.shown = 60;
+    paint();
+  });
+  $("#biblioTipo", body)?.addEventListener("change", (e) => {
+    BIBLIO_STATE.tipo = e.target.value;
+    BIBLIO_STATE.shown = 60;
+    paint();
+  });
+  $("#biblioMoreBtn", body)?.addEventListener("click", () => {
+    BIBLIO_STATE.shown += 60;
+    paint();
+  });
+
+  paint();
+}
+
+// Icono y etiqueta según el tipo de adjunto, para que se entienda qué se abre.
+function biblioLinkKind(url, titulo) {
+  const u = normalizeText(url);
+  const t = normalizeText(titulo);
+  if (u.includes(".pdf") || t.includes(".pdf") || t.includes("pdf")) return { icon: "📄", kind: "PDF" };
+  if (u.includes("youtube.") || u.includes("youtu.be") || u.includes("vimeo.")) return { icon: "▶️", kind: "Video" };
+  if (/\.(mp3|wav|m4a|ogg)\b/.test(u)) return { icon: "🎧", kind: "Audio" };
+  if (/\.(png|jpe?g|gif|webp)\b/.test(u)) return { icon: "🖼️", kind: "Imagen" };
+  if (u.includes("classroom.google")) return { icon: "🎓", kind: "Classroom" };
+  if (u.includes("docs.google") || /\.(docx?|odt)\b/.test(u)) return { icon: "📝", kind: "Documento" };
+  if (u.includes("drive.google")) return { icon: "📁", kind: "Archivo" };
+  return { icon: "🌐", kind: "Enlace" };
+}
+
+function renderRecursoCard(recurso) {
+  const enlaces = Array.isArray(recurso.enlaces) ? recurso.enlaces : [];
+  const etiquetas = Array.isArray(recurso.etiquetas) ? recurso.etiquetas : [];
+  const linksHtml = enlaces
+    .filter((l) => l && l.url)
+    .map((l, i) => {
+      const safeUrl = String(l.url || "");
+      if (!/^https?:\/\//i.test(safeUrl)) return "";
+      const label = String(l.titulo || "").trim() || `Recurso ${i + 1}`;
+      const { icon, kind } = biblioLinkKind(safeUrl, label);
+      return `
+        <a class="biblioLinkBtn" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(label)}">
+          <span class="biblioLinkIcon">${icon}</span>
+          <span class="biblioLinkInfo">
+            <span class="biblioLinkKind">${kind}</span>
+            <span class="biblioLinkName">${escapeHtml(label)}</span>
+          </span>
+          <span class="biblioLinkOpen">Abrir ↗</span>
+        </a>
+      `;
+    })
+    .join("");
+
+  return `
+    <article class="biblioCard" style="--areaHue:${biblioAreaHue(recurso.area)}">
+      <div class="biblioCardTop">
+        <span class="biblioArea">${biblioAreaEmoji(recurso.area)} ${escapeHtml(recurso.area || "general")}</span>
+        ${recurso.tipo ? `<span class="biblioTipo">${escapeHtml(recurso.tipo)}</span>` : ""}
+      </div>
+      <h3 class="biblioTitle">${escapeHtml(recurso.titulo || "Sin título")}</h3>
+      ${recurso.tema ? `<p class="biblioTema">📂 ${escapeHtml(recurso.tema)}</p>` : ""}
+      ${recurso.descripcion ? `<p class="biblioDesc">${escapeHtml(String(recurso.descripcion).slice(0, 220))}</p>` : ""}
+      ${etiquetas.length ? `<div class="biblioTags">${etiquetas.slice(0, 6).map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+      ${linksHtml ? `<div class="biblioLinks">${linksHtml}</div>` : ""}
+    </article>
+  `;
 }
 
 /* ============================================================================
@@ -3567,6 +4099,16 @@ async function handleAuthorizedUser(user, managed = null) {
   APP_STATE.activeUser = user;
   APP_STATE.activeProfile = profile;
   APP_STATE.activeLinks = mergedLinks;
+  APP_STATE.hubUserDoc = managed;
+
+  // Los admins no pasan por resolveHubAccess con lectura del doc; lo traemos
+  // aparte por si también tienen áreas configuradas (no es obligatorio).
+  if (!managed) {
+    try {
+      const snap = await getDoc(doc(APP_STATE.db, "hubUsers", email));
+      if (snap.exists()) APP_STATE.hubUserDoc = snap.data();
+    } catch (_) { /* sin doc o sin permiso: queda null */ }
+  }
 
   setUserLine(profile, user);
   setDrawerProfile(profile, user);
