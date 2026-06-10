@@ -3,7 +3,7 @@
   "short_name": "Docentes Hub",
   "description": "Hub de accesos para Docentes de Musicala (login con Google). Carnet, jornada, salones, recursos y herramientas.",
   "id": "./",
-  "start_url": "./?source=pwa&v=2026-06-07.1",
+  "start_url": "./?source=pwa&v=2026-06-10.1",
   "scope": "./",
   "display": "standalone",
   "display_override": ["standalone"],

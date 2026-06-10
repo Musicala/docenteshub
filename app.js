@@ -11,7 +11,7 @@
    - Bitácora de clases (nueva versión)
 */
 
-const BUILD = "2026-06-07.1";
+const BUILD = "2026-06-10.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -47,6 +47,7 @@ const HUB = {
     guiones: "https://musicalaescuela.github.io/plantillaparaguiones/",
     protocolosMusica: "https://musicalaescuela.github.io/protocolosmusica/",
     vacaciones: "https://musicalaescuela.github.io/vacacionesartisticas/",
+    vacacionales: "https://musicala.github.io/cursosvacacionales/",
     explicacionArtes: "https://musicala.github.io/explicacionartes/",
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
@@ -192,6 +193,7 @@ const HUB = {
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
     { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
     { id: "vacaciones", icon: "🌞", title: "Info Vacaciones artísticas", subtitle: "General", section: "Institucional" },
+    { id: "vacacionales", icon: "🌴", title: "Vacacionales", subtitle: "Cursos", section: "Institucional" },
     { id: "musicalaFest", icon: "🎸", title: "Musicala Fest 2025", subtitle: "Programa", section: "Institucional" },
 
     { id: "adminPanel", icon: "🛠️", title: "Panel admin", subtitle: "Solo administradores", section: "Administración", adminOnly: true }
