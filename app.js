@@ -3430,6 +3430,17 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <div class="teacherInstructionItem">Si la cámara no funciona, revisa permisos del navegador, buena iluminación y cámara seleccionada.</div>
       </div>
     </details>
+
+    <div class="hubSearch" style="grid-column: 1 / -1;">
+      <span class="hubSearchIcon" aria-hidden="true">🔎</span>
+      <input id="hubSearchInput" type="search" inputmode="search" autocomplete="off"
+        placeholder="Buscar acceso… (ej: bitácora, biblioteca, QR, horarios)" aria-label="Buscar acceso en el HUB" />
+      <button class="hubSearchClear" id="hubSearchClear" type="button" aria-label="Limpiar búsqueda" hidden>✕</button>
+    </div>
+    <div class="hubSearchEmpty" id="hubSearchEmpty" hidden>
+      <h2>Sin resultados</h2>
+      <p>No encontramos accesos para esa búsqueda. Prueba con otra palabra.</p>
+    </div>
   `;
 
   for (const [section, items] of sections.entries()) {
@@ -3452,6 +3463,8 @@ function renderButtons(buttons = [], links = {}, profile = null) {
             class="${tileClass}"
             type="button"
             data-id="${escapeHtml(button.id)}"
+            data-sec="${escapeHtml(section)}"
+            data-search="${escapeHtml(normalizeText(`${button.title} ${button.subtitle} ${section}`))}"
             aria-label="${escapeHtml(button.title)}"
           >
             <div class="tileTop">
@@ -3470,6 +3483,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
 
   grid.innerHTML = html;
   ensureMusiProfeBot();
+  setupHubSearch(grid);
 
   if (!grid.dataset.boundClick) {
     grid.dataset.boundClick = "true";
@@ -3484,6 +3498,46 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       },
       { passive: true }
     );
+  }
+}
+
+// Buscador en vivo del HUB: filtra los accesos (tiles) por título/subtítulo/sección
+// y oculta los encabezados de sección que quedan sin resultados.
+function setupHubSearch(grid) {
+  const input = $("#hubSearchInput", grid);
+  if (!input) return;
+  const clearBtn = $("#hubSearchClear", grid);
+  const empty = $("#hubSearchEmpty", grid);
+
+  const apply = () => {
+    const q = normalizeText(input.value.trim());
+    const tiles = $$(".tile", grid);
+    let visibles = 0;
+
+    tiles.forEach((tile) => {
+      const hay = !q || (tile.dataset.search || "").includes(q);
+      tile.classList.toggle("tileHidden", !hay);
+      if (hay) visibles++;
+    });
+
+    // Oculta el título de una sección si ninguno de sus accesos quedó visible.
+    $$(".secBlock", grid).forEach((block) => {
+      const sec = block.dataset.sec;
+      const anyVisible = tiles.some((t) => t.dataset.sec === sec && !t.classList.contains("tileHidden"));
+      block.classList.toggle("tileHidden", !!q && !anyVisible);
+    });
+
+    if (clearBtn) clearBtn.hidden = !q;
+    if (empty) empty.hidden = !(q && visibles === 0);
+  };
+
+  input.addEventListener("input", apply);
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      input.value = "";
+      apply();
+      input.focus();
+    });
   }
 }
 
