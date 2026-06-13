@@ -1217,7 +1217,7 @@ const MUSIPROFE_SUGGESTIONS = [
   "¿Dónde está mi bitácora?",
   "No me abre un enlace",
   "Permisos de cámara",
-  "Recursos para clase"
+  "Buscar recursos para clase"
 ];
 
 const MUSIPROFE_KNOWLEDGE = [
@@ -1245,6 +1245,20 @@ const MUSIPROFE_KNOWLEDGE = [
     match: ["recurso", "protocolo", "salon", "salón", "estudiante", "horario"],
     answer: "En Mi trabajo hoy encuentras horario, salones e info de estudiantes. En Recursos están protocolos, guías y materiales docentes."
   }
+];
+
+const MUSIPROFE_RESOURCE_WORDS = [
+  "biblioteca", "recurso", "recursos", "material", "materiales", "repertorio",
+  "cancion", "canciones", "lista", "pdf", "documento",
+  "partitura", "partituras", "guia", "guía"
+];
+
+const MUSIPROFE_HELPER_WORDS = [
+  "ayuda", "ayudas", "ayudame", "ayúdame", "buscar", "busca", "buscame", "búscame",
+  "encontrar", "encuentra", "necesito", "quiero", "donde", "dónde", "esta", "está",
+  "hay", "tienes", "tiene", "me", "el", "la", "los", "las", "del", "de", "para",
+  "por", "favor", "link", "enlace", "recurso", "recursos", "material", "materiales",
+  "biblioteca"
 ];
 
 async function notifyTeacherShiftByEmail(payload) {
@@ -3603,13 +3617,93 @@ function getMusiProfeAnswer(question = "") {
   return "Puedo ayudarte con jornada, QR, cierre de sesión abierta, bitácoras, enlaces, cámara y recursos de clase. Escríbeme qué necesitas revisar.";
 }
 
-function addMusiProfeMessage(body, who = "bot") {
+function isMusiProfeResourceQuestion(question = "") {
+  const normalized = normalizeText(question);
+  const directResource = MUSIPROFE_RESOURCE_WORDS.some((word) => normalized.includes(normalizeText(word)));
+  const searchIntent = /(buscar|busca|buscame|encontrar|encuentra|necesito|quiero|hay|tienes)/.test(normalized);
+  return directResource || (searchIntent && !!buildBibliotecaBotQuery(question));
+}
+
+function buildBibliotecaBotQuery(question = "") {
+  const helper = new Set(MUSIPROFE_HELPER_WORDS.map(normalizeText));
+  const tokens = searchTokens(question)
+    .filter((token) => !helper.has(token))
+    .filter((token) => token.length > 2);
+  return [...new Set(tokens)].join(" ").trim();
+}
+
+function openBibliotecaSearch(query = "") {
+  openBibliotecaModule();
+  BIBLIO_STATE.search = query;
+  BIBLIO_STATE.shown = 60;
+  setTimeout(() => {
+    const input = $("#biblioSearch", bibliotecaOverlay);
+    if (!input) return;
+    input.value = query;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, 80);
+}
+
+function renderMusiProfeResourceResults(query, matches) {
+  return `
+    <p class="musiProfeAnswerText">Encontr&eacute; ${matches.length} resultado${matches.length === 1 ? "" : "s"} en la Biblioteca para <strong>${escapeHtml(query)}</strong>. Te dejo los m&aacute;s cercanos:</p>
+    <div class="musiProfeResults">
+      ${matches.slice(0, 4).map(({ recurso }) => {
+        const link = (Array.isArray(recurso.enlaces) ? recurso.enlaces : []).find((item) => /^https?:\/\//i.test(String(item?.url || "")));
+        return `
+          <article class="musiProfeResult">
+            <strong>${escapeHtml(recurso.titulo || "Recurso sin titulo")}</strong>
+            <span>${escapeHtml([recurso.area, recurso.tema].filter(Boolean).join(" - ") || "Biblioteca de Recursos")}</span>
+            <div class="musiProfeResultActions">
+              ${link ? `<a href="${escapeHtml(String(link.url))}" target="_blank" rel="noopener noreferrer">Abrir recurso</a>` : ""}
+              <button type="button" data-biblio-query="${escapeHtml(query)}">Ver en Biblioteca</button>
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+    <button class="musiProfeSearchAll" type="button" data-biblio-query="${escapeHtml(query)}">Abrir busqueda completa</button>
+  `;
+}
+
+async function getMusiProfeBibliotecaAnswer(question = "") {
+  const query = buildBibliotecaBotQuery(question);
+  if (!query) {
+    return `<p class="musiProfeAnswerText">Claro. Escribeme palabras como <strong>repertorio piano</strong>, <strong>partituras violin</strong> o <strong>diagnostico canto</strong> y busco en la Biblioteca.</p>`;
+  }
+
+  try {
+    const access = getBibliotecaAccess();
+    const recursos = await fetchBibliotecaRecursos();
+    const visibles = recursos.filter((r) => canSeeRecurso(r, access));
+    const minimumScore = bibliotecaMinimumSearchScore(query);
+    const matches = visibles
+      .map((recurso) => ({ recurso, score: bibliotecaSearchScore(recurso, query) }))
+      .filter((item) => item.score >= minimumScore)
+      .sort((a, b) => b.score - a.score || String(a.recurso.titulo || "").localeCompare(String(b.recurso.titulo || ""), "es"));
+
+    if (!matches.length) {
+      return `
+        <p class="musiProfeAnswerText">No encontr&eacute; resultados claros para <strong>${escapeHtml(query)}</strong>. Prueba con menos palabras, por ejemplo <strong>piano repertorio</strong> o <strong>canciones piano</strong>.</p>
+        <button class="musiProfeSearchAll" type="button" data-biblio-query="${escapeHtml(query)}">Buscar igual en Biblioteca</button>
+      `;
+    }
+
+    return renderMusiProfeResourceResults(query, matches);
+  } catch (error) {
+    console.warn("MusiProfe no pudo buscar en la biblioteca", error);
+    return `<p class="musiProfeAnswerText">Intente buscar en la Biblioteca, pero no pude cargar los recursos ahora. Revisa tu conexion o abre Biblioteca de Recursos e intenta de nuevo.</p>`;
+  }
+}
+
+function addMusiProfeMessage(body, who = "bot", options = {}) {
   const log = $("#musiProfeLog");
   if (!log) return;
 
   const message = document.createElement("div");
   message.className = `musiProfeMsg ${who === "user" ? "fromUser" : "fromBot"}`;
-  message.textContent = body;
+  if (options.html) message.innerHTML = body;
+  else message.textContent = body;
   log.appendChild(message);
   log.scrollTop = log.scrollHeight;
 }
@@ -3665,25 +3759,38 @@ function ensureMusiProfeBot() {
     fab.setAttribute("aria-expanded", "false");
   };
 
+  const answerQuestion = async (question) => {
+    addMusiProfeMessage(question, "user");
+    if (isMusiProfeResourceQuestion(question)) {
+      const html = await getMusiProfeBibliotecaAnswer(question);
+      addMusiProfeMessage(html, "bot", { html: true });
+      return;
+    }
+    addMusiProfeMessage(getMusiProfeAnswer(question));
+  };
+
   fab?.addEventListener("click", () => {
     if (panel.hidden) open();
     else close();
   });
   $("#musiProfeClose", bot)?.addEventListener("click", close);
   bot.querySelectorAll("[data-musi-question]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const question = button.getAttribute("data-musi-question") || "";
-      addMusiProfeMessage(question, "user");
-      addMusiProfeMessage(getMusiProfeAnswer(question));
+      await answerQuestion(question);
     });
   });
-  form?.addEventListener("submit", (event) => {
+  bot.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-biblio-query]");
+    if (!target) return;
+    openBibliotecaSearch(target.getAttribute("data-biblio-query") || "");
+  });
+  form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const question = String(input?.value || "").trim();
     if (!question) return;
-    addMusiProfeMessage(question, "user");
-    addMusiProfeMessage(getMusiProfeAnswer(question));
     input.value = "";
+    await answerQuestion(question);
   });
 }
 

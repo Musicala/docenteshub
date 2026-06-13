@@ -2168,6 +2168,69 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   background:#0C41C4;
 }
 
+.musiProfeAnswerText{
+  margin:0;
+}
+
+.musiProfeResults{
+  display:grid;
+  gap:8px;
+  margin-top:10px;
+}
+
+.musiProfeResult{
+  display:grid;
+  gap:4px;
+  padding:10px;
+  border:1px solid rgba(12,65,196,.12);
+  border-radius:12px;
+  background:rgba(246,248,255,.88);
+}
+
+.musiProfeResult strong{
+  color:#0b1020;
+  font-size:.88rem;
+  line-height:1.2;
+}
+
+.musiProfeResult span{
+  color:#5a6477;
+  font-size:.76rem;
+  font-weight:780;
+}
+
+.musiProfeResultActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:4px;
+}
+
+.musiProfeResultActions a,
+.musiProfeResultActions button,
+.musiProfeSearchAll{
+  min-height:30px;
+  border:0;
+  border-radius:999px;
+  padding:0 10px;
+  background:#0C41C4;
+  color:#fff;
+  cursor:pointer;
+  font-size:.76rem;
+  font-weight:920;
+  text-decoration:none;
+}
+
+.musiProfeResultActions button,
+.musiProfeSearchAll{
+  background:rgba(12,65,196,.10);
+  color:#16306f;
+}
+
+.musiProfeSearchAll{
+  margin-top:10px;
+}
+
 .musiProfeChips{
   display:flex;
   flex-wrap:wrap;
