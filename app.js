@@ -299,6 +299,21 @@ function normalizeText(value) {
     .trim();
 }
 
+function searchTokens(value) {
+  const ignored = new Set(["de", "del", "la", "las", "el", "los", "y", "o", "para", "por", "con", "en", "un", "una"]);
+  return normalizeText(value)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^\p{L}\p{N}]+/gu, ""))
+    .filter((token) => token.length > 1 && !ignored.has(token));
+}
+
+function matchesSearchTokens(haystack, query) {
+  const normalizedHaystack = normalizeText(haystack);
+  const tokens = searchTokens(query);
+  if (!tokens.length) return true;
+  return tokens.every((token) => normalizedHaystack.includes(token));
+}
+
 function emailKey(user) {
   return String(user?.email || "").toLowerCase().trim();
 }
@@ -4038,11 +4053,13 @@ function renderBiblioteca(body, visibles, access) {
     if (term) {
       // Búsqueda global: resultados planos sobre toda la biblioteca visible.
       const matches = visibles.filter((r) => {
-        const haystack = normalizeText([
+        const enlaces = Array.isArray(r.enlaces) ? r.enlaces : [];
+        const haystack = [
           r.titulo, r.tema, r.descripcion, r.area,
-          ...(Array.isArray(r.etiquetas) ? r.etiquetas : [])
-        ].join(" "));
-        return haystack.includes(term);
+          ...(Array.isArray(r.etiquetas) ? r.etiquetas : []),
+          ...enlaces.flatMap((l) => [l?.titulo, l?.nombre, l?.tipo, l?.url])
+        ].join(" ");
+        return matchesSearchTokens(haystack, term);
       });
       const n = paintRecursos(matches, grid, moreWrap);
       if (meta) meta.textContent = `${accessLabel} · ${n} resultado(s)`;
