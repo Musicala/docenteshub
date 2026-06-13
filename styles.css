@@ -2637,6 +2637,7 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 
 .adminBody{
   min-height:200px;
+  min-width:0; /* permite que la tabla ancha use scroll interno y no desborde el modal */
 }
 
 .adminMeta{
@@ -3140,7 +3141,8 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   gap:8px;
   margin-top:10px;
 }
-.docAddForm input{
+.docAddForm input,
+.docAddForm select{
   flex:1;
   min-width:160px;
   padding:9px 11px;
@@ -3148,5 +3150,29 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   border:1px solid var(--line);
   background:#fff;
   font:inherit;
+  color:var(--text);
+  height:42px;
 }
-.docAddForm .btnGoogle{ white-space:nowrap; }
+.docAddForm select{
+  flex:0 0 auto;
+  min-width:130px;
+  cursor:pointer;
+}
+.docAddForm .btnGoogle{ white-space:nowrap; height:42px; }
+
+/* Acciones compactas de la tabla de docentes */
+.docActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.btnGhost.docMini{
+  height:32px;
+  padding:0 12px;
+  border-radius:10px;
+  font-size:.8rem;
+  font-weight:700;
+}
+.adminBody .recordTable td .puntBadge{ margin-bottom:2px; }
+/* Columna de áreas: que los badges respiren sin estirar la fila */
+.adminBody .recordTable td:nth-child(4){ max-width:280px; }

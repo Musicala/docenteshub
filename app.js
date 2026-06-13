@@ -2844,6 +2844,40 @@ async function fetchHubUsers() {
   return map;
 }
 
+// Acceso temporal: convierte una opción de duración en una fecha de corte (epoch ms).
+// "indefinido" => null (sin vencimiento). Las demás vencen al final del día objetivo.
+const ACCESS_DURATIONS = [
+  { key: "indefinido", label: "Indefinido", days: null },
+  { key: "1d", label: "1 día", days: 1 },
+  { key: "1w", label: "1 semana", days: 7 },
+  { key: "1m", label: "1 mes", days: 30 }
+];
+
+function computeAccessExpiry(durationKey) {
+  const opt = ACCESS_DURATIONS.find((d) => d.key === durationKey);
+  if (!opt || opt.days == null) return null;
+  const d = new Date();
+  d.setDate(d.getDate() + opt.days);
+  d.setHours(23, 59, 59, 999); // vence al final del día objetivo
+  return d.getTime();
+}
+
+// Verdadero si el doc gestionado tiene vencimiento ya pasado.
+function isAccessExpired(accessExpiresAt) {
+  return typeof accessExpiresAt === "number" && accessExpiresAt > 0 && Date.now() > accessExpiresAt;
+}
+
+// Texto amable para mostrar el estado de vencimiento en la tabla.
+function describeAccessExpiry(accessExpiresAt) {
+  if (!(typeof accessExpiresAt === "number" && accessExpiresAt > 0)) return "";
+  const fecha = new Date(accessExpiresAt);
+  const fechaTxt = fecha.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
+  if (Date.now() > accessExpiresAt) return `venció el ${fechaTxt}`;
+  const diasRest = Math.ceil((accessExpiresAt - Date.now()) / 86400000);
+  if (diasRest <= 1) return `vence hoy (${fechaTxt})`;
+  return `vence en ${diasRest} días (${fechaTxt})`;
+}
+
 async function saveHubUser(email, data) {
   email = String(email || "").toLowerCase().trim();
   const ref = doc(APP_STATE.db, "hubUsers", email);
@@ -2891,6 +2925,7 @@ function buildDocenteRows() {
       inBase: !!base,
       managed: !!md,
       enabled: isAdmin ? true : enabled,
+      accessExpiresAt: (typeof md?.accessExpiresAt === "number" && md.accessExpiresAt > 0) ? md.accessExpiresAt : null,
       areas: Array.isArray(md?.areas) ? md.areas : [],
       especialidades: Array.isArray(md?.especialidades) ? md.especialidades : []
     });
@@ -2909,11 +2944,20 @@ function renderAdminDocentes(body) {
     : "";
 
   const tableRows = rows.map((r) => {
-    const estado = r.isAdmin
-      ? `<span class="puntBadge punt-excused">Admin</span>`
-      : (r.enabled
-        ? `<span class="puntBadge punt-ok">Activo</span>`
-        : `<span class="puntBadge punt-absent">Inhabilitado</span>`);
+    const expired = !r.isAdmin && r.enabled && isAccessExpired(r.accessExpiresAt);
+    const expiryTxt = r.accessExpiresAt ? describeAccessExpiry(r.accessExpiresAt) : "";
+    let estado;
+    if (r.isAdmin) {
+      estado = `<span class="puntBadge punt-excused">Admin</span>`;
+    } else if (!r.enabled) {
+      estado = `<span class="puntBadge punt-absent">Inhabilitado</span>`;
+    } else if (expired) {
+      estado = `<span class="puntBadge punt-absent">Vencido</span><br><span class="adminNote">${escapeHtml(expiryTxt)}</span>`;
+    } else if (r.accessExpiresAt) {
+      estado = `<span class="puntBadge punt-ok">Temporal</span><br><span class="adminNote">${escapeHtml(expiryTxt)}</span>`;
+    } else {
+      estado = `<span class="puntBadge punt-ok">Activo</span>`;
+    }
     const origen = r.inBase ? "Código" : "Panel";
 
     const areasLabel = r.isAdmin
@@ -2927,12 +2971,14 @@ function renderAdminDocentes(body) {
       actions = `<span class="adminNote">—</span>`;
     } else {
       const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
-      actions = `<button class="btnGhost docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
-      actions += ` <button class="btnGhost docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
+      let btns = `<button class="btnGhost docMini docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
+      btns += `<button class="btnGhost docMini docAccess" type="button" data-email="${escapeHtml(r.email)}">Acceso</button>`;
+      btns += `<button class="btnGhost docMini docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
       // "Quitar" solo para los creados en el panel (no base de código).
       if (r.managed && !r.inBase) {
-        actions += ` <button class="btnGhost adminDanger docRemove" type="button" data-email="${escapeHtml(r.email)}">Quitar</button>`;
+        btns += `<button class="btnGhost docMini adminDanger docRemove" type="button" data-email="${escapeHtml(r.email)}">Quitar</button>`;
       }
+      actions = `<div class="docActions">${btns}</div>`;
     }
 
     return `
@@ -2954,8 +3000,12 @@ function renderAdminDocentes(body) {
       <div class="docAddForm">
         <input type="text" id="docNewName" placeholder="Nombre (ej: Laura Sánchez)" />
         <input type="email" id="docNewEmail" placeholder="correo@gmail.com" />
+        <select id="docNewAccess" title="Duración del acceso">
+          ${ACCESS_DURATIONS.map((d) => `<option value="${d.key}">${escapeHtml(d.label)}</option>`).join("")}
+        </select>
         <button class="btnGoogle" id="docAddBtn" type="button">Agregar y habilitar</button>
       </div>
+      <p class="adminNote" style="margin-top:6px">Para docentes de reemplazo, elige <strong>1 día / 1 semana / 1 mes</strong>: el acceso se bloquea solo al vencer. <strong>Indefinido</strong> es para docentes de planta.</p>
     </div>
     ${errorNote}
     <p class="adminMeta">${rows.length} docente(s) · base de código + gestionados</p>
@@ -2965,18 +3015,20 @@ function renderAdminDocentes(body) {
         <tbody>${tableRows}</tbody>
       </table>
     </div>
-    <p class="adminNote">“Activo” puede iniciar sesión y usar el HUB. “Inhabilitado” queda bloqueado. Los docentes de “Código” no se pueden borrar desde aquí, pero sí inhabilitar. Con “Áreas” defines qué ve cada quien en la Biblioteca de Recursos.</p>
+    <p class="adminNote">“Activo” / “Temporal” pueden iniciar sesión y usar el HUB. “Temporal” muestra cuándo vence y se bloquea solo al llegar la fecha (“Vencido”). “Inhabilitado” queda bloqueado de inmediato. Con “Acceso” cambias la duración (indefinido / 1 día / 1 semana / 1 mes); con “Áreas” defines qué ve cada quien en la Biblioteca. Los docentes de “Código” no se pueden borrar, pero sí inhabilitar.</p>
   `;
 
   $("#docAddBtn", body)?.addEventListener("click", async () => {
     const name = $("#docNewName", body).value.trim();
     const email = $("#docNewEmail", body).value.trim().toLowerCase();
+    const accessKey = $("#docNewAccess", body)?.value || "indefinido";
     if (!isValidEmail(email)) { toast("Correo inválido 🙃"); return; }
     try {
-      const saved = await saveHubUser(email, { label: name || email, role: "docente", enabled: true });
-      ADMIN_STATE.hubUsers[email] = { email, label: saved.label || name || email, role: saved.role || "docente", enabled: saved.enabled !== false };
+      const accessExpiresAt = computeAccessExpiry(accessKey);
+      const saved = await saveHubUser(email, { label: name || email, role: "docente", enabled: true, accessExpiresAt });
+      ADMIN_STATE.hubUsers[email] = { email, label: saved.label || name || email, role: saved.role || "docente", enabled: saved.enabled !== false, accessExpiresAt };
       refreshAdminTeacherFilterOptions();
-      toast("Docente agregada y habilitada ✅");
+      toast(accessExpiresAt ? "Docente agregada · acceso temporal ✅" : "Docente agregada y habilitada ✅");
       renderAdminBody();
     } catch (err) {
       console.error(err);
@@ -3005,6 +3057,10 @@ function renderAdminDocentes(body) {
 
   body.querySelectorAll(".docAreas").forEach((btn) => {
     btn.addEventListener("click", () => openDocenteAreasEditor(btn.dataset.email));
+  });
+
+  body.querySelectorAll(".docAccess").forEach((btn) => {
+    btn.addEventListener("click", () => openDocenteAccessEditor(btn.dataset.email));
   });
 
   body.querySelectorAll(".docRemove").forEach((btn) => {
@@ -3092,6 +3148,65 @@ async function openDocenteAreasEditor(email) {
     } catch (err) {
       console.error(err);
       toast("No se pudieron guardar las áreas. Revisa permisos/reglas.");
+    }
+  });
+}
+
+/* ---- Editor de acceso temporal (vencimiento) ---- */
+async function openDocenteAccessEditor(email) {
+  const md = ADMIN_STATE.hubUsers?.[email] || {};
+  const base = HUB.USERS?.[email] || null;
+  const name = md.label || base?.label || email;
+  const current = (typeof md.accessExpiresAt === "number" && md.accessExpiresAt > 0) ? md.accessExpiresAt : null;
+  const estadoActual = current ? describeAccessExpiry(current) : "acceso indefinido";
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Acceso · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">Estado actual: <strong>${escapeHtml(estadoActual)}</strong>. Elige cuánto tiempo más tendrá acceso al HUB. Al vencer, queda bloqueada automáticamente.</p>
+      <div class="areasMacroGrid">
+        ${ACCESS_DURATIONS.map((d, i) => `
+          <label class="adminCheck areaCheck">
+            <input type="radio" name="accessDur" value="${d.key}" ${i === 0 ? "checked" : ""} />
+            <span>${escapeHtml(d.label)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <p class="adminNote" style="margin-top:8px">El conteo arranca desde hoy. Ej.: “1 semana” = vence en 7 días.</p>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="accessCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="accessSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
+  $("#accessCancel", dialog)?.addEventListener("click", close);
+
+  $("#accessSave", dialog)?.addEventListener("click", async () => {
+    const key = ($$("input[name='accessDur']", dialog).find((i) => i.checked) || {}).value || "indefinido";
+    const accessExpiresAt = computeAccessExpiry(key);
+    try {
+      const saved = await saveHubUser(email, {
+        label: name,
+        role: "docente",
+        enabled: md.enabled !== false,
+        accessExpiresAt
+      });
+      ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), ...saved, email, accessExpiresAt };
+      refreshAdminTeacherFilterOptions();
+      toast(accessExpiresAt ? "Acceso temporal actualizado ✅" : "Acceso indefinido ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo actualizar el acceso. Revisa permisos/reglas.");
     }
   });
 }
@@ -4086,7 +4201,11 @@ async function resolveHubAccess(user) {
     // Reglas no publicadas todavía o sin permiso: usamos la lista base.
   }
 
-  if (managed) return { allowed: managed.enabled !== false, managed };
+  if (managed) {
+    const enabled = managed.enabled !== false;
+    const expired = isAccessExpired(managed.accessExpiresAt);
+    return { allowed: enabled && !expired, managed, expired: enabled && expired };
+  }
   return { allowed: !!HUB.USERS?.[email], managed: null };
 }
 
@@ -4122,8 +4241,10 @@ async function handleAuthorizedUser(user, managed = null) {
   await refreshTeacherJornadaStatus();
 }
 
-async function handleUnauthorizedUser(auth) {
-  toast("Tu correo no está autorizado para este hub 🫠");
+async function handleUnauthorizedUser(auth, reason = "") {
+  toast(reason === "expired"
+    ? "Tu acceso temporal venció. Pídele a coordinación que lo renueve 🗓️"
+    : "Tu correo no está autorizado para este hub 🫠");
 
   try {
     await signOut(auth);
@@ -4174,7 +4295,7 @@ async function mount() {
 
     const access = await resolveHubAccess(user);
     if (!access.allowed) {
-      await handleUnauthorizedUser(auth);
+      await handleUnauthorizedUser(auth, access.expired ? "expired" : "");
       return;
     }
 

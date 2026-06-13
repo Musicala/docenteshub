@@ -25,8 +25,17 @@ service cloud.firestore {
     function hubUserPath() {
       return /databases/$(database)/documents/hubUsers/$(request.auth.token.email);
     }
+    // Acceso temporal: accessExpiresAt (epoch ms). Si no existe o es null/0, no vence.
+    function hubNotExpired() {
+      return !('accessExpiresAt' in get(hubUserPath()).data)
+        || get(hubUserPath()).data.accessExpiresAt == null
+        || get(hubUserPath()).data.accessExpiresAt == 0
+        || request.time.toMillis() < get(hubUserPath()).data.accessExpiresAt;
+    }
     function hubManagedEnabled() {
-      return exists(hubUserPath()) && get(hubUserPath()).data.enabled == true;
+      return exists(hubUserPath())
+        && get(hubUserPath()).data.enabled == true
+        && hubNotExpired();
     }
     function hubManagedDisabled() {
       return exists(hubUserPath()) && get(hubUserPath()).data.enabled == false;
