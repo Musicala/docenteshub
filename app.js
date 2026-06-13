@@ -307,11 +307,48 @@ function searchTokens(value) {
     .filter((token) => token.length > 1 && !ignored.has(token));
 }
 
-function matchesSearchTokens(haystack, query) {
-  const normalizedHaystack = normalizeText(haystack);
+function bibliotecaSearchScore(recurso, query) {
   const tokens = searchTokens(query);
-  if (!tokens.length) return true;
-  return tokens.every((token) => normalizedHaystack.includes(token));
+  if (!tokens.length) return 0;
+
+  const enlaces = Array.isArray(recurso?.enlaces) ? recurso.enlaces : [];
+  const fields = [
+    { text: recurso?.titulo, weight: 12 },
+    { text: recurso?.tema, weight: 8 },
+    { text: recurso?.area, weight: 7 },
+    { text: recurso?.tipo, weight: 4 },
+    { text: Array.isArray(recurso?.etiquetas) ? recurso.etiquetas.join(" ") : "", weight: 5 },
+    { text: recurso?.descripcion, weight: 2 },
+    { text: enlaces.flatMap((l) => [l?.titulo, l?.nombre, l?.tipo]).join(" "), weight: 3 },
+    { text: enlaces.map((l) => l?.url).join(" "), weight: 1 }
+  ].map((field) => ({ ...field, normalized: normalizeText(field.text) }));
+
+  let score = 0;
+  let matchedTokens = 0;
+
+  tokens.forEach((token) => {
+    let tokenScore = 0;
+    fields.forEach((field) => {
+      if (!field.normalized.includes(token)) return;
+      tokenScore += field.weight;
+      if (field.normalized.split(/\s+/).includes(token)) tokenScore += field.weight;
+    });
+    if (tokenScore > 0) matchedTokens += 1;
+    score += tokenScore;
+  });
+
+  if (matchedTokens < tokens.length) return 0;
+
+  const titleTokens = searchTokens(recurso?.titulo);
+  const titleMatches = tokens.filter((token) => titleTokens.some((titleToken) => titleToken.includes(token)));
+  if (titleMatches.length) score += titleMatches.length * 20;
+  if (titleMatches.length === tokens.length) score += 40;
+
+  return score;
+}
+
+function bibliotecaMinimumSearchScore(query) {
+  return searchTokens(query).length > 1 ? 30 : 1;
 }
 
 function emailKey(user) {
@@ -3585,12 +3622,13 @@ function ensureMusiProfeBot() {
   bot.className = "musiProfeBot";
   bot.innerHTML = `
     <button class="musiProfeFab" id="musiProfeFab" type="button" aria-expanded="false" aria-controls="musiProfePanel">
-      <span aria-hidden="true">MP</span>
+      <span class="musiProfeAvatar" aria-hidden="true"><img src="./assets/musiprofe.png" alt="" /></span>
       <strong>¿Cómo les podemos ayudar?</strong>
     </button>
     <section class="musiProfePanel" id="musiProfePanel" hidden>
       <div class="musiProfeHead">
-        <div>
+        <span class="musiProfeAvatar musiProfeAvatarPanel" aria-hidden="true"><img src="./assets/musiprofe.png" alt="" /></span>
+        <div class="musiProfeTitle">
           <p>MusiProfe</p>
           <strong>Asistente docente</strong>
         </div>
@@ -4052,15 +4090,12 @@ function renderBiblioteca(body, visibles, access) {
     const term = normalizeText(BIBLIO_STATE.search);
     if (term) {
       // Búsqueda global: resultados planos sobre toda la biblioteca visible.
-      const matches = visibles.filter((r) => {
-        const enlaces = Array.isArray(r.enlaces) ? r.enlaces : [];
-        const haystack = [
-          r.titulo, r.tema, r.descripcion, r.area,
-          ...(Array.isArray(r.etiquetas) ? r.etiquetas : []),
-          ...enlaces.flatMap((l) => [l?.titulo, l?.nombre, l?.tipo, l?.url])
-        ].join(" ");
-        return matchesSearchTokens(haystack, term);
-      });
+      const minimumScore = bibliotecaMinimumSearchScore(term);
+      const matches = visibles
+        .map((r) => ({ recurso: r, score: bibliotecaSearchScore(r, term) }))
+        .filter((item) => item.score >= minimumScore)
+        .sort((a, b) => b.score - a.score || String(a.recurso.titulo || "").localeCompare(String(b.recurso.titulo || ""), "es"))
+        .map((item) => item.recurso);
       const n = paintRecursos(matches, grid, moreWrap);
       if (meta) meta.textContent = `${accessLabel} · ${n} resultado(s)`;
       return;
