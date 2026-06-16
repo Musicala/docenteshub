@@ -1201,6 +1201,7 @@ function wireTeacherShiftAutoCloseWatchers() {
 
   const run = async () => {
     if (!APP_STATE.activeUser || !APP_STATE.db) return;
+    await flushPendingShifts();
     await autoCloseStaleOpenShifts({ includeAll: isAdminUser(), silent: true });
     await refreshTeacherJornadaStatus();
   };
@@ -1208,6 +1209,10 @@ function wireTeacherShiftAutoCloseWatchers() {
   window.addEventListener("focus", run);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) run();
+  });
+  window.addEventListener("online", () => {
+    if (!APP_STATE.activeUser || !APP_STATE.db) return;
+    flushPendingShifts();
   });
 }
 
@@ -1755,6 +1760,121 @@ async function saveTeacherShiftRecordTransaction(user, payload) {
   });
 }
 
+/* ----------------------------------------------------------------------------
+   Cola offline de registros de jornada
+   - Si el docente marca ingreso/salida sin internet, el registro se guarda en
+     este dispositivo (localStorage) y se reenvía a Firebase al reconectar o al
+     volver a abrir la app.
+---------------------------------------------------------------------------- */
+const PENDING_SHIFTS_KEY = "musicala:pendingShifts";
+let flushingPendingShifts = false;
+
+function readPendingShifts() {
+  try {
+    const raw = localStorage.getItem(PENDING_SHIFTS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writePendingShifts(list) {
+  try {
+    if (!list || !list.length) {
+      localStorage.removeItem(PENDING_SHIFTS_KEY);
+    } else {
+      localStorage.setItem(PENDING_SHIFTS_KEY, JSON.stringify(list));
+    }
+  } catch (error) {
+    console.warn("No se pudo guardar la cola offline de jornada", error);
+  }
+}
+
+function isOfflineError(error) {
+  if (!navigator.onLine) return true;
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "unavailable" ||
+    code === "failed-precondition" ||
+    message.includes("offline") ||
+    message.includes("network") ||
+    message.includes("backend") ||
+    message.includes("could not reach")
+  );
+}
+
+function queueOfflineShift(payload, { action } = {}) {
+  // serverTimestamp() es un sentinel no serializable: se re-genera al reenviar.
+  const { createdAt, ...storable } = payload;
+  const list = readPendingShifts();
+  list.push(storable);
+  writePendingShifts(list);
+
+  // Estado local optimista para que la UI refleje el registro de inmediato.
+  APP_STATE.teacherShiftStatus = {
+    open: action !== "fin_jornada",
+    record: storable
+  };
+  updateHeroJornadaButton();
+
+  toast(
+    action === "fin_jornada"
+      ? "Sin conexión. Cierre guardado en este dispositivo; se enviará al reconectar."
+      : "Sin conexión. Ingreso guardado en este dispositivo; se enviará al reconectar."
+  );
+}
+
+function pendingShiftsCount() {
+  return readPendingShifts().length;
+}
+
+async function flushPendingShifts() {
+  if (flushingPendingShifts) return;
+  if (!navigator.onLine || !APP_STATE.db) return;
+
+  const list = readPendingShifts();
+  if (!list.length) return;
+
+  flushingPendingShifts = true;
+  const remaining = [];
+  let sent = 0;
+
+  try {
+    for (const item of list) {
+      const replayUser = { uid: item.uid || "", email: item.email || "" };
+      const payload = { ...item, createdAt: serverTimestamp() };
+      try {
+        await saveTeacherShiftRecordTransaction(replayUser, payload);
+        notifyTeacherShiftByEmail(payload);
+        sent += 1;
+      } catch (error) {
+        if (error?.message === "OPEN_TEACHER_SHIFT") {
+          // El servidor ya tiene una jornada abierta: descartamos el duplicado.
+          console.warn("Registro offline descartado por jornada abierta", error);
+          continue;
+        }
+        if (isOfflineError(error)) {
+          // Seguimos sin conexión: conservamos este y los siguientes en orden.
+          remaining.push(item);
+        } else {
+          console.error("No se pudo sincronizar un registro offline", error);
+          remaining.push(item);
+        }
+      }
+    }
+  } finally {
+    writePendingShifts(remaining);
+    flushingPendingShifts = false;
+  }
+
+  if (sent) {
+    toast(`${sent} registro${sent === 1 ? "" : "s"} de jornada sincronizado${sent === 1 ? "" : "s"}.`);
+    await refreshTeacherJornadaStatus();
+  }
+}
+
 async function saveTeacherClassStartRecord({
   modalidad,
   source,
@@ -1763,13 +1883,9 @@ async function saveTeacherClassStartRecord({
   action = "inicio_clase",
   successMessage = "Inicio de jornada guardado."
 }) {
-  if (!APP_STATE.db || !APP_STATE.activeUser) {
+  if (!APP_STATE.activeUser) {
     toast("No hay sesión lista para guardar el registro.");
     return;
-  }
-
-  if (action === "inicio_clase") {
-    await autoCloseStaleOpenShifts({ includeAll: false, silent: false });
   }
 
   const user = APP_STATE.activeUser;
@@ -1790,6 +1906,20 @@ async function saveTeacherClassStartRecord({
     raw: String(raw || "")
   };
 
+  // Sin conexión: guardamos el registro en el dispositivo y lo enviamos luego.
+  if (!navigator.onLine || !APP_STATE.db) {
+    queueOfflineShift(payload, { action });
+    if (teacherShiftModal && !teacherShiftModal.hidden) {
+      updateTeacherShiftHeader();
+      if (action === "inicio_clase") renderOpenTeacherShiftNotice(payload);
+    }
+    return;
+  }
+
+  if (action === "inicio_clase") {
+    await autoCloseStaleOpenShifts({ includeAll: false, silent: false });
+  }
+
   try {
     setButtonBusy(button, true, "Guardando...");
     await saveTeacherShiftRecordTransaction(user, payload);
@@ -1809,6 +1939,15 @@ async function saveTeacherClassStartRecord({
       renderOpenTeacherShiftNotice(openRecord);
       updateHeroJornadaButton();
       toast("Tienes una sesión abierta todavía. Ciérrala antes de registrar otro ingreso.");
+      return;
+    }
+
+    if (isOfflineError(error)) {
+      queueOfflineShift(payload, { action });
+      if (teacherShiftModal && !teacherShiftModal.hidden) {
+        updateTeacherShiftHeader();
+        if (action === "inicio_clase") renderOpenTeacherShiftNotice(payload);
+      }
       return;
     }
 
@@ -4527,6 +4666,7 @@ async function mount() {
     }
 
     await handleAuthorizedUser(user, access.managed);
+    flushPendingShifts();
   });
 }
 
