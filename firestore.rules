@@ -25,12 +25,24 @@ service cloud.firestore {
     function hubUserPath() {
       return /databases/$(database)/documents/hubUsers/$(request.auth.token.email);
     }
-    // Acceso temporal: accessExpiresAt (epoch ms). Si no existe o es null/0, no vence.
+    // Acceso temporal: accessExpiresAt puede ser epoch ms (número) o timestamp.
+    // Si no existe o es null/0, no vence.
     function hubNotExpired() {
       return !('accessExpiresAt' in get(hubUserPath()).data)
         || get(hubUserPath()).data.accessExpiresAt == null
         || get(hubUserPath()).data.accessExpiresAt == 0
-        || request.time.toMillis() < get(hubUserPath()).data.accessExpiresAt;
+        || (
+          get(hubUserPath()).data.accessExpiresAt is int
+          && request.time.toMillis() <= get(hubUserPath()).data.accessExpiresAt
+        )
+        || (
+          get(hubUserPath()).data.accessExpiresAt is float
+          && request.time.toMillis() <= get(hubUserPath()).data.accessExpiresAt
+        )
+        || (
+          get(hubUserPath()).data.accessExpiresAt is timestamp
+          && request.time <= get(hubUserPath()).data.accessExpiresAt
+        );
     }
     function hubManagedEnabled() {
       return exists(hubUserPath())

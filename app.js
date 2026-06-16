@@ -2919,13 +2919,24 @@ const ACCESS_DURATIONS = [
   { key: "1m", label: "1 mes", days: 30 }
 ];
 
+function startOfLocalDay(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfLocalDay(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 function computeAccessExpiry(durationKey) {
   const opt = ACCESS_DURATIONS.find((d) => d.key === durationKey);
   if (!opt || opt.days == null) return null;
-  const d = new Date();
+  const d = startOfLocalDay();
   d.setDate(d.getDate() + opt.days);
-  d.setHours(23, 59, 59, 999); // vence al final del día objetivo
-  return d.getTime();
+  return endOfLocalDay(d).getTime();
 }
 
 // Verdadero si el doc gestionado tiene vencimiento ya pasado.
@@ -2939,9 +2950,12 @@ function describeAccessExpiry(accessExpiresAt) {
   const fecha = new Date(accessExpiresAt);
   const fechaTxt = fecha.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
   if (Date.now() > accessExpiresAt) return `venció el ${fechaTxt}`;
-  const diasRest = Math.ceil((accessExpiresAt - Date.now()) / 86400000);
-  if (diasRest <= 1) return `vence hoy (${fechaTxt})`;
-  return `vence en ${diasRest} días (${fechaTxt})`;
+  const todayStart = startOfLocalDay();
+  const expiryStart = startOfLocalDay(fecha);
+  const calendarDays = Math.round((expiryStart.getTime() - todayStart.getTime()) / 86400000);
+  if (calendarDays <= 0) return `vence hoy (${fechaTxt})`;
+  if (calendarDays === 1) return `vence mañana (${fechaTxt})`;
+  return `vence en ${calendarDays} días (${fechaTxt})`;
 }
 
 async function saveHubUser(email, data) {
@@ -3071,7 +3085,7 @@ function renderAdminDocentes(body) {
         </select>
         <button class="btnGoogle" id="docAddBtn" type="button">Agregar y habilitar</button>
       </div>
-      <p class="adminNote" style="margin-top:6px">Para docentes de reemplazo, elige <strong>1 día / 1 semana / 1 mes</strong>: el acceso se bloquea solo al vencer. <strong>Indefinido</strong> es para docentes de planta.</p>
+      <p class="adminNote" style="margin-top:6px">Para docentes de reemplazo, elige <strong>1 día / 1 semana / 1 mes</strong>: el acceso queda activo hasta las 11:59 p. m. de la fecha indicada y se bloquea solo después de vencer. <strong>Indefinido</strong> es para docentes de planta.</p>
     </div>
     ${errorNote}
     <p class="adminMeta">${rows.length} docente(s) · base de código + gestionados</p>
@@ -3081,7 +3095,7 @@ function renderAdminDocentes(body) {
         <tbody>${tableRows}</tbody>
       </table>
     </div>
-    <p class="adminNote">“Activo” / “Temporal” pueden iniciar sesión y usar el HUB. “Temporal” muestra cuándo vence y se bloquea solo al llegar la fecha (“Vencido”). “Inhabilitado” queda bloqueado de inmediato. Con “Acceso” cambias la duración (indefinido / 1 día / 1 semana / 1 mes); con “Áreas” defines qué ve cada quien en la Biblioteca. Los docentes de “Código” no se pueden borrar, pero sí inhabilitar.</p>
+    <p class="adminNote">“Activo” / “Temporal” pueden iniciar sesión y usar el HUB. “Temporal” muestra la fecha calendario de vencimiento; por ejemplo, si dice “vence mañana”, puede entrar durante todo ese día y se bloquea después de las 11:59 p. m. “Inhabilitado” queda bloqueado de inmediato. Con “Acceso” cambias la duración (indefinido / 1 día / 1 semana / 1 mes); con “Áreas” defines qué ve cada quien en la Biblioteca. Los docentes de “Código” no se pueden borrar, pero sí inhabilitar.</p>
   `;
 
   $("#docAddBtn", body)?.addEventListener("click", async () => {
@@ -3240,7 +3254,7 @@ async function openDocenteAccessEditor(email) {
           </label>
         `).join("")}
       </div>
-      <p class="adminNote" style="margin-top:8px">El conteo arranca desde hoy. Ej.: “1 semana” = vence en 7 días.</p>
+      <p class="adminNote" style="margin-top:8px">El conteo es por fecha calendario y el acceso queda activo hasta las 11:59 p. m. de la fecha mostrada. Ej.: “1 día” = vence mañana; “1 semana” = vence en 7 días.</p>
       <div class="adminSubActions">
         <span></span>
         <div>
