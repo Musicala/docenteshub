@@ -62,7 +62,7 @@ const HUB = {
     guiones: "https://musicalaescuela.github.io/plantillaparaguiones/",
     protocolosMusica: "https://musicalaescuela.github.io/protocolosmusica/",
     vacaciones: "https://musicalaescuela.github.io/vacacionesartisticas/",
-    vacacionales: "https://musicala.github.io/cursosvacacionales/",
+    vacacionales: "https://vacacionales-fb909.firebaseapp.com",
     explicacionArtes: "https://musicala.github.io/explicacionartes/",
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
