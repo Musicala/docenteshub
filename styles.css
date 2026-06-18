@@ -3137,6 +3137,41 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   background:rgba(206,0,113,.1);
   color:#9f0956;
 }
+
+/* ===== Calendario de un solo mes (grande y legible) ===== */
+.scheduleMonthNav{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0 14px;
+}
+.scheduleMonthNav .scheduleMonthLabel,
+.teacherAnnualHead .scheduleMonthNav #teacherMonthLabel{
+  font-size:1.05rem; min-width:150px; text-align:center; text-transform:capitalize;
+}
+.scheduleMonthNav .btnGhost{ height:38px; min-width:38px; padding:0 12px; font-size:1.1rem; font-weight:800; }
+.scheduleMonthNav .scheduleMonthToday{ font-size:.85rem; }
+
+.scheduleSoloWrap{ max-width:680px; margin:0 auto; }
+.scheduleMonthSolo{ padding:16px; }
+.scheduleMonthSolo h4{ font-size:1.15rem; margin-bottom:12px; text-transform:capitalize; }
+.scheduleMonthSolo .scheduleWeekdays span{ font-size:13px; }
+.scheduleMonthSolo .scheduleWeekdays,
+.scheduleMonthSolo .scheduleMonthGrid{ gap:6px; }
+.scheduleMonthSolo .scheduleDay{
+  min-height:74px; padding:6px; border-radius:10px;
+}
+.scheduleMonthSolo .scheduleDay strong{ font-size:14px; color:#0b1020; margin-bottom:4px; }
+.scheduleMonthSolo .scheduleChip{
+  font-size:12.5px; font-weight:700; line-height:1.25;
+  white-space:normal; padding:3px 6px; border-radius:7px;
+}
+.scheduleDay.isToday{
+  outline:2px solid var(--a1);
+  outline-offset:-1px;
+}
+@media (max-width:560px){
+  .scheduleMonthSolo .scheduleDay{ min-height:58px; }
+  .scheduleMonthSolo .scheduleChip{ font-size:11px; }
+  .scheduleMonthSolo h4{ font-size:1rem; }
+}
 .adminSubCardWide{
   width:min(760px, 100%);
 }

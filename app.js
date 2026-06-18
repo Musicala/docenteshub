@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-06-18.1";
+const BUILD = "2026-06-18.2";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -2109,6 +2109,7 @@ const ADMIN_STATE = {
   schedules: {},       // { email: scheduleDoc }
   overrides: {},       // { "email__date": overrideDoc }
   scheduleYear: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date())),
+  scheduleMonth: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(new Date())) - 1,
   academic: { objectives: [], budgets: [], hourLogs: [] },
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   customButtons: [],   // botones personalizados creados desde el panel
@@ -2639,14 +2640,15 @@ function openTeacherScheduleView() {
       </section>
       <section class="teacherAnnualSection">
         <div class="teacherAnnualHead">
-          <h3>Año completo</h3>
-          <div class="scheduleYearActions">
-            <button class="btnGhost teacherYearNav" type="button" data-step="-1">‹</button>
-            <strong id="teacherYearLabel">${currentYear}</strong>
-            <button class="btnGhost teacherYearNav" type="button" data-step="1">›</button>
+          <h3>Calendario</h3>
+          <div class="scheduleMonthNav">
+            <button class="btnGhost teacherMonthStep" type="button" data-step="-1" aria-label="Mes anterior">‹</button>
+            <strong id="teacherMonthLabel"></strong>
+            <button class="btnGhost teacherMonthStep" type="button" data-step="1" aria-label="Mes siguiente">›</button>
+            <button class="btnGhost teacherMonthToday" type="button">Hoy</button>
           </div>
         </div>
-        <div id="teacherAnnualGrid" class="scheduleYearGrid">${renderTeacherAnnualGrid(currentYear)}</div>
+        <div id="teacherMonthGrid" class="scheduleSoloWrap"></div>
       </section>
       <p class="teacherScheduleNote">Si coordinación agrega una excepción, aparecerá aquí sobre tu horario semanal.</p>
     </div>
@@ -2661,52 +2663,27 @@ function openTeacherScheduleView() {
   $("#teacherScheduleClose", modal)?.addEventListener("click", close);
 
   let shownYear = currentYear;
-  modal.querySelectorAll(".teacherYearNav").forEach((btn) => {
+  let shownMonth = Number(today.slice(5, 7)) - 1;
+  const paintMonth = () => {
+    const label = $("#teacherMonthLabel", modal);
+    const grid = $("#teacherMonthGrid", modal);
+    if (label) label.textContent = `${MONTH_NAMES_ES[shownMonth]} ${shownYear}`;
+    if (grid) grid.innerHTML = renderScheduleMonthSolo(getTeacherScheduleForDate, shownYear, shownMonth, today);
+  };
+  paintMonth();
+  modal.querySelectorAll(".teacherMonthStep").forEach((btn) => {
     btn.addEventListener("click", () => {
-      shownYear += Number(btn.dataset.step) || 0;
-      const label = $("#teacherYearLabel", modal);
-      const grid = $("#teacherAnnualGrid", modal);
-      if (label) label.textContent = String(shownYear);
-      if (grid) grid.innerHTML = renderTeacherAnnualGrid(shownYear);
+      shownMonth += Number(btn.dataset.step) || 0;
+      if (shownMonth < 0) { shownMonth = 11; shownYear -= 1; }
+      else if (shownMonth > 11) { shownMonth = 0; shownYear += 1; }
+      paintMonth();
     });
   });
-}
-
-// Grilla anual (12 meses) del docente activo, usando su horario semanal fijo y
-// las excepciones cargadas. Solo muestra el horario propio.
-function renderTeacherAnnualGrid(year) {
-  const months = Array.from({ length: 12 }, (_, monthIndex) => {
-    const monthDate = new Date(Date.UTC(year, monthIndex, 1, 12));
-    const monthName = new Intl.DateTimeFormat("es-CO", { month: "long", timeZone: "UTC" }).format(monthDate);
-    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-    const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
-    const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
-    const blanks = Array.from({ length: leading }, () => `<div class="scheduleDay isBlank"></div>`).join("");
-    const days = Array.from({ length: daysInMonth }, (_, i) => {
-      const dayNum = i + 1;
-      const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-      const item = getTeacherScheduleForDate(date);
-      let chip = "";
-      if (item) {
-        const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `-${item.end}` : ""}`;
-        chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
-      }
-      return `
-        <div class="scheduleDay ${chip ? "hasSchedule" : ""}">
-          <strong>${dayNum}</strong>
-          <div>${chip}</div>
-        </div>
-      `;
-    }).join("");
-    return `
-      <section class="scheduleMonth">
-        <h4>${escapeHtml(monthName)}</h4>
-        <div class="scheduleWeekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
-        <div class="scheduleMonthGrid">${blanks}${days}</div>
-      </section>
-    `;
+  $(".teacherMonthToday", modal)?.addEventListener("click", () => {
+    shownYear = currentYear;
+    shownMonth = Number(today.slice(5, 7)) - 1;
+    paintMonth();
   });
-  return months.join("");
 }
 
 function minutesToLabel(mins) {
@@ -3891,14 +3868,55 @@ async function loadSingleScheduleOverride(email, date) {
   }
 }
 
+const MONTH_NAMES_ES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
+
+// Renderiza un único mes (grande y legible). `getItem(date)` devuelve el horario
+// esperado para esa fecha o null. `todayStr` resalta el día actual.
+function renderScheduleMonthSolo(getItem, year, monthIndex, todayStr = "") {
+  const monthName = MONTH_NAMES_ES[monthIndex] || "";
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
+  const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
+  const blanks = Array.from({ length: leading }, () => `<div class="scheduleDay isBlank"></div>`).join("");
+  const days = Array.from({ length: daysInMonth }, (_, i) => {
+    const dayNum = i + 1;
+    const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+    const item = getItem(date);
+    let chip = "";
+    if (item) {
+      const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `–${item.end}` : ""}`;
+      chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(item.note || label)}">${escapeHtml(label)}</span>`;
+    }
+    const isToday = date === todayStr ? "isToday" : "";
+    return `
+      <div class="scheduleDay ${chip ? "hasSchedule" : ""} ${isToday}">
+        <strong>${dayNum}</strong>
+        <div>${chip}</div>
+      </div>
+    `;
+  }).join("");
+  return `
+    <section class="scheduleMonth scheduleMonthSolo">
+      <h4>${escapeHtml(monthName)} ${escapeHtml(year)}</h4>
+      <div class="scheduleWeekdays"><span>Dom</span><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span></div>
+      <div class="scheduleMonthGrid">${blanks}${days}</div>
+    </section>
+  `;
+}
+
 function renderAdminAnnualScheduleCalendar(teachers, year) {
   const fixedTeachers = teachers.filter((t) => (ADMIN_STATE.schedules[t.email]?.type || "flexible") === "fijo");
+  const monthIndex = ADMIN_STATE.scheduleMonth;
 
-  const yearNav = `
-    <div class="scheduleYearActions">
-      <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
-      <button class="btnGhost scheduleYearToday" type="button">Este año</button>
-      <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
+  const monthNav = `
+    <div class="scheduleMonthNav">
+      <button class="btnGhost scheduleMonthStep" type="button" data-step="-1" aria-label="Mes anterior">‹</button>
+      <strong class="scheduleMonthLabel">${escapeHtml(MONTH_NAMES_ES[monthIndex])} ${escapeHtml(year)}</strong>
+      <button class="btnGhost scheduleMonthStep" type="button" data-step="1" aria-label="Mes siguiente">›</button>
+      <button class="btnGhost scheduleMonthToday" type="button">Hoy</button>
     </div>
   `;
 
@@ -3907,10 +3925,9 @@ function renderAdminAnnualScheduleCalendar(teachers, year) {
       <div class="scheduleYearPanel">
         <div class="scheduleYearHead">
           <div>
-            <h3>Calendario anual ${escapeHtml(year)}</h3>
+            <h3>Horario por docente</h3>
             <p class="adminNote">Aun no hay docentes con horario fijo configurado.</p>
           </div>
-          ${yearNav}
         </div>
       </div>
     `;
@@ -3927,54 +3944,23 @@ function renderAdminAnnualScheduleCalendar(teachers, year) {
     .map((t) => `<option value="${escapeHtml(t.email)}" ${t.email === selected.email ? "selected" : ""}>${escapeHtml(t.label)}</option>`)
     .join("");
 
-  const months = Array.from({ length: 12 }, (_, monthIndex) => renderAdminScheduleMonth(selected, year, monthIndex));
+  const { date: todayStr } = bogotaParts();
+  const month = renderScheduleMonthSolo((date) => getExpectedSchedule(selected.email, date), year, monthIndex, todayStr);
   return `
     <div class="scheduleYearPanel">
       <div class="scheduleYearHead">
         <div>
-          <h3>Calendario anual ${escapeHtml(year)}</h3>
-          <p class="adminNote">Vista por docente. Las excepciones (en color) reemplazan el horario semanal de ese día.</p>
+          <h3>Horario por docente</h3>
+          <p class="adminNote">Las excepciones (en color) reemplazan el horario semanal de ese día.</p>
         </div>
-        ${yearNav}
       </div>
       <label class="scheduleTeacherPicker">
         <span>Docente</span>
         <select id="scheduleTeacherSelect">${teacherOptions}</select>
       </label>
-      <div class="scheduleYearGrid">${months.join("")}</div>
+      ${monthNav}
+      <div class="scheduleSoloWrap">${month}</div>
     </div>
-  `;
-}
-
-function renderAdminScheduleMonth(teacher, year, monthIndex) {
-  const monthDate = new Date(Date.UTC(year, monthIndex, 1, 12));
-  const monthName = new Intl.DateTimeFormat("es-CO", { month: "long", timeZone: "UTC" }).format(monthDate);
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
-  const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
-  const blanks = Array.from({ length: leading }, () => `<div class="scheduleDay isBlank"></div>`).join("");
-  const days = Array.from({ length: daysInMonth }, (_, i) => {
-    const dayNum = i + 1;
-    const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-    const item = getExpectedSchedule(teacher.email, date);
-    let chip = "";
-    if (item) {
-      const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `-${item.end}` : ""}`;
-      chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
-    }
-    return `
-      <div class="scheduleDay ${chip ? "hasSchedule" : ""}">
-        <strong>${dayNum}</strong>
-        <div>${chip}</div>
-      </div>
-    `;
-  }).join("");
-  return `
-    <section class="scheduleMonth">
-      <h4>${escapeHtml(monthName)}</h4>
-      <div class="scheduleWeekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
-      <div class="scheduleMonthGrid">${blanks}${days}</div>
-    </section>
   `;
 }
 
@@ -4021,15 +4007,32 @@ function renderAdminHorarios(body) {
     <div class="schedGrid">${cards}</div>
   `;
 
-  body.querySelectorAll(".scheduleYearNav").forEach((btn) => {
+  body.querySelectorAll(".scheduleMonthStep").forEach((btn) => {
     btn.addEventListener("click", () => {
-      ADMIN_STATE.scheduleYear = Number(btn.dataset.year) || ADMIN_STATE.scheduleYear;
-      loadAdminData();
+      const step = Number(btn.dataset.step) || 0;
+      let m = ADMIN_STATE.scheduleMonth + step;
+      let y = ADMIN_STATE.scheduleYear;
+      if (m < 0) { m = 11; y -= 1; }
+      else if (m > 11) { m = 0; y += 1; }
+      ADMIN_STATE.scheduleMonth = m;
+      if (y !== ADMIN_STATE.scheduleYear) {
+        ADMIN_STATE.scheduleYear = y;
+        loadAdminData(); // recarga excepciones del nuevo año
+      } else {
+        renderAdminBody();
+      }
     });
   });
-  $(".scheduleYearToday", body)?.addEventListener("click", () => {
-    ADMIN_STATE.scheduleYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date()));
-    loadAdminData();
+  $(".scheduleMonthToday", body)?.addEventListener("click", () => {
+    const now = new Date();
+    const y = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(now));
+    ADMIN_STATE.scheduleMonth = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(now)) - 1;
+    if (y !== ADMIN_STATE.scheduleYear) {
+      ADMIN_STATE.scheduleYear = y;
+      loadAdminData();
+    } else {
+      renderAdminBody();
+    }
   });
   $("#scheduleTeacherSelect", body)?.addEventListener("change", (e) => {
     ADMIN_STATE.scheduleTeacher = e.target.value || "";
