@@ -161,6 +161,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdminReader();
     }
 
+    // Botones personalizados creados desde el panel admin. Cualquier docente con
+    // acceso puede leerlos (para pintarlos en su HUB); solo admins los gestionan.
+    match /hubButtons/{buttonId} {
+      allow get, list: if isTeacherHubUser() || isAdminReader();
+      allow create, update, delete: if isAdminReader();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

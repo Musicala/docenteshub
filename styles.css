@@ -3591,3 +3591,45 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .adminBody .recordTable td .puntBadge{ margin-bottom:2px; }
 /* Columna de áreas: que los badges respiren sin estirar la fila */
 .adminBody .recordTable td:nth-child(4){ max-width:280px; }
+
+/* ===== Pestaña admin: Botones personalizados ===== */
+.customBtnList{ display:flex; flex-direction:column; gap:10px; margin:12px 0 18px; }
+.customBtnRow{
+  display:flex; align-items:center; gap:12px;
+  background:var(--card2); border:1px solid var(--line);
+  border-radius:14px; padding:10px 14px;
+}
+.customBtnIcon{ font-size:1.5rem; line-height:1; }
+.customBtnInfo{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; }
+.customBtnInfo strong{ font-size:.95rem; }
+.customBtnInfo small{ color:var(--muted); font-size:.78rem; }
+.customBtnInfo a{ color:var(--a1); font-size:.78rem; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.customBtnActions{ display:flex; gap:6px; flex-shrink:0; }
+.customBtnForm{
+  background:var(--card2); border:1px solid var(--line);
+  border-radius:16px; padding:16px;
+}
+.customBtnForm h3{ margin:0 0 12px; }
+.customBtnFields{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+.customBtnFields label{ display:flex; flex-direction:column; gap:4px; font-size:.82rem; font-weight:600; color:var(--muted); }
+.customBtnFields input{
+  height:40px; padding:0 12px; border-radius:10px;
+  border:1px solid var(--line); background:#fff; font-size:.9rem;
+}
+.customBtnFull{ grid-column:1 / -1; }
+@media (max-width:560px){ .customBtnFields{ grid-template-columns:1fr; } }
+
+/* ===== Horarios: selector de docente + año del docente ===== */
+.scheduleTeacherPicker{
+  display:flex; align-items:center; gap:10px; margin:6px 0 14px;
+  font-weight:700; font-size:.85rem; color:var(--muted);
+}
+.scheduleTeacherPicker select{
+  height:40px; padding:0 12px; border-radius:10px;
+  border:1px solid var(--line); background:#fff; font-size:.9rem; min-width:220px;
+}
+.teacherAnnualSection .teacherAnnualHead{
+  display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+}
+.teacherAnnualSection .teacherAnnualHead .scheduleYearActions{ display:flex; align-items:center; gap:8px; }
+.teacherAnnualSection #teacherYearLabel{ font-size:1rem; min-width:48px; text-align:center; }

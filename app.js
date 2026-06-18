@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-06-17.3";
+const BUILD = "2026-06-18.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -352,6 +352,86 @@ function buildLinksForUser(email) {
   const profile = HUB.USERS?.[email] || null;
   const overrides = profile?.links || {};
   return { ...base, ...overrides };
+}
+
+/* ----------------------------------------------------------------------------
+   Botones personalizados (creados desde el panel admin, guardados en Firestore
+   en la colección `hubButtons`). Se inyectan en HUB.BUTTONS y su URL global en
+   HUB.GENERAL_LINKS, de modo que pasan por el mismo flujo de visibilidad y
+   asignación por docente que los botones nativos.
+---------------------------------------------------------------------------- */
+function slugifyButtonId(text) {
+  const base = normalizeText(text)
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return `custom_${base || Date.now().toString(36)}`;
+}
+
+async function fetchCustomButtons() {
+  if (!APP_STATE.db) return [];
+  try {
+    const snap = await getDocs(collection(APP_STATE.db, "hubButtons"));
+    const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+    list.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)
+      || String(a.title || "").localeCompare(String(b.title || ""), "es"));
+    return list;
+  } catch (error) {
+    console.warn("No se pudieron cargar los botones personalizados", error);
+    return [];
+  }
+}
+
+// Reemplaza los botones personalizados previos en HUB.BUTTONS por la lista dada
+// y registra sus URLs en HUB.GENERAL_LINKS. Idempotente.
+function applyCustomButtons(list = []) {
+  HUB.BUTTONS = (HUB.BUTTONS || []).filter((b) => !b.custom);
+  // Limpia URLs de botones personalizados anteriores.
+  for (const key of Object.keys(HUB.GENERAL_LINKS || {})) {
+    if (key.startsWith("custom_")) delete HUB.GENERAL_LINKS[key];
+  }
+  const adminIndex = HUB.BUTTONS.findIndex((b) => b.id === "adminPanel");
+  const insertAt = adminIndex >= 0 ? adminIndex : HUB.BUTTONS.length;
+  const mapped = list.map((b) => ({
+    id: b.id,
+    icon: b.icon || "🔗",
+    title: b.title || "Acceso",
+    subtitle: b.subtitle || "",
+    section: b.section || "Recursos",
+    custom: true
+  }));
+  HUB.BUTTONS.splice(insertAt, 0, ...mapped);
+  for (const b of list) {
+    if (b.url) HUB.GENERAL_LINKS[b.id] = String(b.url);
+  }
+}
+
+// Carga y aplica los botones personalizados para cualquier usuario (no solo
+// admin), de modo que se rendericen en el HUB del docente.
+async function loadCustomButtons() {
+  const list = await fetchCustomButtons();
+  ADMIN_STATE.customButtons = list;
+  applyCustomButtons(list);
+  return list;
+}
+
+async function saveCustomButton(button) {
+  const ref = doc(APP_STATE.db, "hubButtons", button.id);
+  const payload = {
+    icon: button.icon || "🔗",
+    title: button.title || "Acceso",
+    subtitle: button.subtitle || "",
+    section: button.section || "Recursos",
+    url: button.url || "",
+    order: Number.isFinite(Number(button.order)) ? Number(button.order) : 0,
+    updatedAt: serverTimestamp()
+  };
+  await setDoc(ref, payload, { merge: true });
+  return { id: button.id, ...payload };
+}
+
+async function deleteCustomButton(id) {
+  await deleteDoc(doc(APP_STATE.db, "hubButtons", id));
 }
 
 function getAssignableButtons() {
@@ -2031,6 +2111,8 @@ const ADMIN_STATE = {
   scheduleYear: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date())),
   academic: { objectives: [], budgets: [], hourLogs: [] },
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
+  customButtons: [],   // botones personalizados creados desde el panel
+  scheduleTeacher: "", // email del docente seleccionado en la pestaña Horarios
   loading: false,
   tab: "puntualidad",
   filters: {
@@ -2132,6 +2214,7 @@ function ensureAdminPanelModal() {
         <button class="adminTab" type="button" data-admin-tab="academica" role="tab">Académica</button>
         <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
         <button class="adminTab" type="button" data-admin-tab="docentes" role="tab">Docentes</button>
+        <button class="adminTab" type="button" data-admin-tab="botones" role="tab">Botones</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
 
@@ -2214,7 +2297,7 @@ function setAdminTab(tabId) {
   });
 
   const filters = $("#adminFilters", adminPanelModal);
-  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes") ? "none" : "";
+  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones") ? "none" : "";
 
   renderAdminBody();
 }
@@ -2245,6 +2328,9 @@ async function loadAdminData() {
     } else if (ADMIN_STATE.tab === "docentes") {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
       refreshAdminTeacherFilterOptions();
+    } else if (ADMIN_STATE.tab === "botones") {
+      ADMIN_STATE.customButtons = await fetchCustomButtons();
+      applyCustomButtons(ADMIN_STATE.customButtons);
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
@@ -2493,6 +2579,7 @@ function openTeacherScheduleView() {
   }
 
   const { date: today } = bogotaParts();
+  const currentYear = Number(today.slice(0, 4));
   const tomorrow = addDaysToDateStr(today, 1);
   const todayItem = getTeacherScheduleForDate(today);
   const tomorrowItem = getTeacherScheduleForDate(tomorrow);
@@ -2550,6 +2637,17 @@ function openTeacherScheduleView() {
         <h3>Semana fija</h3>
         <div class="teacherScheduleList">${weeklyRows}</div>
       </section>
+      <section class="teacherAnnualSection">
+        <div class="teacherAnnualHead">
+          <h3>Año completo</h3>
+          <div class="scheduleYearActions">
+            <button class="btnGhost teacherYearNav" type="button" data-step="-1">‹</button>
+            <strong id="teacherYearLabel">${currentYear}</strong>
+            <button class="btnGhost teacherYearNav" type="button" data-step="1">›</button>
+          </div>
+        </div>
+        <div id="teacherAnnualGrid" class="scheduleYearGrid">${renderTeacherAnnualGrid(currentYear)}</div>
+      </section>
       <p class="teacherScheduleNote">Si coordinación agrega una excepción, aparecerá aquí sobre tu horario semanal.</p>
     </div>
   `;
@@ -2561,6 +2659,54 @@ function openTeacherScheduleView() {
   document.body.style.overflow = "hidden";
   modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   $("#teacherScheduleClose", modal)?.addEventListener("click", close);
+
+  let shownYear = currentYear;
+  modal.querySelectorAll(".teacherYearNav").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      shownYear += Number(btn.dataset.step) || 0;
+      const label = $("#teacherYearLabel", modal);
+      const grid = $("#teacherAnnualGrid", modal);
+      if (label) label.textContent = String(shownYear);
+      if (grid) grid.innerHTML = renderTeacherAnnualGrid(shownYear);
+    });
+  });
+}
+
+// Grilla anual (12 meses) del docente activo, usando su horario semanal fijo y
+// las excepciones cargadas. Solo muestra el horario propio.
+function renderTeacherAnnualGrid(year) {
+  const months = Array.from({ length: 12 }, (_, monthIndex) => {
+    const monthDate = new Date(Date.UTC(year, monthIndex, 1, 12));
+    const monthName = new Intl.DateTimeFormat("es-CO", { month: "long", timeZone: "UTC" }).format(monthDate);
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
+    const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
+    const blanks = Array.from({ length: leading }, () => `<div class="scheduleDay isBlank"></div>`).join("");
+    const days = Array.from({ length: daysInMonth }, (_, i) => {
+      const dayNum = i + 1;
+      const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+      const item = getTeacherScheduleForDate(date);
+      let chip = "";
+      if (item) {
+        const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `-${item.end}` : ""}`;
+        chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+      }
+      return `
+        <div class="scheduleDay ${chip ? "hasSchedule" : ""}">
+          <strong>${dayNum}</strong>
+          <div>${chip}</div>
+        </div>
+      `;
+    }).join("");
+    return `
+      <section class="scheduleMonth">
+        <h4>${escapeHtml(monthName)}</h4>
+        <div class="scheduleWeekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+        <div class="scheduleMonthGrid">${blanks}${days}</div>
+      </section>
+    `;
+  });
+  return months.join("");
 }
 
 function minutesToLabel(mins) {
@@ -2664,6 +2810,7 @@ function renderAdminBody() {
   if (ADMIN_STATE.tab === "academica") return renderAdminAcademica(body);
   if (ADMIN_STATE.tab === "docentes") return renderAdminDocentes(body);
   if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
+  if (ADMIN_STATE.tab === "botones") return renderAdminBotones(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
 }
 
@@ -3746,6 +3893,15 @@ async function loadSingleScheduleOverride(email, date) {
 
 function renderAdminAnnualScheduleCalendar(teachers, year) {
   const fixedTeachers = teachers.filter((t) => (ADMIN_STATE.schedules[t.email]?.type || "flexible") === "fijo");
+
+  const yearNav = `
+    <div class="scheduleYearActions">
+      <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
+      <button class="btnGhost scheduleYearToday" type="button">Este año</button>
+      <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
+    </div>
+  `;
+
   if (!fixedTeachers.length) {
     return `
       <div class="scheduleYearPanel">
@@ -3754,35 +3910,43 @@ function renderAdminAnnualScheduleCalendar(teachers, year) {
             <h3>Calendario anual ${escapeHtml(year)}</h3>
             <p class="adminNote">Aun no hay docentes con horario fijo configurado.</p>
           </div>
-          <div class="scheduleYearActions">
-            <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
-            <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
-          </div>
+          ${yearNav}
         </div>
       </div>
     `;
   }
 
-  const months = Array.from({ length: 12 }, (_, monthIndex) => renderAdminScheduleMonth(fixedTeachers, year, monthIndex));
+  // Selecciona un docente (el guardado en estado o el primero fijo).
+  let selected = fixedTeachers.find((t) => t.email === ADMIN_STATE.scheduleTeacher);
+  if (!selected) {
+    selected = fixedTeachers[0];
+    ADMIN_STATE.scheduleTeacher = selected.email;
+  }
+
+  const teacherOptions = fixedTeachers
+    .map((t) => `<option value="${escapeHtml(t.email)}" ${t.email === selected.email ? "selected" : ""}>${escapeHtml(t.label)}</option>`)
+    .join("");
+
+  const months = Array.from({ length: 12 }, (_, monthIndex) => renderAdminScheduleMonth(selected, year, monthIndex));
   return `
     <div class="scheduleYearPanel">
       <div class="scheduleYearHead">
         <div>
           <h3>Calendario anual ${escapeHtml(year)}</h3>
-          <p class="adminNote">Muestra horarios fijos y excepciones guardadas. Las excepciones reemplazan el horario semanal de ese dia.</p>
+          <p class="adminNote">Vista por docente. Las excepciones (en color) reemplazan el horario semanal de ese día.</p>
         </div>
-        <div class="scheduleYearActions">
-          <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
-          <button class="btnGhost scheduleYearToday" type="button">Este año</button>
-          <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
-        </div>
+        ${yearNav}
       </div>
+      <label class="scheduleTeacherPicker">
+        <span>Docente</span>
+        <select id="scheduleTeacherSelect">${teacherOptions}</select>
+      </label>
       <div class="scheduleYearGrid">${months.join("")}</div>
     </div>
   `;
 }
 
-function renderAdminScheduleMonth(teachers, year, monthIndex) {
+function renderAdminScheduleMonth(teacher, year, monthIndex) {
   const monthDate = new Date(Date.UTC(year, monthIndex, 1, 12));
   const monthName = new Intl.DateTimeFormat("es-CO", { month: "long", timeZone: "UTC" }).format(monthDate);
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
@@ -3792,16 +3956,16 @@ function renderAdminScheduleMonth(teachers, year, monthIndex) {
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const dayNum = i + 1;
     const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-    const chips = teachers.map((teacher) => {
-      const item = getExpectedSchedule(teacher.email, date);
-      if (!item) return "";
+    const item = getExpectedSchedule(teacher.email, date);
+    let chip = "";
+    if (item) {
       const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `-${item.end}` : ""}`;
-      return `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(teacher.label)} · ${escapeHtml(label)}">${escapeHtml(teacher.label.split(" ")[0] || teacher.label)} ${escapeHtml(label)}</span>`;
-    }).filter(Boolean).join("");
+      chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    }
     return `
-      <div class="scheduleDay ${chips ? "hasSchedule" : ""}">
+      <div class="scheduleDay ${chip ? "hasSchedule" : ""}">
         <strong>${dayNum}</strong>
-        <div>${chips || ""}</div>
+        <div>${chip}</div>
       </div>
     `;
   }).join("");
@@ -3866,6 +4030,10 @@ function renderAdminHorarios(body) {
   $(".scheduleYearToday", body)?.addEventListener("click", () => {
     ADMIN_STATE.scheduleYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date()));
     loadAdminData();
+  });
+  $("#scheduleTeacherSelect", body)?.addEventListener("change", (e) => {
+    ADMIN_STATE.scheduleTeacher = e.target.value || "";
+    renderAdminBody();
   });
 
   body.querySelectorAll(".schedEdit").forEach((btn) => {
@@ -3958,6 +4126,131 @@ function openScheduleEditor(email) {
     } catch (err) {
       console.error(err);
       toast("No se pudo guardar el horario. Revisa permisos/reglas.");
+    }
+  });
+}
+
+/* ----------------------------------------------------------------------------
+   PESTAÑA ADMIN: BOTONES PERSONALIZADOS
+---------------------------------------------------------------------------- */
+function renderAdminBotones(body) {
+  const list = ADMIN_STATE.customButtons || [];
+  const sections = Array.from(new Set((HUB.BUTTONS || []).map((b) => b.section).filter(Boolean)));
+  const sectionOptions = sections.map((s) => `<option value="${escapeHtml(s)}"></option>`).join("");
+
+  const rows = list.length
+    ? list.map((b) => `
+        <div class="customBtnRow">
+          <span class="customBtnIcon">${escapeHtml(b.icon || "🔗")}</span>
+          <div class="customBtnInfo">
+            <strong>${escapeHtml(b.title || "")}</strong>
+            <small>${escapeHtml(b.section || "")}${b.subtitle ? ` · ${escapeHtml(b.subtitle)}` : ""}</small>
+            <a href="${escapeHtml(String(b.url || ""))}" target="_blank" rel="noopener noreferrer">${escapeHtml(String(b.url || ""))}</a>
+          </div>
+          <div class="customBtnActions">
+            <button class="btnGhost customBtnEdit" type="button" data-id="${escapeHtml(b.id)}">Editar</button>
+            <button class="btnGhost customBtnDelete" type="button" data-id="${escapeHtml(b.id)}">Borrar</button>
+          </div>
+        </div>
+      `).join("")
+    : `<p class="adminNote">Aún no hay botones personalizados. Crea el primero abajo.</p>`;
+
+  body.innerHTML = `
+    <p class="adminMeta">Crea accesos nuevos con su enlace. Aparecen en el catálogo y los asignas a cada docente desde la pestaña <strong>Docentes</strong>. Los enlaces se abren en el navegador del sistema.</p>
+    <div class="customBtnList">${rows}</div>
+    <div class="customBtnForm">
+      <h3 id="customBtnFormTitle">Nuevo botón</h3>
+      <input type="hidden" id="cbId" value="" />
+      <div class="customBtnFields">
+        <label>Icono (emoji)<input type="text" id="cbIcon" maxlength="4" placeholder="🔗" /></label>
+        <label>Título<input type="text" id="cbTitle" maxlength="60" placeholder="Ej: Cursos Vacacionales" /></label>
+        <label>Subtítulo<input type="text" id="cbSubtitle" maxlength="60" placeholder="Ej: Inscripciones" /></label>
+        <label>Sección<input type="text" id="cbSection" list="cbSectionList" placeholder="Ej: Institucional" />
+          <datalist id="cbSectionList">${sectionOptions}</datalist>
+        </label>
+        <label class="customBtnFull">URL<input type="url" id="cbUrl" placeholder="https://..." /></label>
+      </div>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="cbReset" type="button">Limpiar</button>
+          <button class="btnGoogle" id="cbSave" type="button">Guardar botón</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const resetForm = () => {
+    $("#cbId", body).value = "";
+    $("#cbIcon", body).value = "";
+    $("#cbTitle", body).value = "";
+    $("#cbSubtitle", body).value = "";
+    $("#cbSection", body).value = "";
+    $("#cbUrl", body).value = "";
+    $("#customBtnFormTitle", body).textContent = "Nuevo botón";
+  };
+
+  $("#cbReset", body)?.addEventListener("click", resetForm);
+
+  body.querySelectorAll(".customBtnEdit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const b = list.find((x) => x.id === btn.dataset.id);
+      if (!b) return;
+      $("#cbId", body).value = b.id;
+      $("#cbIcon", body).value = b.icon || "";
+      $("#cbTitle", body).value = b.title || "";
+      $("#cbSubtitle", body).value = b.subtitle || "";
+      $("#cbSection", body).value = b.section || "";
+      $("#cbUrl", body).value = b.url || "";
+      $("#customBtnFormTitle", body).textContent = "Editar botón";
+      $("#customBtnFormTitle", body).scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
+
+  body.querySelectorAll(".customBtnDelete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const b = list.find((x) => x.id === btn.dataset.id);
+      if (!b) return;
+      if (!confirm(`¿Borrar el botón "${b.title}"? Dejará de verse en el HUB de los docentes.`)) return;
+      try {
+        await deleteCustomButton(b.id);
+        ADMIN_STATE.customButtons = list.filter((x) => x.id !== b.id);
+        applyCustomButtons(ADMIN_STATE.customButtons);
+        toast("Botón borrado 🗑️");
+        renderAdminBody();
+      } catch (err) {
+        console.error(err);
+        toast("No se pudo borrar. Revisa permisos/reglas.");
+      }
+    });
+  });
+
+  $("#cbSave", body)?.addEventListener("click", async () => {
+    const title = $("#cbTitle", body).value.trim();
+    const url = normalizeUrl($("#cbUrl", body).value.trim());
+    if (!title) { toast("Ponle un título al botón ✍️"); return; }
+    if (!url) { toast("La URL no es válida 🔗"); return; }
+    const existingId = $("#cbId", body).value.trim();
+    const id = existingId || slugifyButtonId(title);
+    const button = {
+      id,
+      icon: $("#cbIcon", body).value.trim() || "🔗",
+      title,
+      subtitle: $("#cbSubtitle", body).value.trim(),
+      section: $("#cbSection", body).value.trim() || "Recursos",
+      url,
+      order: list.length
+    };
+    try {
+      const saved = await saveCustomButton(button);
+      const without = (ADMIN_STATE.customButtons || []).filter((x) => x.id !== id);
+      ADMIN_STATE.customButtons = [...without, saved];
+      applyCustomButtons(ADMIN_STATE.customButtons);
+      toast(existingId ? "Botón actualizado ✅" : "Botón creado ✅");
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo guardar el botón. Revisa permisos/reglas.");
     }
   });
 }
@@ -5009,6 +5302,8 @@ async function handleAuthorizedUser(user, managed = null) {
   const profile = baseProfile || (managed
     ? { label: managed.label || managed.name || email }
     : null);
+  // Inyecta los botones personalizados (Firestore) antes de resolver links.
+  await loadCustomButtons();
   const mergedLinks = buildLinksForUser(email);
 
   APP_STATE.activeUser = user;
