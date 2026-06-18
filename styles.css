@@ -5,7 +5,6 @@
    - Mobile-first, PWA-friendly, accesible
    - Adaptado a index.html (appRoot + screen) + secciones + carnet modal + update banner
    - Drawer corporativo (menú lateral) + overlay + items
-   - Ajustado para nuevo acceso: bitacorasClasePendientes
 ========================================================================== */
 
 :root{
@@ -951,7 +950,6 @@ input, textarea, select{
   text-shadow:none;
 }
 
-.heroShiftCard .heroSecondary[data-id="bitacoraClases"],
 .heroShiftCard .heroSecondary[data-id="bitacoraClasesNueva"]{
   background:
     linear-gradient(135deg, rgba(255,255,255,.82), rgba(239,244,255,.72));
@@ -1184,22 +1182,13 @@ button[data-id="jornada"]{
 button[data-id="salones"]{
   background: linear-gradient(135deg, rgba(104,13,191,.22), rgba(206,0,113,.08), rgba(255,255,255,.68));
 }
-button[data-id="infoEstudiantes"]{
-  background: linear-gradient(135deg, rgba(206,0,113,.20), rgba(104,13,191,.08), rgba(255,255,255,.70));
-}
 button[data-id="horarioAnual"]{
   background: linear-gradient(135deg, rgba(12,65,196,.18), rgba(104,13,191,.16), rgba(255,255,255,.70));
 }
 
 /* Gestión docente */
-button[data-id="bitacorasClasePendientes"]{
-  background: linear-gradient(135deg, rgba(206,0,113,.22), rgba(104,13,191,.10), rgba(255,255,255,.68));
-}
 button[data-id="observacion"]{
   background: linear-gradient(135deg, rgba(12,65,196,.18), rgba(104,13,191,.16), rgba(255,255,255,.68));
-}
-button[data-id="bitacoraClases"]{
-  background: linear-gradient(135deg, rgba(104,13,191,.18), rgba(206,0,113,.16), rgba(255,255,255,.68));
 }
 button[data-id="bitacoraAcademica"]{
   background: linear-gradient(135deg, rgba(12,65,196,.18), rgba(255,255,255,.70));
@@ -1263,12 +1252,9 @@ button[data-id="documentos"]{
 button[data-id="carnet"] .ico{ background: rgba(12,65,196,.14); }
 button[data-id="jornada"] .ico{ background: rgba(12,65,196,.18); }
 button[data-id="salones"] .ico{ background: rgba(104,13,191,.14); }
-button[data-id="infoEstudiantes"] .ico{ background: rgba(206,0,113,.12); }
 button[data-id="horarioAnual"] .ico{ background: rgba(12,65,196,.12); }
 
-button[data-id="bitacorasClasePendientes"] .ico{ background: rgba(206,0,113,.14); }
 button[data-id="observacion"] .ico{ background: rgba(104,13,191,.12); }
-button[data-id="bitacoraClases"] .ico{ background: rgba(104,13,191,.10); }
 button[data-id="bitacoraAcademica"] .ico{ background: rgba(12,65,196,.10); }
 
 button[data-id="induccion"] .ico{ background: rgba(104,13,191,.14); }
@@ -2702,6 +2688,136 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 /* ==========================================================================
    ADMIN PANEL MODAL
 ========================================================================== */
+.teacherScheduleModal{
+  position:fixed;
+  inset:0;
+  z-index:9998;
+  display:grid;
+  place-items:center;
+  padding:18px;
+  background:rgba(11,16,32,.48);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+
+.teacherScheduleCard{
+  width:min(760px, 100%);
+  max-height:min(92vh, 900px);
+  overflow:auto;
+  border:1px solid rgba(12,65,196,.18);
+  border-radius:26px;
+  background:rgba(255,255,255,.94);
+  box-shadow:0 28px 90px rgba(11,16,32,.24);
+  padding:20px;
+}
+
+.teacherScheduleHead{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+  margin-bottom:14px;
+}
+
+.teacherScheduleHead p{
+  margin:0 0 4px;
+  color:#2f5dd4;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  font-size:.8rem;
+}
+
+.teacherScheduleHead h2{
+  margin:0;
+  font-size:clamp(1.35rem, 3vw, 2rem);
+  line-height:1.05;
+}
+
+.teacherScheduleHero{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+  margin-bottom:18px;
+}
+
+.teacherScheduleHero > div{
+  border:1px solid rgba(12,65,196,.15);
+  border-radius:18px;
+  padding:16px;
+  background:linear-gradient(135deg, rgba(12,65,196,.12), rgba(206,0,113,.08), rgba(255,255,255,.82));
+}
+
+.teacherScheduleHero span,
+.teacherScheduleHero small{
+  display:block;
+  color:#64748b;
+  font-size:.85rem;
+}
+
+.teacherScheduleHero strong{
+  display:block;
+  margin:6px 0;
+  font-size:1.25rem;
+  color:#0b1020;
+}
+
+.teacherScheduleCard section{
+  margin-top:16px;
+}
+
+.teacherScheduleCard h3{
+  margin:0 0 8px;
+  font-size:1rem;
+}
+
+.teacherScheduleList{
+  display:grid;
+  gap:8px;
+}
+
+.teacherScheduleRow{
+  display:grid;
+  grid-template-columns:minmax(120px, .8fr) minmax(0, 1fr);
+  gap:8px 12px;
+  align-items:center;
+  border:1px solid rgba(11,16,32,.08);
+  border-radius:14px;
+  padding:10px 12px;
+  background:#fff;
+}
+
+.teacherScheduleRow.isOff{
+  opacity:.72;
+}
+
+.teacherScheduleRow span{
+  color:#334155;
+  font-weight:700;
+}
+
+.teacherScheduleRow small{
+  grid-column:2;
+  color:#6b7280;
+}
+
+.teacherScheduleNote{
+  margin:14px 0 0;
+  color:#6b7280;
+  font-size:.86rem;
+}
+
+@media (max-width:640px){
+  .teacherScheduleHero,
+  .teacherScheduleRow{
+    grid-template-columns:1fr;
+  }
+
+  .teacherScheduleRow small{
+    grid-column:auto;
+  }
+}
+
 #adminPanelModal[hidden]{ display:none !important; }
 
 #adminPanelModal{
@@ -2881,7 +2997,7 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 /* ---- Tarjetas de horarios ---- */
 .schedGrid{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
   gap:12px;
 }
 .schedCard{
@@ -2897,6 +3013,12 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   justify-content:space-between;
   gap:10px;
 }
+.schedActions{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:6px;
+}
 .schedType{
   display:inline-block;
   margin-left:8px;
@@ -2908,7 +3030,153 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .schedType-fijo{ background:rgba(12,65,196,.1); color:var(--a1); }
 .schedType-flexible{ background:rgba(104,13,191,.1); color:var(--a2); }
 .schedSummary{ margin:8px 0 0; font-size:13px; color:var(--muted); }
-.schedEdit{ padding:4px 12px; font-size:13px; }
+.schedEdit,
+.schedException{ padding:4px 12px; font-size:13px; }
+.schedWeekPreview{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:10px;
+}
+.schedWeekPreview span{
+  border:1px solid rgba(12,65,196,.14);
+  border-radius:999px;
+  padding:4px 8px;
+  background:rgba(255,255,255,.72);
+  color:#334155;
+  font-size:12px;
+}
+.scheduleYearPanel{
+  margin:12px 0 16px;
+  padding:12px;
+  border:1px solid rgba(12,65,196,.12);
+  border-radius:18px;
+  background:rgba(255,255,255,.72);
+}
+.scheduleYearHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+}
+.scheduleYearHead h3{
+  margin:0;
+  font-size:18px;
+}
+.scheduleYearActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  justify-content:flex-end;
+}
+.scheduleYearGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+  gap:12px;
+}
+.scheduleMonth{
+  border:1px solid rgba(11,16,32,.08);
+  border-radius:14px;
+  background:#fff;
+  padding:10px;
+  min-width:0;
+}
+.scheduleMonth h4{
+  margin:0 0 8px;
+  text-transform:capitalize;
+  color:#0b1020;
+}
+.scheduleWeekdays,
+.scheduleMonthGrid{
+  display:grid;
+  grid-template-columns:repeat(7, minmax(0, 1fr));
+  gap:4px;
+}
+.scheduleWeekdays span{
+  text-align:center;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:800;
+}
+.scheduleDay{
+  min-height:54px;
+  border:1px solid rgba(11,16,32,.06);
+  border-radius:8px;
+  padding:4px;
+  background:#f8fafc;
+  overflow:hidden;
+}
+.scheduleDay.isBlank{
+  visibility:hidden;
+}
+.scheduleDay.hasSchedule{
+  background:#fff;
+}
+.scheduleDay strong{
+  display:block;
+  font-size:11px;
+  color:#334155;
+  margin-bottom:2px;
+}
+.scheduleChip{
+  display:block;
+  width:100%;
+  margin-top:2px;
+  padding:2px 4px;
+  border-radius:6px;
+  background:rgba(12,65,196,.09);
+  color:#0c41c4;
+  font-size:10px;
+  line-height:1.15;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.scheduleChip.isOverride{
+  background:rgba(206,0,113,.1);
+  color:#9f0956;
+}
+.adminSubCardWide{
+  width:min(760px, 100%);
+}
+.buttonAssignToolbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:10px;
+}
+.buttonAssignGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+  gap:10px;
+  max-height:55vh;
+  overflow:auto;
+  padding-right:4px;
+}
+.buttonAssignGroup{
+  border:1px solid rgba(12,65,196,.12);
+  border-radius:14px;
+  padding:10px;
+  background:#fff;
+}
+.buttonAssignGroup h4{
+  margin:0 0 8px;
+  font-size:14px;
+  color:#0b1020;
+}
+.buttonAssignItem{
+  align-items:flex-start;
+}
+.buttonAssignItem span{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.buttonAssignItem small{
+  color:var(--muted);
+  font-size:12px;
+}
 
 /* ---- Sub-modal (editor de horario / override) ---- */
 .adminSubModal{
@@ -2931,6 +3199,9 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   border:1px solid var(--line);
   box-shadow:var(--shadow3);
   padding:20px;
+}
+.adminSubCard.adminSubCardWide{
+  width:min(760px, 100%);
 }
 .adminSubCard h3{ margin:0 0 2px; font-size:18px; }
 .adminSubSub{ margin:0 0 12px; color:var(--muted); font-size:13px; }
@@ -2957,6 +3228,9 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   flex-direction:row !important;
   align-items:center;
   gap:8px !important;
+}
+.adminSubCard .buttonAssignItem{
+  align-items:flex-start;
 }
 .adminCheck input{ width:18px; height:18px; }
 .adminSubActions{

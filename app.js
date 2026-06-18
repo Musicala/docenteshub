@@ -5,13 +5,12 @@
    - Carnet abre modal (imagen en /assets/*.png)
    - Drawer lateral: perfil + accesos rápidos + logout
    - PWA con instalación + SW update banner
-   - Horario anual 2026 personalizado por docente
-   - Bitácoras de clase pendientes con link individual por docente
+   - Horario docente fijo desde Firestore
    - Bitácora de tareas académicas con link individual por docente
-   - Bitácora de clases (nueva versión)
+   - Bitácoras de clase
 */
 
-const BUILD = "2026-06-10.3";
+const BUILD = "2026-06-17.3";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -58,7 +57,6 @@ const HUB = {
     nomina: "https://docs.google.com/forms/d/e/1FAIpQLSeMOhoY9d8JOf1Oq8DnD_aSEDkBmOXmzYJtlCCU-7CNVYjnLA/viewform",
     observacion: "https://docs.google.com/forms/d/1z8TEQACP6L8d0vTWEpSl2RQJ198PwQwzH4-UKqq9EQA/viewform?edit_requested=true",
     induccion: "https://musicalaescuela.github.io/inducciondocentesmusicala/",
-    infoEstudiantes: "https://musicalaescuela.github.io/verificaci-nestudiantes/",
     jornada: "__INTERNAL_TEACHER_SHIFT__",
     muestras: "https://musicalaescuela.github.io/muestrasdeproceso/#musica",
     guiones: "https://musicalaescuela.github.io/plantillaparaguiones/",
@@ -69,7 +67,6 @@ const HUB = {
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
-    bitacoraClases: "https://musicalaescuela.github.io/registrodeclasemusicala/",
     bitacoraClasesNueva: "https://musicalaescuela.github.io/bitacoradeclase/",
     musigym: "https://musicalaescuela.github.io/musigymtraininghub/",
     ensambles: "https://musicalaescuela.github.io/ensambles/",
@@ -77,10 +74,8 @@ const HUB = {
     calendario: "https://musicala.github.io/calendariomusicala/",
 
     // Por defecto vacíos para que aparezcan como "Pendiente"
-    bitacorasClasePendientes: "",
     bitacoraAcademica: "",
-    documentosContratacion: "",
-    horarioAnual: ""
+    documentosContratacion: ""
   },
 
   USERS: {
@@ -88,8 +83,6 @@ const HUB = {
       label: "Alek Caballero",
       carnet: "./assets/alekcaballero.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
         bitacoraAcademica: ""
       }
     },
@@ -98,8 +91,6 @@ const HUB = {
       label: "Catalina Medina",
       carnet: "./assets/catalinamedina.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
         bitacoraAcademica: ""
       }
     },
@@ -108,8 +99,6 @@ const HUB = {
       label: "Emily Bejarano",
       carnet: "./assets/emilybejarano.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026emilybejarano/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
         bitacoraAcademica: "https://musicala.github.io/bitacoratareasemilybejarano/"
       }
     },
@@ -118,8 +107,6 @@ const HUB = {
       label: "Angie Nitola",
       carnet: "./assets/angienitola.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026angienitola/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareasCata/",
         bitacoraAcademica: "https://musicala.github.io/bitacoratareasangienitola/"
       }
     },
@@ -128,8 +115,6 @@ const HUB = {
       label: "Laura Sánchez",
       carnet: "./assets/laurasanchez.png",
       links: {
-        horarioAnual: "https://musicala.github.io/horario2026laurasanchez/",
-        bitacorasClasePendientes: "https://musicalaescuela.github.io/pendientesapuntesytareas1/",
         bitacoraAcademica: "https://musicala.github.io/bitacoradetareaslaurasanchez/"
       }
     },
@@ -157,17 +142,8 @@ const HUB = {
     { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Mi trabajo hoy" },
     { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Mi trabajo hoy" },
     { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Mi trabajo hoy" },
-    { id: "infoEstudiantes", icon: "🧒", title: "Info estudiantes", subtitle: "Verificación", section: "Mi trabajo hoy" },
-    { id: "horarioAnual", icon: "📅", title: "Horario anual 2026", subtitle: "Solo tu horario", section: "Mi trabajo hoy" },
+    { id: "horarioAnual", icon: "📅", title: "Horario", subtitle: "Tu semana fija", section: "Mi trabajo hoy" },
 
-    {
-      id: "bitacorasClasePendientes",
-      icon: "📝",
-      title: "Bitácoras de clase pendientes",
-      subtitle: "Individual",
-      section: "Gestión docente",
-      showWhenMissing: true
-    },
     {
       id: "observacion",
       icon: "👀",
@@ -176,24 +152,17 @@ const HUB = {
       section: "Gestión docente"
     },
     {
-      id: "bitacoraClases",
-      icon: "📒",
-      title: "Bitácora de clases",
-      subtitle: "Seguimiento",
-      section: "Gestión docente"
-    },
-    {
       id: "bitacoraClasesNueva",
       icon: "✨",
-      title: "Bitácora de clases (nueva versión)",
-      subtitle: "Seguimiento actualizado",
+      title: "Bitácoras de clase",
+      subtitle: "Seguimiento",
       section: "Gestión docente"
     },
     {
       // Módulo interno unificado: tareas académicas + bolsa de horas.
       id: "bitacoraAcademica",
       icon: "✅",
-      title: "Bitácora Académica",
+      title: "Bitácora de Tareas Académicas",
       subtitle: "Tareas y bolsa de horas",
       section: "Gestión docente"
     },
@@ -263,6 +232,11 @@ const APP_STATE = {
   db: null,
   bibliotecaDb: null,  // Firestore del proyecto biblioteca (solo lectura)
   bibliotecaCache: { recursos: null, areasConfig: null },
+  teacherSchedule: {
+    loading: false,
+    schedule: null,
+    overrides: {}
+  },
   teacherShiftStatus: {
     open: false,
     record: null
@@ -378,6 +352,16 @@ function buildLinksForUser(email) {
   const profile = HUB.USERS?.[email] || null;
   const overrides = profile?.links || {};
   return { ...base, ...overrides };
+}
+
+function getAssignableButtons() {
+  return HUB.BUTTONS.filter((button) => !button.adminOnly);
+}
+
+function getVisibleButtonsForUserDoc(docData = null) {
+  return Array.isArray(docData?.visibleButtons)
+    ? docData.visibleButtons.map((id) => String(id || "").trim()).filter(Boolean)
+    : null;
 }
 
 function assertConfig(config) {
@@ -504,8 +488,28 @@ function normalizeUrl(raw) {
 function openExternal(rawUrl) {
   const safeUrl = normalizeUrl(rawUrl);
   if (!safeUrl) return false;
-  window.open(safeUrl, "_blank", "noopener,noreferrer");
-  return true;
+
+  // Forzar apertura en el navegador REAL del sistema (Chrome/Safari), no en el
+  // WebView embebido de la PWA. Esto es imprescindible para enlaces que usan
+  // login OAuth de Google/Firebase (p. ej. "Cursos Vacacionales 2026"): Google
+  // bloquea el inicio de sesión dentro de WebViews (disallowed_useragent) y la
+  // sesión no se conserva. Un <a target="_blank"> con clic sintético entrega la
+  // URL al sistema operativo y rompe el bucle de login.
+  try {
+    const a = document.createElement("a");
+    a.href = safeUrl;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  } catch (_) {
+    // Fallback por si el ancla falla en algún entorno restringido.
+    window.open(safeUrl, "_blank", "noopener,noreferrer");
+    return true;
+  }
 }
 
 /* ============================================================================
@@ -683,7 +687,7 @@ function drawerEls() {
     btnMenu: $("#btn-menu"),
     overlay: $("#drawer-overlay"),
     drawer: $("#app-drawer"),
-    btnClose: $("#drawer-close"),
+    btnClose: $("#btn-drawer-close"),
     userName: $("#drawer-user-name"),
     userEmail: $("#drawer-user-email"),
     buildTag: $("#drawer-build")
@@ -754,10 +758,10 @@ function wireDrawerHandlers(auth) {
   drawer.addEventListener(
     "click",
     async (event) => {
-      const button = event.target.closest("[data-action]");
+      const button = event.target.closest("[data-drawer-action]");
       if (!button) return;
 
-      const action = String(button.getAttribute("data-action") || "").trim();
+      const action = String(button.getAttribute("data-drawer-action") || "").trim();
       if (!action) return;
 
       closeDrawer();
@@ -1236,7 +1240,7 @@ const MUSIPROFE_KNOWLEDGE = [
   },
   {
     match: ["bitacora", "bitácora", "clase", "evidencia", "tarea"],
-    answer: "La bitácora está en el botón Bitácora de clase. También tienes disponible “Bitácora de clases (nueva versión)” para el nuevo enlace. Después de terminar tus clases, deja allí la evidencia y el seguimiento del proceso del estudiante."
+    answer: "La bitácora está en el botón Bitácoras de clase. Después de terminar tus clases, deja allí la evidencia y el seguimiento del proceso del estudiante."
   },
   {
     match: ["link", "enlace", "pendiente", "abre", "abrir"],
@@ -2024,6 +2028,7 @@ const ADMIN_STATE = {
   liveSessions: [],
   schedules: {},       // { email: scheduleDoc }
   overrides: {},       // { "email__date": overrideDoc }
+  scheduleYear: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date())),
   academic: { objectives: [], budgets: [], hourLogs: [] },
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   loading: false,
@@ -2229,7 +2234,12 @@ async function loadAdminData() {
     if (ADMIN_STATE.tab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
     } else if (ADMIN_STATE.tab === "horarios") {
-      ADMIN_STATE.schedules = await fetchAdminSchedules();
+      const [schedules, overrides] = await Promise.all([
+        fetchAdminSchedules(),
+        fetchScheduleOverridesForYear(ADMIN_STATE.scheduleYear)
+      ]);
+      ADMIN_STATE.schedules = schedules;
+      ADMIN_STATE.overrides = overrides;
     } else if (ADMIN_STATE.tab === "academica") {
       ADMIN_STATE.academic = await fetchAdminAcademic();
     } else if (ADMIN_STATE.tab === "docentes") {
@@ -2301,6 +2311,20 @@ async function fetchAdminOverrides() {
   const q = constraints.length
     ? query(collection(APP_STATE.db, "teacherScheduleOverrides"), ...constraints)
     : collection(APP_STATE.db, "teacherScheduleOverrides");
+  const snapshot = await getDocs(q);
+  const map = {};
+  snapshot.forEach((d) => { map[d.id] = { id: d.id, ...(d.data() || {}) }; });
+  return map;
+}
+
+async function fetchScheduleOverridesForYear(year) {
+  const y = Number(year) || Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date()));
+  const q = query(
+    collection(APP_STATE.db, "teacherScheduleOverrides"),
+    where("date", ">=", `${y}-01-01`),
+    where("date", "<=", `${y}-12-31`),
+    limit(2000)
+  );
   const snapshot = await getDocs(q);
   const map = {};
   snapshot.forEach((d) => { map[d.id] = { id: d.id, ...(d.data() || {}) }; });
@@ -2382,6 +2406,161 @@ function timeToMinutes(hhmm) {
   const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function addDaysToDateStr(dateStr, days) {
+  const dt = new Date(`${dateStr}T12:00:00-05:00`);
+  dt.setDate(dt.getDate() + Number(days || 0));
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(dt);
+}
+
+function longDateLabel(dateStr) {
+  const dt = new Date(`${dateStr}T12:00:00-05:00`);
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    weekday: "long",
+    day: "numeric",
+    month: "long"
+  }).format(dt);
+}
+
+async function loadTeacherScheduleForActiveUser() {
+  const email = emailKey(APP_STATE.activeUser);
+  APP_STATE.teacherSchedule = { loading: true, schedule: null, overrides: {} };
+  if (!APP_STATE.db || !email) {
+    APP_STATE.teacherSchedule.loading = false;
+    return;
+  }
+
+  try {
+    const schedSnap = await getDoc(doc(APP_STATE.db, "teacherSchedules", email));
+    const schedule = schedSnap.exists() ? { email, ...(schedSnap.data() || {}) } : null;
+    const { date: today } = bogotaParts();
+    const dates = Array.from({ length: 14 }, (_, i) => addDaysToDateStr(today, i));
+    const overridePairs = await Promise.all(dates.map(async (date) => {
+      try {
+        const snap = await getDoc(doc(APP_STATE.db, "teacherScheduleOverrides", overrideId(email, date)));
+        return snap.exists() ? [date, { id: snap.id, ...(snap.data() || {}) }] : null;
+      } catch (_) {
+        return null;
+      }
+    }));
+    APP_STATE.teacherSchedule = {
+      loading: false,
+      schedule,
+      overrides: Object.fromEntries(overridePairs.filter(Boolean))
+    };
+  } catch (error) {
+    console.warn("No se pudo cargar el horario docente", error);
+    APP_STATE.teacherSchedule = { loading: false, schedule: null, overrides: {} };
+  }
+}
+
+function getTeacherScheduleForDate(date) {
+  const schedule = APP_STATE.teacherSchedule?.schedule;
+  if (!schedule || schedule.type !== "fijo") return null;
+  const ov = APP_STATE.teacherSchedule?.overrides?.[date];
+  if (ov) {
+    return {
+      start: ov.start || "",
+      end: ov.end || "",
+      excused: !!ov.excused,
+      note: ov.note || "",
+      source: "override"
+    };
+  }
+  const day = schedule.weekly?.[weekdayKeyFromDate(date)];
+  if (!day?.start) return null;
+  return { start: day.start, end: day.end || "", excused: false, note: "", source: "weekly" };
+}
+
+function scheduleTimeText(item) {
+  if (!item) return "Sin jornada programada";
+  if (item.excused) return item.note ? `Justificado: ${item.note}` : "Justificado";
+  return `${item.start || "--:--"}${item.end ? ` a ${item.end}` : ""}`;
+}
+
+function openTeacherScheduleView() {
+  const schedule = APP_STATE.teacherSchedule?.schedule;
+  if (!schedule || schedule.type !== "fijo") {
+    toast("Tu horario es flexible; coordinación lo ajusta por día.");
+    return;
+  }
+
+  const { date: today } = bogotaParts();
+  const tomorrow = addDaysToDateStr(today, 1);
+  const todayItem = getTeacherScheduleForDate(today);
+  const tomorrowItem = getTeacherScheduleForDate(tomorrow);
+  const days = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"];
+  const weeklyRows = days.map((wd) => {
+    const day = schedule.weekly?.[wd] || {};
+    return `
+      <div class="teacherScheduleRow ${day.start ? "" : "isOff"}">
+        <strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd])}</strong>
+        <span>${day.start ? `${escapeHtml(day.start)}${day.end ? ` a ${escapeHtml(day.end)}` : ""}` : "Sin jornada"}</span>
+      </div>
+    `;
+  }).join("");
+  const upcomingRows = Array.from({ length: 7 }, (_, i) => {
+    const date = addDaysToDateStr(today, i);
+    const item = getTeacherScheduleForDate(date);
+    const note = item?.note ? `<small>${escapeHtml(item.note)}</small>` : "";
+    return `
+      <div class="teacherScheduleRow ${item ? "" : "isOff"}">
+        <strong>${escapeHtml(i === 0 ? "Hoy" : i === 1 ? "Mañana" : longDateLabel(date))}</strong>
+        <span>${escapeHtml(scheduleTimeText(item))}</span>
+        ${note}
+      </div>
+    `;
+  }).join("");
+
+  const modal = document.createElement("div");
+  modal.className = "teacherScheduleModal";
+  modal.innerHTML = `
+    <div class="teacherScheduleCard" role="dialog" aria-modal="true" aria-label="Horario docente">
+      <div class="teacherScheduleHead">
+        <div>
+          <p>Horario</p>
+          <h2>${escapeHtml(getTeacherName())}</h2>
+        </div>
+        <button class="btnGhost shiftClose" id="teacherScheduleClose" type="button" aria-label="Cerrar">Cerrar</button>
+      </div>
+      <div class="teacherScheduleHero">
+        <div>
+          <span>Hoy</span>
+          <strong>${escapeHtml(scheduleTimeText(todayItem))}</strong>
+          <small>${escapeHtml(longDateLabel(today))}</small>
+        </div>
+        <div>
+          <span>Mañana</span>
+          <strong>${escapeHtml(scheduleTimeText(tomorrowItem))}</strong>
+          <small>${escapeHtml(longDateLabel(tomorrow))}</small>
+        </div>
+      </div>
+      <section>
+        <h3>Próximos días</h3>
+        <div class="teacherScheduleList">${upcomingRows}</div>
+      </section>
+      <section>
+        <h3>Semana fija</h3>
+        <div class="teacherScheduleList">${weeklyRows}</div>
+      </section>
+      <p class="teacherScheduleNote">Si coordinación agrega una excepción, aparecerá aquí sobre tu horario semanal.</p>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const close = () => {
+    modal.remove();
+    document.body.style.overflow = "";
+  };
+  document.body.style.overflow = "hidden";
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  $("#teacherScheduleClose", modal)?.addEventListener("click", close);
 }
 
 function minutesToLabel(mins) {
@@ -3146,7 +3325,8 @@ function buildDocenteRows() {
       enabled: isAdmin ? true : enabled,
       accessExpiresAt: (typeof md?.accessExpiresAt === "number" && md.accessExpiresAt > 0) ? md.accessExpiresAt : null,
       areas: Array.isArray(md?.areas) ? md.areas : [],
-      especialidades: Array.isArray(md?.especialidades) ? md.especialidades : []
+      especialidades: Array.isArray(md?.especialidades) ? md.especialidades : [],
+      visibleButtons: getVisibleButtonsForUserDoc(md)
     });
   }
   rows.sort((a, b) => {
@@ -3191,6 +3371,7 @@ function renderAdminDocentes(body) {
     } else {
       const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
       let btns = `<button class="btnGhost docMini docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
+      btns += `<button class="btnGhost docMini docButtons" type="button" data-email="${escapeHtml(r.email)}">Botones</button>`;
       btns += `<button class="btnGhost docMini docAccess" type="button" data-email="${escapeHtml(r.email)}">Acceso</button>`;
       btns += `<button class="btnGhost docMini docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
       // "Quitar" solo para los creados en el panel (no base de código).
@@ -3278,6 +3459,10 @@ function renderAdminDocentes(body) {
     btn.addEventListener("click", () => openDocenteAreasEditor(btn.dataset.email));
   });
 
+  body.querySelectorAll(".docButtons").forEach((btn) => {
+    btn.addEventListener("click", () => openDocenteButtonsEditor(btn.dataset.email));
+  });
+
   body.querySelectorAll(".docAccess").forEach((btn) => {
     btn.addEventListener("click", () => openDocenteAccessEditor(btn.dataset.email));
   });
@@ -3301,6 +3486,73 @@ function renderAdminDocentes(body) {
 }
 
 /* ---- Editor de áreas para la Biblioteca de Recursos ---- */
+function openDocenteButtonsEditor(email) {
+  const md = ADMIN_STATE.hubUsers?.[email] || {};
+  const base = HUB.USERS?.[email] || null;
+  const name = md.label || base?.label || email;
+  const assignable = getAssignableButtons();
+  const current = getVisibleButtonsForUserDoc(md) || assignable.map((button) => button.id);
+  const currentSet = new Set(current);
+  const sections = groupBySection(assignable);
+  const groups = Array.from(sections.entries()).map(([section, buttons]) => `
+    <div class="buttonAssignGroup">
+      <h4>${escapeHtml(section)}</h4>
+      ${buttons.map((button) => `
+        <label class="adminCheck buttonAssignItem">
+          <input type="checkbox" data-button-id="${escapeHtml(button.id)}" ${currentSet.has(button.id) ? "checked" : ""} />
+          <span><strong>${escapeHtml(button.title)}</strong><small>${escapeHtml(button.subtitle || "")}</small></span>
+        </label>
+      `).join("")}
+    </div>
+  `).join("");
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard adminSubCardWide" role="dialog" aria-modal="true">
+      <h3>Botones · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">Elige los accesos que vera esta docente en su HUB. Si marcas todos, conserva la vista completa.</p>
+      <div class="buttonAssignToolbar">
+        <button class="btnGhost" id="buttonsSelectAll" type="button">Marcar todos</button>
+        <button class="btnGhost" id="buttonsClear" type="button">Limpiar</button>
+      </div>
+      <div class="buttonAssignGrid">${groups}</div>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="buttonsCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="buttonsSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  const checks = () => $$("input[data-button-id]", dialog);
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#buttonsCancel", dialog)?.addEventListener("click", close);
+  $("#buttonsSelectAll", dialog)?.addEventListener("click", () => checks().forEach((input) => { input.checked = true; }));
+  $("#buttonsClear", dialog)?.addEventListener("click", () => checks().forEach((input) => { input.checked = false; }));
+  $("#buttonsSave", dialog)?.addEventListener("click", async () => {
+    const visibleButtons = checks().filter((input) => input.checked).map((input) => input.dataset.buttonId);
+    try {
+      const saved = await saveHubUser(email, {
+        label: name,
+        role: "docente",
+        enabled: md.enabled !== false,
+        visibleButtons
+      });
+      ADMIN_STATE.hubUsers[email] = { ...(ADMIN_STATE.hubUsers[email] || {}), ...saved, email };
+      toast("Botones guardados ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudieron guardar los botones. Revisa permisos/reglas.");
+    }
+  });
+}
+
 async function openDocenteAreasEditor(email) {
   const md = ADMIN_STATE.hubUsers?.[email] || {};
   const base = HUB.USERS?.[email] || null;
@@ -3431,6 +3683,137 @@ async function openDocenteAccessEditor(email) {
 }
 
 /* ---- Pestaña Horarios: configurar tipo + gracia + semana ---- */
+function renderScheduleWeekPreview(weekly = {}) {
+  const html = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
+    .map((wd) => {
+      const day = weekly[wd] || {};
+      return day.start
+        ? `<span><strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd].slice(0, 3))}</strong> ${escapeHtml(day.start)}${day.end ? `-${escapeHtml(day.end)}` : ""}</span>`
+        : "";
+    })
+    .filter(Boolean)
+    .join("");
+  return html || "<span>Sin dias configurados</span>";
+}
+
+function openScheduleExceptionPicker(email) {
+  const teacher = getAdminTeacherOptions().find((t) => t.email === email);
+  const name = teacher?.label || email;
+  const { date: today } = bogotaParts();
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Excepcion de horario · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">Elige el dia puntual que quieres cambiar. Si ya existe una excepcion para esa fecha, podras editarla o quitarla.</p>
+      <label>Fecha
+        <input type="date" id="schedExceptionDate" value="${escapeHtml(today)}" />
+      </label>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="schedExceptionCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="schedExceptionOpen" type="button">Continuar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#schedExceptionCancel", dialog)?.addEventListener("click", close);
+  $("#schedExceptionOpen", dialog)?.addEventListener("click", async () => {
+    const date = $("#schedExceptionDate", dialog)?.value || today;
+    close();
+    await loadSingleScheduleOverride(email, date);
+    openOverrideEditor(email, date);
+  });
+}
+
+async function loadSingleScheduleOverride(email, date) {
+  if (!APP_STATE.db || !email || !date) return;
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, "teacherScheduleOverrides", overrideId(email, date)));
+    if (snap.exists()) {
+      ADMIN_STATE.overrides[overrideId(email, date)] = { id: snap.id, ...(snap.data() || {}) };
+    } else {
+      delete ADMIN_STATE.overrides[overrideId(email, date)];
+    }
+  } catch (error) {
+    console.warn("No se pudo cargar la excepcion del horario", error);
+  }
+}
+
+function renderAdminAnnualScheduleCalendar(teachers, year) {
+  const fixedTeachers = teachers.filter((t) => (ADMIN_STATE.schedules[t.email]?.type || "flexible") === "fijo");
+  if (!fixedTeachers.length) {
+    return `
+      <div class="scheduleYearPanel">
+        <div class="scheduleYearHead">
+          <div>
+            <h3>Calendario anual ${escapeHtml(year)}</h3>
+            <p class="adminNote">Aun no hay docentes con horario fijo configurado.</p>
+          </div>
+          <div class="scheduleYearActions">
+            <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
+            <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const months = Array.from({ length: 12 }, (_, monthIndex) => renderAdminScheduleMonth(fixedTeachers, year, monthIndex));
+  return `
+    <div class="scheduleYearPanel">
+      <div class="scheduleYearHead">
+        <div>
+          <h3>Calendario anual ${escapeHtml(year)}</h3>
+          <p class="adminNote">Muestra horarios fijos y excepciones guardadas. Las excepciones reemplazan el horario semanal de ese dia.</p>
+        </div>
+        <div class="scheduleYearActions">
+          <button class="btnGhost scheduleYearNav" type="button" data-year="${year - 1}">${year - 1}</button>
+          <button class="btnGhost scheduleYearToday" type="button">Este año</button>
+          <button class="btnGhost scheduleYearNav" type="button" data-year="${year + 1}">${year + 1}</button>
+        </div>
+      </div>
+      <div class="scheduleYearGrid">${months.join("")}</div>
+    </div>
+  `;
+}
+
+function renderAdminScheduleMonth(teachers, year, monthIndex) {
+  const monthDate = new Date(Date.UTC(year, monthIndex, 1, 12));
+  const monthName = new Intl.DateTimeFormat("es-CO", { month: "long", timeZone: "UTC" }).format(monthDate);
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
+  const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
+  const blanks = Array.from({ length: leading }, () => `<div class="scheduleDay isBlank"></div>`).join("");
+  const days = Array.from({ length: daysInMonth }, (_, i) => {
+    const dayNum = i + 1;
+    const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+    const chips = teachers.map((teacher) => {
+      const item = getExpectedSchedule(teacher.email, date);
+      if (!item) return "";
+      const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `-${item.end}` : ""}`;
+      return `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(teacher.label)} · ${escapeHtml(label)}">${escapeHtml(teacher.label.split(" ")[0] || teacher.label)} ${escapeHtml(label)}</span>`;
+    }).filter(Boolean).join("");
+    return `
+      <div class="scheduleDay ${chips ? "hasSchedule" : ""}">
+        <strong>${dayNum}</strong>
+        <div>${chips || ""}</div>
+      </div>
+    `;
+  }).join("");
+  return `
+    <section class="scheduleMonth">
+      <h4>${escapeHtml(monthName)}</h4>
+      <div class="scheduleWeekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+      <div class="scheduleMonthGrid">${blanks}${days}</div>
+    </section>
+  `;
+}
+
 function renderAdminHorarios(body) {
   const teachers = getAdminTeacherOptions().filter((t) => !ADMIN_EMAILS.includes(t.email));
   if (!teachers.length) {
@@ -3442,6 +3825,7 @@ function renderAdminHorarios(body) {
     const sched = ADMIN_STATE.schedules[t.email] || {};
     const type = sched.type || "flexible";
     const grace = Number.isFinite(Number(sched.graceMinutes)) ? Number(sched.graceMinutes) : PUNCTUALITY.DEFAULT_GRACE;
+    const weeklyPreview = renderScheduleWeekPreview(sched.weekly || {});
     const summary = type === "fijo"
       ? "Jornada fija (horario semanal)"
       : "Flexible (se ajusta por día)";
@@ -3452,20 +3836,43 @@ function renderAdminHorarios(body) {
             <strong>${escapeHtml(t.label)}</strong>
             <span class="schedType schedType-${type}">${type === "fijo" ? "Fijo" : "Flexible"}</span>
           </div>
-          <button class="btnGhost schedEdit" type="button" data-email="${escapeHtml(t.email)}">Configurar</button>
+          <div class="schedActions">
+            <button class="btnGhost schedEdit" type="button" data-email="${escapeHtml(t.email)}">Configurar semana</button>
+            <button class="btnGhost schedException" type="button" data-email="${escapeHtml(t.email)}">Excepcion por dia</button>
+          </div>
         </div>
         <p class="schedSummary">${summary} · gracia ${grace} min</p>
+        ${type === "fijo"
+          ? `<div class="schedWeekPreview">${weeklyPreview}</div>`
+          : `<p class="adminNote">No aparece el boton Horario para esta docente. Puedes crear excepciones puntuales si lo necesitas.</p>`}
       </div>
     `;
   }).join("");
 
+  const annualCalendar = renderAdminAnnualScheduleCalendar(teachers, ADMIN_STATE.scheduleYear);
+
   body.innerHTML = `
-    <p class="adminMeta">Configura el horario esperado de cada docente. Los <strong>flexibles</strong> se ajustan día por día desde Puntualidad; los <strong>fijos</strong> usan el horario semanal de abajo.</p>
+    <p class="adminMeta">Aqui configuras el horario semanal y las excepciones por fecha. Las docentes con horario <strong>fijo</strong> veran el boton Horario en su HUB; las <strong>flexibles</strong> no lo veran.</p>
+    ${annualCalendar}
     <div class="schedGrid">${cards}</div>
   `;
 
+  body.querySelectorAll(".scheduleYearNav").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ADMIN_STATE.scheduleYear = Number(btn.dataset.year) || ADMIN_STATE.scheduleYear;
+      loadAdminData();
+    });
+  });
+  $(".scheduleYearToday", body)?.addEventListener("click", () => {
+    ADMIN_STATE.scheduleYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date()));
+    loadAdminData();
+  });
+
   body.querySelectorAll(".schedEdit").forEach((btn) => {
     btn.addEventListener("click", () => openScheduleEditor(btn.dataset.email));
+  });
+  body.querySelectorAll(".schedException").forEach((btn) => {
+    btn.addEventListener("click", () => openScheduleExceptionPicker(btn.dataset.email));
   });
 }
 
@@ -3580,12 +3987,22 @@ function getResolvedButtonState(button, links = {}) {
   const isSpecial =
     button?.id === "carnet" ||
     button?.id === "jornada" ||
+    button?.id === "horarioAnual" ||
     button?.id === "adminPanel" ||
     button?.id === "bitacoraAcademica" ||
     button?.id === "academicModule" ||
     button?.id === "bibliotecaRecursos";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
+  }
+  const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
+  if (assignedButtons && !button?.adminOnly && !assignedButtons.includes(button?.id)) {
+    return { isSpecial: false, url: "", available: false, visible: false };
+  }
+  if (button?.id === "horarioAnual") {
+    const schedule = APP_STATE.teacherSchedule?.schedule;
+    const visible = schedule?.type === "fijo" && !!schedule?.weekly;
+    return { isSpecial: true, url: "__SPECIAL__", available: visible, visible };
   }
   // Módulos internos disponibles para cualquier usuario con acceso al HUB.
   if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "bibliotecaRecursos") {
@@ -3614,6 +4031,16 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     const state = getResolvedButtonState(button, APP_STATE.activeLinks);
     return state.visible;
   });
+  const heroActions = [
+    { id: "jornada", className: "heroPrimary", label: "Registrar ingreso / salida" },
+    { id: "bitacoraClasesNueva", className: "heroSecondary", label: "Bitácoras de clase" }
+  ]
+    .filter((action) => {
+      const button = getButtonMeta(action.id);
+      return button && getResolvedButtonState(button, APP_STATE.activeLinks).visible;
+    })
+    .map((action) => `<button class="${action.className}" type="button" data-id="${action.id}">${escapeHtml(action.label)}</button>`)
+    .join("");
 
   const sections = groupBySection(filteredButtons);
   let html = `
@@ -3628,11 +4055,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <p>Jornada</p>
         <h2>Registro de jornada</h2>
         <span>Registra ingreso y salida. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
-        <div class="heroShiftActions">
-          <button class="heroPrimary" type="button" data-id="jornada">Registrar ingreso / salida</button>
-          <button class="heroSecondary" type="button" data-id="bitacoraClases">Bitácora de clase</button>
-          <button class="heroSecondary" type="button" data-id="bitacoraClasesNueva">Nueva versión</button>
-        </div>
+        ${heroActions ? `<div class="heroShiftActions">${heroActions}</div>` : ""}
       </article>
     </section>
 
@@ -3957,6 +4380,11 @@ async function handleButtonAction(id, trigger = null) {
 
   if (id === "jornada") {
     openTeacherShiftModal();
+    return;
+  }
+
+  if (id === "horarioAnual") {
+    openTeacherScheduleView();
     return;
   }
 
@@ -4601,6 +5029,7 @@ async function handleAuthorizedUser(user, managed = null) {
   setDrawerProfile(profile, user);
 
   await autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true });
+  await loadTeacherScheduleForActiveUser();
 
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
@@ -4619,6 +5048,7 @@ async function handleUnauthorizedUser(auth, reason = "") {
   APP_STATE.activeUser = null;
   APP_STATE.activeProfile = null;
   APP_STATE.activeLinks = {};
+  APP_STATE.teacherSchedule = { loading: false, schedule: null, overrides: {} };
 
   show("login");
   closeDrawer();
@@ -4653,6 +5083,7 @@ async function mount() {
       APP_STATE.activeUser = null;
       APP_STATE.activeProfile = null;
       APP_STATE.activeLinks = {};
+      APP_STATE.teacherSchedule = { loading: false, schedule: null, overrides: {} };
 
       show("login");
       closeDrawer();
