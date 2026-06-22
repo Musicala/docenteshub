@@ -3552,6 +3552,37 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .biblioEmpty h2{ margin:0 0 8px; font-size:18px; }
 .biblioEmpty p{ margin:0; color:var(--muted); font-size:14px; }
 
+/* ---- Biblioteca · tablet ---- */
+@media (max-width:820px){
+  .biblioBody{ padding:14px clamp(12px, 3vw, 22px) 32px; }
+  .biblioGridFolders{ grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); }
+  .biblioGrid{ grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); }
+}
+
+/* ---- Biblioteca · móvil ---- */
+@media (max-width:560px){
+  .academicBar{ padding:10px 12px; gap:8px; }
+  .academicBarTitle{ font-size:14px; }
+  .biblioBody{ padding:12px 12px 28px; }
+  .biblioToolbar{ gap:8px; }
+  .biblioToolbar input[type="search"],
+  .biblioToolbar select{ flex:1 1 100%; }
+  .biblioCrumbs{ font-size:12.5px; gap:4px; }
+  /* Carpetas en dos columnas compactas para no desperdiciar pantalla. */
+  .biblioGridFolders{ grid-template-columns:repeat(2, 1fr); gap:10px; }
+  .biblioFolder{ padding:14px 12px; gap:4px; }
+  .biblioFolderIcon{ font-size:26px; }
+  .biblioFolderName{ font-size:13.5px; }
+  .biblioFolderMeta{ font-size:11px; }
+  /* Tarjetas de recurso a una sola columna: legibles sin scroll horizontal. */
+  .biblioGrid{ grid-template-columns:1fr; gap:10px; }
+  .biblioLinkOpen{ display:none; }
+}
+
+@media (max-width:360px){
+  .biblioGridFolders{ grid-template-columns:1fr; }
+}
+
 /* ---- Editor de áreas (panel admin) ---- */
 .areasMacroGrid{
   display:grid;

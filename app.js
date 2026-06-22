@@ -4868,7 +4868,9 @@ const BIBLIO_STATE = {
   search: "",
   tipo: "",
   shown: 60,
-  // Navegación tipo carpetas: null = vista de áreas; area sin tema = vista de temas.
+  // Navegación tipo carpetas (4 niveles): arte (macro) → área → tema → recursos.
+  // null en navArte = vista de artes; navArte sin navArea = vista de áreas; etc.
+  navArte: null,
   navArea: null,
   navTema: null
 };
@@ -4898,6 +4900,7 @@ function openBibliotecaModule() {
   BIBLIO_STATE.search = "";
   BIBLIO_STATE.tipo = "";
   BIBLIO_STATE.shown = 60;
+  BIBLIO_STATE.navArte = null;
   BIBLIO_STATE.navArea = null;
   BIBLIO_STATE.navTema = null;
   loadBiblioteca();
@@ -4962,17 +4965,28 @@ function biblioAreaEmoji(area) {
 }
 
 function renderBiblioteca(body, visibles, access) {
-  // Agrupación área → tema → recursos para la navegación tipo carpetas.
-  const byArea = new Map();
+  // Agrupación arte (macro) → área → tema → recursos para la navegación tipo carpetas.
+  const byArte = new Map();
   visibles.forEach((r) => {
+    const macro = macroAreaForBibliotecaArea(r.area);
+    const arte = macro === "*" ? "General" : macro;
     const area = String(r.area || "").trim() || "General";
     const tema = String(r.tema || "").trim() || "Sin tema";
+    if (!byArte.has(arte)) byArte.set(arte, new Map());
+    const byArea = byArte.get(arte);
     if (!byArea.has(area)) byArea.set(area, new Map());
     const temas = byArea.get(area);
     if (!temas.has(tema)) temas.set(tema, []);
     temas.get(tema).push(r);
   });
-  const areaNames = [...byArea.keys()].sort((a, b) => a.localeCompare(b, "es"));
+  // "General" siempre al final; el resto alfabético.
+  const arteNames = [...byArte.keys()].sort((a, b) => {
+    if (a === "General") return 1;
+    if (b === "General") return -1;
+    return a.localeCompare(b, "es");
+  });
+  const arteCount = (arte) => [...byArte.get(arte).values()]
+    .reduce((acc, temas) => acc + [...temas.values()].reduce((s, arr) => s + arr.length, 0), 0);
   const tipos = [...new Set(visibles.map((r) => String(r.tipo || "").trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "es"));
 
@@ -4981,11 +4995,16 @@ function renderBiblioteca(body, visibles, access) {
     : `Tus áreas: ${access.areas.join(", ") || "—"}${access.especialidades.length ? ` · Especialidades: ${access.especialidades.join(", ")}` : ""}`;
 
   // Si la carpeta guardada ya no existe (cambio de filtros/datos), vuelve al inicio.
-  if (BIBLIO_STATE.navArea && !byArea.has(BIBLIO_STATE.navArea)) {
+  if (BIBLIO_STATE.navArte && !byArte.has(BIBLIO_STATE.navArte)) {
+    BIBLIO_STATE.navArte = null;
     BIBLIO_STATE.navArea = null;
     BIBLIO_STATE.navTema = null;
   }
-  if (BIBLIO_STATE.navTema && !byArea.get(BIBLIO_STATE.navArea)?.has(BIBLIO_STATE.navTema)) {
+  if (BIBLIO_STATE.navArea && !byArte.get(BIBLIO_STATE.navArte)?.has(BIBLIO_STATE.navArea)) {
+    BIBLIO_STATE.navArea = null;
+    BIBLIO_STATE.navTema = null;
+  }
+  if (BIBLIO_STATE.navTema && !byArte.get(BIBLIO_STATE.navArte)?.get(BIBLIO_STATE.navArea)?.has(BIBLIO_STATE.navTema)) {
     BIBLIO_STATE.navTema = null;
   }
 
@@ -5021,6 +5040,12 @@ function renderBiblioteca(body, visibles, access) {
     if (searching) {
       parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">🔎 Resultados de búsqueda</span>`);
     } else {
+      if (BIBLIO_STATE.navArte) {
+        parts.push(`<span class="biblioCrumbSep">›</span>`);
+        parts.push((BIBLIO_STATE.navArea || BIBLIO_STATE.navTema)
+          ? `<button class="biblioCrumb" type="button" data-crumb="arte">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</button>`
+          : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</span>`);
+      }
       if (BIBLIO_STATE.navArea) {
         parts.push(`<span class="biblioCrumbSep">›</span>`);
         parts.push(BIBLIO_STATE.navTema
@@ -5035,11 +5060,15 @@ function renderBiblioteca(body, visibles, access) {
     crumbs.querySelectorAll("[data-crumb]").forEach((b) => {
       b.addEventListener("click", () => {
         if (b.dataset.crumb === "root") {
+          BIBLIO_STATE.navArte = null;
           BIBLIO_STATE.navArea = null;
           BIBLIO_STATE.navTema = null;
           BIBLIO_STATE.search = "";
           const input = $("#biblioSearch", body);
           if (input) input.value = "";
+        } else if (b.dataset.crumb === "arte") {
+          BIBLIO_STATE.navArea = null;
+          BIBLIO_STATE.navTema = null;
         } else {
           BIBLIO_STATE.navTema = null;
         }
@@ -5085,8 +5114,19 @@ function renderBiblioteca(body, visibles, access) {
       return;
     }
 
-    if (!BIBLIO_STATE.navArea) {
-      // Nivel 1: carpetas de áreas.
+    if (!BIBLIO_STATE.navArte) {
+      // Nivel 1: carpetas de artes (áreas macro).
+      grid.classList.add("biblioGridFolders");
+      grid.innerHTML = arteNames.map((arte) => {
+        const byArea = byArte.get(arte);
+        return folderCard({ emoji: biblioAreaEmoji(arte), name: arte, count: arteCount(arte), sub: `${byArea.size} área(s)`, nav: `arte:${arte}` });
+      }).join("");
+      if (moreWrap) moreWrap.hidden = true;
+      if (meta) meta.textContent = `${accessLabel} · ${arteNames.length} arte(s) · ${visibles.length} recurso(s)`;
+    } else if (!BIBLIO_STATE.navArea) {
+      // Nivel 2: carpetas de áreas dentro del arte.
+      const byArea = byArte.get(BIBLIO_STATE.navArte);
+      const areaNames = [...byArea.keys()].sort((a, b) => a.localeCompare(b, "es"));
       grid.classList.add("biblioGridFolders");
       grid.innerHTML = areaNames.map((a) => {
         const temas = byArea.get(a);
@@ -5094,10 +5134,10 @@ function renderBiblioteca(body, visibles, access) {
         return folderCard({ emoji: biblioAreaEmoji(a), name: a, count: total, sub: `${temas.size} tema(s)`, nav: `area:${a}` });
       }).join("");
       if (moreWrap) moreWrap.hidden = true;
-      if (meta) meta.textContent = `${accessLabel} · ${areaNames.length} área(s) · ${visibles.length} recurso(s)`;
+      if (meta) meta.textContent = `${accessLabel} · ${areaNames.length} área(s)`;
     } else if (!BIBLIO_STATE.navTema) {
-      // Nivel 2: carpetas de temas dentro del área.
-      const temas = byArea.get(BIBLIO_STATE.navArea);
+      // Nivel 3: carpetas de temas dentro del área.
+      const temas = byArte.get(BIBLIO_STATE.navArte).get(BIBLIO_STATE.navArea);
       const temaNames = [...temas.keys()].sort((a, b) => a.localeCompare(b, "es"));
       grid.classList.add("biblioGridFolders");
       grid.innerHTML = temaNames.map((t) =>
@@ -5106,8 +5146,8 @@ function renderBiblioteca(body, visibles, access) {
       if (moreWrap) moreWrap.hidden = true;
       if (meta) meta.textContent = `${accessLabel} · ${temaNames.length} tema(s)`;
     } else {
-      // Nivel 3: recursos del tema.
-      const lista = byArea.get(BIBLIO_STATE.navArea).get(BIBLIO_STATE.navTema) || [];
+      // Nivel 4: recursos del tema.
+      const lista = byArte.get(BIBLIO_STATE.navArte).get(BIBLIO_STATE.navArea).get(BIBLIO_STATE.navTema) || [];
       const n = paintRecursos(lista, grid, moreWrap);
       if (meta) meta.textContent = `${accessLabel} · ${n} recurso(s)`;
     }
@@ -5116,7 +5156,8 @@ function renderBiblioteca(body, visibles, access) {
       b.addEventListener("click", () => {
         const [kind, ...rest] = b.dataset.nav.split(":");
         const value = rest.join(":");
-        if (kind === "area") BIBLIO_STATE.navArea = value;
+        if (kind === "arte") BIBLIO_STATE.navArte = value;
+        else if (kind === "area") BIBLIO_STATE.navArea = value;
         else BIBLIO_STATE.navTema = value;
         BIBLIO_STATE.shown = 60;
         paint();
