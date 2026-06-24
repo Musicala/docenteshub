@@ -5037,24 +5037,25 @@ function renderBiblioteca(body, visibles, access) {
     if (!crumbs) return;
     const searching = !!normalizeText(BIBLIO_STATE.search);
     const parts = [`<button class="biblioCrumb" type="button" data-crumb="root">📚 Inicio</button>`];
+    // Las migas de navegación se muestran siempre, incluso al buscar, para dejar
+    // claro que la búsqueda está acotada a la carpeta actual (arte/área/tema).
+    if (BIBLIO_STATE.navArte) {
+      parts.push(`<span class="biblioCrumbSep">›</span>`);
+      parts.push((BIBLIO_STATE.navArea || BIBLIO_STATE.navTema)
+        ? `<button class="biblioCrumb" type="button" data-crumb="arte">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</button>`
+        : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</span>`);
+    }
+    if (BIBLIO_STATE.navArea) {
+      parts.push(`<span class="biblioCrumbSep">›</span>`);
+      parts.push(BIBLIO_STATE.navTema
+        ? `<button class="biblioCrumb" type="button" data-crumb="area">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</button>`
+        : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</span>`);
+    }
+    if (BIBLIO_STATE.navTema) {
+      parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">📂 ${escapeHtml(BIBLIO_STATE.navTema)}</span>`);
+    }
     if (searching) {
       parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">🔎 Resultados de búsqueda</span>`);
-    } else {
-      if (BIBLIO_STATE.navArte) {
-        parts.push(`<span class="biblioCrumbSep">›</span>`);
-        parts.push((BIBLIO_STATE.navArea || BIBLIO_STATE.navTema)
-          ? `<button class="biblioCrumb" type="button" data-crumb="arte">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</button>`
-          : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArte)} ${escapeHtml(BIBLIO_STATE.navArte)}</span>`);
-      }
-      if (BIBLIO_STATE.navArea) {
-        parts.push(`<span class="biblioCrumbSep">›</span>`);
-        parts.push(BIBLIO_STATE.navTema
-          ? `<button class="biblioCrumb" type="button" data-crumb="area">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</button>`
-          : `<span class="biblioCrumbHere">${biblioAreaEmoji(BIBLIO_STATE.navArea)} ${escapeHtml(BIBLIO_STATE.navArea)}</span>`);
-      }
-      if (BIBLIO_STATE.navTema) {
-        parts.push(`<span class="biblioCrumbSep">›</span><span class="biblioCrumbHere">📂 ${escapeHtml(BIBLIO_STATE.navTema)}</span>`);
-      }
     }
     crumbs.innerHTML = parts.join("");
     crumbs.querySelectorAll("[data-crumb]").forEach((b) => {
@@ -5100,17 +5101,40 @@ function renderBiblioteca(body, visibles, access) {
     if (!grid) return;
     paintCrumbs();
 
+    const scopeLabel = BIBLIO_STATE.navTema || BIBLIO_STATE.navArea || BIBLIO_STATE.navArte;
+    const searchInput = $("#biblioSearch", body);
+    if (searchInput) {
+      searchInput.placeholder = scopeLabel
+        ? `Buscar en ${scopeLabel}…`
+        : "Buscar en toda la biblioteca…";
+    }
+
     const term = normalizeText(BIBLIO_STATE.search);
     if (term) {
-      // Búsqueda global: resultados planos sobre toda la biblioteca visible.
+      // Búsqueda acotada a la carpeta actual: si estás dentro de un arte/área/tema,
+      // solo busca ahí. En "Inicio" busca en toda la biblioteca visible.
+      let source = visibles;
+      if (BIBLIO_STATE.navArte) {
+        source = source.filter((r) => {
+          const macro = macroAreaForBibliotecaArea(r.area);
+          return (macro === "*" ? "General" : macro) === BIBLIO_STATE.navArte;
+        });
+      }
+      if (BIBLIO_STATE.navArea) {
+        source = source.filter((r) => (String(r.area || "").trim() || "General") === BIBLIO_STATE.navArea);
+      }
+      if (BIBLIO_STATE.navTema) {
+        source = source.filter((r) => (String(r.tema || "").trim() || "Sin tema") === BIBLIO_STATE.navTema);
+      }
       const minimumScore = bibliotecaMinimumSearchScore(term);
-      const matches = visibles
+      const matches = source
         .map((r) => ({ recurso: r, score: bibliotecaSearchScore(r, term) }))
         .filter((item) => item.score >= minimumScore)
         .sort((a, b) => b.score - a.score || String(a.recurso.titulo || "").localeCompare(String(b.recurso.titulo || ""), "es"))
         .map((item) => item.recurso);
       const n = paintRecursos(matches, grid, moreWrap);
-      if (meta) meta.textContent = `${accessLabel} · ${n} resultado(s)`;
+      const scope = BIBLIO_STATE.navTema || BIBLIO_STATE.navArea || BIBLIO_STATE.navArte;
+      if (meta) meta.textContent = `${accessLabel} · ${n} resultado(s)${scope ? ` en ${scope}` : ""}`;
       return;
     }
 
