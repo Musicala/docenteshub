@@ -2495,6 +2495,23 @@ function timeToMinutes(hhmm) {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
+function formatTime12h(hhmm) {
+  const minutes = timeToMinutes(hhmm);
+  if (minutes == null) return "";
+  const h24 = Math.floor(minutes / 60);
+  const mm = minutes % 60;
+  const period = h24 >= 12 ? "pm" : "am";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${String(mm).padStart(2, "0")} ${period}`;
+}
+
+function scheduleRangeText(start, end) {
+  const startLabel = formatTime12h(start);
+  const endLabel = formatTime12h(end);
+  if (!startLabel) return "Sin jornada programada";
+  return endLabel ? `${startLabel} a ${endLabel}` : startLabel;
+}
+
 function addDaysToDateStr(dateStr, days) {
   const dt = new Date(`${dateStr}T12:00:00-05:00`);
   dt.setDate(dt.getDate() + Number(days || 0));
@@ -2553,11 +2570,13 @@ function getTeacherScheduleForDate(date) {
   if (!schedule || schedule.type !== "fijo") return null;
   const ov = APP_STATE.teacherSchedule?.overrides?.[date];
   if (ov) {
+    const enabled = ov.enabled !== false && ov.works !== false && !ov.dayOff;
     return {
-      start: ov.start || "",
-      end: ov.end || "",
+      start: enabled ? (ov.start || "") : "",
+      end: enabled ? (ov.end || "") : "",
       excused: !!ov.excused,
-      note: ov.note || "",
+      dayOff: !enabled,
+      note: ov.note || ov.reason || (!enabled ? "No viene" : ""),
       source: "override"
     };
   }
@@ -2568,8 +2587,52 @@ function getTeacherScheduleForDate(date) {
 
 function scheduleTimeText(item) {
   if (!item) return "Sin jornada programada";
-  if (item.excused) return item.note ? `Justificado: ${item.note}` : "Justificado";
-  return `${item.start || "--:--"}${item.end ? ` a ${item.end}` : ""}`;
+  if (item.dayOff) return item.note || "No viene";
+  if (item.excused && item.note) return item.note;
+  if (item.excused) return "Horario justificado";
+  return scheduleRangeText(item.start, item.end);
+}
+
+function scheduleCalendarDisplayItem(item) {
+  if (!item) return null;
+  if (item.dayOff) {
+    return { ...item, excused: false, start: item.note || "No viene", end: "" };
+  }
+  if (item.excused && item.note) {
+    return { ...item, excused: false, start: item.note, end: "" };
+  }
+  if (item.start) {
+    return { ...item, start: scheduleRangeText(item.start, item.end), end: "" };
+  }
+  return item;
+}
+
+function renderTeacherScheduleNudge() {
+  const schedule = APP_STATE.teacherSchedule?.schedule;
+  if (!schedule || schedule.type !== "fijo") return "";
+
+  const { date: today } = bogotaParts();
+  const tomorrow = addDaysToDateStr(today, 1);
+  const items = [
+    { label: "Hoy", date: today, item: getTeacherScheduleForDate(today) },
+    { label: "Mañana", date: tomorrow, item: getTeacherScheduleForDate(tomorrow) }
+  ];
+
+  const rows = items.map(({ label, date, item }) => {
+    const text = scheduleTimeText(item);
+    const note = item?.note && text !== item.note ? `<small>${escapeHtml(item.note)}</small>` : "";
+    const empty = !item ? " isOff" : "";
+    return `
+      <div class="heroScheduleItem${empty}">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(text)}</span>
+        <small>${escapeHtml(longDateLabel(date))}</small>
+        ${note}
+      </div>
+    `;
+  }).join("");
+
+  return `<div class="heroScheduleNudge" aria-label="Resumen de horario de hoy y mañana">${rows}</div>`;
 }
 
 function openTeacherScheduleView() {
@@ -2590,7 +2653,7 @@ function openTeacherScheduleView() {
     return `
       <div class="teacherScheduleRow ${day.start ? "" : "isOff"}">
         <strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd])}</strong>
-        <span>${day.start ? `${escapeHtml(day.start)}${day.end ? ` a ${escapeHtml(day.end)}` : ""}` : "Sin jornada"}</span>
+        <span>${day.start ? escapeHtml(scheduleRangeText(day.start, day.end)) : "Sin jornada"}</span>
       </div>
     `;
   }).join("");
@@ -2668,7 +2731,7 @@ function openTeacherScheduleView() {
     const label = $("#teacherMonthLabel", modal);
     const grid = $("#teacherMonthGrid", modal);
     if (label) label.textContent = `${MONTH_NAMES_ES[shownMonth]} ${shownYear}`;
-    if (grid) grid.innerHTML = renderScheduleMonthSolo(getTeacherScheduleForDate, shownYear, shownMonth, today);
+    if (grid) grid.innerHTML = renderScheduleMonthSolo((date) => scheduleCalendarDisplayItem(getTeacherScheduleForDate(date)), shownYear, shownMonth, today);
   };
   paintMonth();
   modal.querySelectorAll(".teacherMonthStep").forEach((btn) => {
@@ -2699,11 +2762,26 @@ function minutesToLabel(mins) {
 function getExpectedSchedule(email, date) {
   const ov = ADMIN_STATE.overrides[overrideId(email, date)];
   if (ov) {
+    if (ov.enabled === false || ov.works === false) {
+      return {
+        start: "",
+        end: "",
+        modalidad: ov.modalidad || ov.modality || "",
+        graceMinutes: Number.isFinite(Number(ov.graceMinutes)) ? Number(ov.graceMinutes) : null,
+        excused: true,
+        dayOff: true,
+        note: ov.note || ov.reason || "No viene",
+        source: "override"
+      };
+    }
     return {
       start: ov.start || "",
       end: ov.end || "",
+      modalidad: ov.modalidad || ov.modality || "",
+      graceMinutes: Number.isFinite(Number(ov.graceMinutes)) ? Number(ov.graceMinutes) : null,
       excused: !!ov.excused,
-      note: ov.note || "",
+      dayOff: false,
+      note: ov.note || ov.reason || "",
       source: "override"
     };
   }
@@ -2711,7 +2789,16 @@ function getExpectedSchedule(email, date) {
   if (sched && sched.type === "fijo" && sched.weekly) {
     const day = sched.weekly[weekdayKeyFromDate(date)];
     if (day && day.start) {
-      return { start: day.start, end: day.end || "", excused: false, note: "", source: "weekly" };
+      return {
+        start: day.start,
+        end: day.end || "",
+        modalidad: day.modalidad || day.modality || "",
+        graceMinutes: null,
+        excused: false,
+        dayOff: false,
+        note: day.note || day.notes || "",
+        source: "weekly"
+      };
     }
   }
   return null; // sin horario esperado configurado
@@ -2726,9 +2813,13 @@ function getGraceMinutes(email) {
 // Evalúa puntualidad de un día-docente a partir de las marcas emparejadas.
 function evaluatePunctuality(email, date, firstInTime, lastOutTime) {
   const expected = getExpectedSchedule(email, date);
-  const grace = getGraceMinutes(email);
+  const overrideGrace = Number(expected?.graceMinutes);
+  const grace = Number.isFinite(overrideGrace) ? overrideGrace : getGraceMinutes(email);
 
   if (!expected || !expected.start) {
+    if (expected?.dayOff || expected?.excused) {
+      return { status: "justificado", label: expected?.dayOff ? "No viene" : "Justificado", lateMin: null, earlyMin: null, expected, grace };
+    }
     return { status: "sin_horario", label: "Sin horario", lateMin: null, earlyMin: null, expected, grace };
   }
   if (expected.excused) {
@@ -3160,11 +3251,146 @@ function renderAdminPuntualidad(body) {
 }
 
 /* ---- Editor de ajuste de un día (override) ---- */
+function openScheduleOverrideDialog(email, date, name, expected, ov) {
+  const hasOverride = !!ov;
+  const works = ov ? (ov.enabled !== false && ov.works !== false && !ov.dayOff) : !expected?.dayOff;
+  const start = ov?.start || expected?.start || "";
+  const end = ov?.end || expected?.end || "";
+  const modalidad = ov?.modalidad || ov?.modality || expected?.modalidad || "jornada";
+  const grace = Number.isFinite(Number(ov?.graceMinutes)) ? Number(ov.graceMinutes) : getGraceMinutes(email);
+  const note = ov?.note || ov?.reason || expected?.note || "";
+  const weekday = weekdayKeyFromDate(date);
+
+  const weekdayOptions = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"].map((wd) => `
+    <label class="dayCheck">
+      <input type="checkbox" class="ovWeekday" value="${wd}" ${wd === weekday ? "checked" : ""} />
+      <span>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd].slice(0, 3))}</span>
+    </label>
+  `).join("");
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard adminScheduleOverrideCard" role="dialog" aria-modal="true">
+      <h3>Excepcion de horario · ${escapeHtml(name)}</h3>
+      <p class="adminSubSub">Asigna dias puntuales, cambia horarios o marca si la docente no viene.</p>
+      <div class="adminOverrideGrid">
+        <label>Desde
+          <input type="date" id="ovFrom" value="${escapeHtml(date)}" />
+        </label>
+        <label>Hasta
+          <input type="date" id="ovTo" value="${escapeHtml(date)}" />
+        </label>
+      </div>
+      <div class="weekdayPick">${weekdayOptions}</div>
+      <label class="adminCheck">
+        <input type="checkbox" id="ovWorks" ${works ? "checked" : ""} />
+        <span>Viene / tiene jornada esos dias</span>
+      </label>
+      <div class="adminOverrideGrid" id="ovWorkFields">
+        <label>Entrada
+          <input type="time" id="ovStartNew" value="${escapeHtml(start)}" />
+        </label>
+        <label>Salida
+          <input type="time" id="ovEndNew" value="${escapeHtml(end)}" />
+        </label>
+        <label>Modalidad
+          <select id="ovMode">
+            ${["jornada", "sede", "hogar", "virtual"].map((m) => `<option value="${m}" ${modalidad === m ? "selected" : ""}>${escapeHtml(getTeacherShiftModeLabel(m))}</option>`).join("")}
+          </select>
+        </label>
+        <label>Gracia (min)
+          <input type="number" id="ovGrace" min="0" max="120" value="${escapeHtml(String(grace))}" />
+        </label>
+      </div>
+      <label>Comentario / motivo
+        <input type="text" id="ovNoteNew" maxlength="180" value="${escapeHtml(note)}" placeholder="Ej: permiso, reposicion, cambio de horario, evento" />
+      </label>
+      <label class="adminCheck">
+        <input type="checkbox" id="ovExcusedNew" ${expected?.excused || ov?.excused ? "checked" : ""} />
+        <span>Justificado para puntualidad</span>
+      </label>
+      <div class="adminSubActions">
+        ${hasOverride ? `<button class="btnGhost adminDanger" id="ovDeleteNew" type="button">Quitar excepcion</button>` : "<span></span>"}
+        <div>
+          <button class="btnGhost" id="ovCancelNew" type="button">Cancelar</button>
+          <button class="btnGoogle" id="ovSaveNew" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  const syncFields = () => {
+    const enabled = $("#ovWorks", dialog)?.checked;
+    $("#ovWorkFields", dialog)?.querySelectorAll("input, select").forEach((el) => { el.disabled = !enabled; });
+  };
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#ovCancelNew", dialog)?.addEventListener("click", close);
+  $("#ovWorks", dialog)?.addEventListener("change", syncFields);
+  syncFields();
+
+  $("#ovSaveNew", dialog)?.addEventListener("click", async () => {
+    const from = $("#ovFrom", dialog).value || date;
+    const to = $("#ovTo", dialog).value || from;
+    const selectedDays = new Set(Array.from(dialog.querySelectorAll(".ovWeekday:checked")).map((el) => el.value));
+    const dates = enumerateDates(from, to).filter((itemDate) => selectedDays.has(weekdayKeyFromDate(itemDate)));
+    if (!dates.length) {
+      toast("Selecciona al menos una fecha y un dia de semana.");
+      return;
+    }
+    const enabled = $("#ovWorks", dialog).checked;
+    const noteText = $("#ovNoteNew", dialog).value.trim();
+    const data = {
+      enabled,
+      works: enabled,
+      start: enabled ? ($("#ovStartNew", dialog).value || "") : "",
+      end: enabled ? ($("#ovEndNew", dialog).value || "") : "",
+      modalidad: enabled ? ($("#ovMode", dialog).value || "jornada") : "",
+      graceMinutes: Number($("#ovGrace", dialog).value) || 0,
+      excused: !enabled || $("#ovExcusedNew", dialog).checked,
+      note: noteText,
+      reason: noteText,
+      rangeStart: from,
+      rangeEnd: to,
+      weekdays: Array.from(selectedDays)
+    };
+    try {
+      for (const itemDate of dates) {
+        await saveScheduleOverride(email, itemDate, data);
+        ADMIN_STATE.overrides[overrideId(email, itemDate)] = { id: overrideId(email, itemDate), email, date: itemDate, ...data };
+      }
+      toast(`${dates.length} excepcion${dates.length === 1 ? "" : "es"} guardada${dates.length === 1 ? "" : "s"}.`);
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo guardar la excepcion. Revisa permisos/reglas.");
+    }
+  });
+
+  $("#ovDeleteNew", dialog)?.addEventListener("click", async () => {
+    try {
+      await deleteScheduleOverride(email, date);
+      delete ADMIN_STATE.overrides[overrideId(email, date)];
+      toast("Excepcion eliminada.");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo eliminar la excepcion.");
+    }
+  });
+}
+
 function openOverrideEditor(email, date) {
   const teacher = getAdminTeacherOptions().find((t) => t.email === email);
   const name = teacher?.label || email;
   const expected = getExpectedSchedule(email, date);
   const ov = ADMIN_STATE.overrides[overrideId(email, date)];
+
+  openScheduleOverrideDialog(email, date, name, expected, ov);
+  return;
 
   const dialog = document.createElement("div");
   dialog.className = "adminSubModal";
@@ -3812,7 +4038,7 @@ function renderScheduleWeekPreview(weekly = {}) {
     .map((wd) => {
       const day = weekly[wd] || {};
       return day.start
-        ? `<span><strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd].slice(0, 3))}</strong> ${escapeHtml(day.start)}${day.end ? `-${escapeHtml(day.end)}` : ""}</span>`
+        ? `<span><strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd].slice(0, 3))}</strong> ${escapeHtml(scheduleRangeText(day.start, day.end))}</span>`
         : "";
     })
     .filter(Boolean)
@@ -3875,8 +4101,9 @@ const MONTH_NAMES_ES = [
 
 // Renderiza un único mes (grande y legible). `getItem(date)` devuelve el horario
 // esperado para esa fecha o null. `todayStr` resalta el día actual.
-function renderScheduleMonthSolo(getItem, year, monthIndex, todayStr = "") {
+function renderScheduleMonthSolo(getItem, year, monthIndex, todayStr = "", options = {}) {
   const monthName = MONTH_NAMES_ES[monthIndex] || "";
+  const clickable = !!options.clickable;
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
   const firstDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
   const leading = Math.max(0, PUNCTUALITY.WEEKDAYS.indexOf(weekdayKeyFromDate(firstDate)));
@@ -3945,7 +4172,7 @@ function renderAdminAnnualScheduleCalendar(teachers, year) {
     .join("");
 
   const { date: todayStr } = bogotaParts();
-  const month = renderScheduleMonthSolo((date) => getExpectedSchedule(selected.email, date), year, monthIndex, todayStr);
+  const month = renderScheduleMonthSolo((date) => scheduleCalendarDisplayItem(getExpectedSchedule(selected.email, date)), year, monthIndex, todayStr, { clickable: true });
   return `
     <div class="scheduleYearPanel">
       <div class="scheduleYearHead">
@@ -4037,6 +4264,25 @@ function renderAdminHorarios(body) {
   $("#scheduleTeacherSelect", body)?.addEventListener("change", (e) => {
     ADMIN_STATE.scheduleTeacher = e.target.value || "";
     renderAdminBody();
+  });
+
+  body.querySelectorAll(".scheduleSoloWrap .scheduleDay:not(.isBlank)").forEach((dayEl) => {
+    const dayNum = Number(dayEl.querySelector("strong")?.textContent || "");
+    const email = ADMIN_STATE.scheduleTeacher;
+    if (!dayNum || !email) return;
+    const date = `${ADMIN_STATE.scheduleYear}-${String(ADMIN_STATE.scheduleMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+    dayEl.classList.add("isClickable");
+    dayEl.setAttribute("role", "button");
+    dayEl.setAttribute("tabindex", "0");
+    dayEl.setAttribute("title", `Editar ${date}`);
+    const open = () => openOverrideEditor(email, date);
+    dayEl.addEventListener("click", open);
+    dayEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
   });
 
   body.querySelectorAll(".schedEdit").forEach((btn) => {
@@ -4337,6 +4583,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     })
     .map((action) => `<button class="${action.className}" type="button" data-id="${action.id}">${escapeHtml(action.label)}</button>`)
     .join("");
+  const scheduleNudge = renderTeacherScheduleNudge();
 
   const sections = groupBySection(filteredButtons);
   let html = `
@@ -4351,6 +4598,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <p>Jornada</p>
         <h2>Registro de jornada</h2>
         <span>Registra ingreso y salida. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
+        ${scheduleNudge}
         ${heroActions ? `<div class="heroShiftActions">${heroActions}</div>` : ""}
       </article>
     </section>

@@ -950,6 +950,55 @@ input, textarea, select{
   text-shadow:none;
 }
 
+.heroScheduleNudge{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0 2px;
+}
+
+.heroScheduleItem{
+  min-width:0;
+  padding:11px 12px;
+  border:1px solid rgba(12,65,196,.12);
+  border-radius:12px;
+  background:rgba(255,255,255,.72);
+}
+
+.heroScheduleItem strong,
+.heroScheduleItem span,
+.heroScheduleItem small{
+  display:block;
+}
+
+.heroScheduleItem strong{
+  color:#0c41c4;
+  font-size:.78rem;
+  font-weight:950;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+
+.heroScheduleItem span{
+  margin-top:4px;
+  color:#101828;
+  font-size:.98rem;
+  font-weight:900;
+  line-height:1.24;
+}
+
+.heroScheduleItem small{
+  margin-top:3px;
+  color:rgba(11,16,32,.58);
+  font-size:.78rem;
+  font-weight:760;
+  line-height:1.25;
+}
+
+.heroScheduleItem.isOff span{
+  color:#6b7280;
+}
+
 .heroShiftCard .heroSecondary[data-id="bitacoraClasesNueva"]{
   background:
     linear-gradient(135deg, rgba(255,255,255,.82), rgba(239,244,255,.72));
@@ -2545,6 +2594,10 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
     font-size:21px;
   }
 
+  .heroScheduleNudge{
+    grid-template-columns:1fr;
+  }
+
   .heroPrimary,
   .heroSecondary{
     width:100%;
@@ -3113,6 +3166,17 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .scheduleDay.hasSchedule{
   background:#fff;
 }
+.scheduleDay.isClickable{
+  cursor:pointer;
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.scheduleDay.isClickable:hover,
+.scheduleDay.isClickable:focus-visible{
+  border-color:rgba(12,65,196,.45);
+  box-shadow:0 10px 24px rgba(15,23,42,.10);
+  outline:none;
+  transform:translateY(-1px);
+}
 .scheduleDay strong{
   display:block;
   font-size:11px;
@@ -3136,6 +3200,10 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .scheduleChip.isOverride{
   background:rgba(206,0,113,.1);
   color:#9f0956;
+}
+.scheduleChip.isEmpty{
+  color:#6b7280;
+  background:rgba(148,163,184,.16);
 }
 
 /* ===== Calendario de un solo mes (grande y legible) ===== */
@@ -3699,3 +3767,38 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 }
 .teacherAnnualSection .teacherAnnualHead .scheduleYearActions{ display:flex; align-items:center; gap:8px; }
 .teacherAnnualSection #teacherYearLabel{ font-size:1rem; min-width:48px; text-align:center; }
+
+.adminScheduleOverrideCard{
+  max-width:680px;
+}
+.adminOverrideGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.weekdayPick{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:8px 0;
+}
+.dayCheck{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 10px;
+  border:1px solid rgba(15,23,42,.10);
+  border-radius:999px;
+  background:#fff;
+  font-weight:800;
+  color:#334155;
+}
+.dayCheck input{
+  accent-color:#0c41c4;
+}
+
+@media (max-width: 640px){
+  .adminOverrideGrid{
+    grid-template-columns:1fr;
+  }
+}
