@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bitácora Académica · Musicala</title>
   <meta name="description" content="Bitácora de tareas académicas, seguimiento de avances y bolsa de horas por objetivos para Musicala." />
-  <link rel="stylesheet" href="styles.css?v=2026-06-07.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-06-29.1" />
 </head>
 <body>
   <header class="hero" role="banner">
@@ -149,10 +149,11 @@
             </div>
           </div>
           <p class="helper-text">
-            La <strong>bolsa de horas</strong> son horas que la docente debe reponer en un <strong>rango de fechas</strong> definido (reposiciones, trabajo remoto por objetivos). No importa qué tarea trabaje: lo que cuenta para la bolsa son los <strong>avances marcados como “Bolsa de horas”</strong> dentro del rango. La misma tarea, si la trabajas en tu jornada normal, no descuenta de la bolsa.
+            La <strong>bolsa de horas</strong> son horas que la docente debe reponer en un rango definido. Al registrar un avance como <strong>“Bolsa de horas”</strong>, la docente elige la semana a la que desea abonarlo. Cada bolsa puede tener días adicionales de tolerancia y admite horas de más.
           </p>
 
           <form id="budgetForm" class="mini-form" novalidate>
+            <input id="budgetId" type="hidden" />
             <label class="admin-only-field">
               <span>Docente asignada</span>
               <select id="budgetTeacherEmail"></select>
@@ -173,12 +174,17 @@
               <span>Cumplir hasta <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
               <input id="budgetEnd" type="date" required />
             </label>
+            <label>
+              <span>Días adicionales de tolerancia</span>
+              <input id="budgetToleranceDays" type="number" min="0" max="30" step="1" value="7" required />
+            </label>
             <label class="mini-form__full">
               <span>Nota del acuerdo</span>
               <input id="budgetNote" type="text" placeholder="Ej.: Reposición de jornada / tareas académicas remotas" />
             </label>
             <div class="mini-form__actions">
-              <button class="btn btn-dark" type="submit">Guardar bolsa</button>
+              <button class="btn btn-dark" id="budgetSubmit" type="submit">Guardar bolsa</button>
+              <button class="btn btn-soft" id="budgetCancelEdit" type="button" hidden>Cancelar edición</button>
               <button class="btn btn-soft" id="btnClearLocal" type="button">Limpiar datos locales</button>
             </div>
           </form>
@@ -360,6 +366,11 @@
               </select>
             </label>
 
+            <label id="logBudgetField" hidden>
+              <span>¿A qué bolsa se suman estas horas? <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
+              <select id="logBudgetId"></select>
+            </label>
+
             <label class="full">
               <span class="status" id="logScopeHint">Marca “Bolsa de horas” solo si este rato es trabajo remoto que repone horas pendientes.</span>
             </label>
@@ -483,6 +494,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-06-07.3"></script>
+  <script type="module" src="script.js?v=2026-06-29.1"></script>
 </body>
 </html>

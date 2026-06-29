@@ -259,6 +259,20 @@ function daysBetween(fromISO, toISO) {
   if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
   return Math.round((b - a) / 86400000);
 }
+function addDaysISO(iso, days) {
+  const date = new Date(`${dateOnly(iso)}T12:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + Math.max(0, Number(days) || 0));
+  return date.toLocaleDateString('en-CA');
+}
+function budgetToleranceDays(budget) {
+  const value = Number(budget?.toleranceDays);
+  return Number.isFinite(value) ? Math.max(0, value) : 7;
+}
+function budgetEffectiveEnd(budget) {
+  const end = dateOnly(budget?.endDate);
+  return end ? addDaysISO(end, budgetToleranceDays(budget)) : '';
+}
 function fmtShortDate(iso) {
   if (!iso) return '—';
   const d = new Date(`${dateOnly(iso)}T00:00`);
@@ -284,6 +298,7 @@ function logBelongsToBudget(log, budget) {
     ? String(log.teacherEmail || '').toLowerCase() === budgetEmail
     : norm(log.person) === norm(budget.person);
   if (!sameTeacher) return false;
+  if (log.budgetId) return String(log.budgetId) === String(budget.id);
   const start = dateOnly(budget.startDate);
   const end = dateOnly(budget.endDate);
   const when = dateOnly(log.start);
@@ -309,7 +324,12 @@ function budgetStatus(budget) {
     const d = daysBetween(today, start);
     return { label: d === 1 ? 'Empieza mañana' : `Empieza en ${d} días`, cls: 'pill pill--neutral' };
   }
-  if (end && today > end) return { label: 'Vencida', cls: 'pill pill--danger' };
+  const effectiveEnd = budgetEffectiveEnd(budget);
+  if (effectiveEnd && today > effectiveEnd) return { label: 'Vencida', cls: 'pill pill--danger' };
+  if (end && today > end) {
+    const d = daysBetween(today, effectiveEnd);
+    return { label: `En tolerancia · ${d} día${d === 1 ? '' : 's'}`, cls: 'pill pill--warn' };
+  }
   if (end) {
     const d = daysBetween(today, end);
     if (d === 0) return { label: 'Vence hoy', cls: 'pill pill--warn' };
@@ -688,12 +708,15 @@ function renderBudgetSummary() {
         <span class="${done ? 'pill pill--ok' : st.cls}">${esc(done ? 'Cumplida' : st.label)}</span>
       </div>
       <small class="balance-card__range">📅 ${esc(fmtBudgetRange(budget))} · ${esc(budget.note || 'Sin nota')}</small>
+      <small class="balance-card__range">Tolerancia: ${budgetToleranceDays(budget)} día${budgetToleranceDays(budget) === 1 ? '' : 's'} · hasta ${esc(fmtShortDate(budgetEffectiveEnd(budget)))}</small>
       <div class="budget-kpis budget-kpis--mini">
         <div><span>Asignadas</span><strong>${fmtHours(budget.hours)}</strong></div>
         <div><span>Cumplidas</span><strong>${fmtHours(usage.used)}</strong></div>
         <div><span>Faltan</span><strong class="${faltanCls}">${fmtHours(Math.max(0, usage.remaining))}</strong></div>
+        ${usage.remaining < 0 ? `<div><span>Horas de más</span><strong>${fmtHours(Math.abs(usage.remaining))}</strong></div>` : ''}
       </div>
       ${progressBar(usage.used, toNumber(budget.hours) || 1)}
+      ${isAdminContext() ? `<button class="btn btn-soft btn-edit-budget" type="button" data-budget-id="${esc(budget.id)}">Editar bolsa</button>` : ''}
     </div>`;
   }).join('') : '<p class="helper-text">Crea una bolsa de horas (con su rango de fechas) para empezar a comparar acuerdo vs. uso real.</p>';
 }
@@ -832,14 +855,16 @@ function loadLogs(id) {
     .filter(log => String(log.taskId) === String(id))
     .sort((a, b) => String(b.start).localeCompare(String(a.start)));
 
-  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
   table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => {
     const scope = logScopeOf(log);
+    const budget = log.budgetId ? store.budgets.find(item => String(item.id) === String(log.budgetId)) : null;
+    const scopeDetail = budget ? `${logScopeLabel(scope)} · ${fmtBudgetRange(budget)}` : logScopeLabel(scope);
     return `
     <tr>
       <td data-th="Inicio">${esc(formatDateTime(log.start))}</td>
       <td data-th="Fin">${esc(formatDateTime(log.end))}</td>
-      <td data-th="Ámbito"><span class="${logScopeClass(scope)}">${esc(logScopeLabel(scope))}</span></td>
+      <td data-th="Ámbito / bolsa"><span class="${logScopeClass(scope)}">${esc(scopeDetail)}</span></td>
       <td data-th="Horas">${fmtHours(log.recognizedHours || log.durationHours)}</td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
       <td data-th="Estado">${esc(log.state || '')}</td>
@@ -849,13 +874,57 @@ function loadLogs(id) {
   $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
 }
 
+function availableBudgetsForLog() {
+  const task = getTaskById($('#logTaskId')?.value) || currentTask;
+  const teacherEmail = String(task?.teacherEmail || ME || '').toLowerCase();
+  const logDate = dateOnly($('#logInicio')?.value) || todayISO();
+  return store.budgets
+    .filter(budget => String(budget.teacherEmail || '').toLowerCase() === teacherEmail)
+    .filter(budget => {
+      const start = dateOnly(budget.startDate);
+      const effectiveEnd = budgetEffectiveEnd(budget);
+      return (!start || logDate >= start) && (!effectiveEnd || logDate <= effectiveEnd);
+    })
+    .sort((a, b) => String(a.endDate || '').localeCompare(String(b.endDate || '')));
+}
+
+function updateLogBudgetOptions(preferredId = '') {
+  const field = $('#logBudgetField');
+  const select = $('#logBudgetId');
+  if (!field || !select) return;
+  const isBolsa = norm($('#logScope')?.value).includes('bolsa');
+  field.hidden = !isBolsa;
+  select.required = isBolsa;
+  if (!isBolsa) {
+    select.innerHTML = '';
+    return;
+  }
+  const budgets = availableBudgetsForLog();
+  select.innerHTML = budgets.length
+    ? budgets.map(budget => {
+      const usage = budgetUsage(budget);
+      const remaining = Math.max(0, usage.remaining);
+      return `<option value="${esc(budget.id)}">${esc(fmtBudgetRange(budget))} · faltan ${fmtHours(remaining)}</option>`;
+    }).join('')
+    : '<option value="">No hay una bolsa disponible para esta fecha</option>';
+  const wanted = preferredId || select.dataset.selected || '';
+  if (wanted && budgets.some(budget => String(budget.id) === String(wanted))) {
+    select.value = wanted;
+  } else {
+    const oldestPending = budgets.find(budget => budgetUsage(budget).remaining > 0);
+    if (oldestPending) select.value = oldestPending.id;
+  }
+  delete select.dataset.selected;
+}
+
 function updateLogScopeHint() {
   const hint = $('#logScopeHint');
   if (!hint) return;
   const isBolsa = norm($('#logScope')?.value).includes('bolsa');
   hint.textContent = isBolsa
-    ? 'Este rato cuenta para la bolsa de horas: descuenta de las horas que el docente debe reponer.'
+    ? 'Elige la semana a la que se abonarán estas horas. Puedes registrar horas adicionales aunque la bolsa ya quede cumplida.'
     : 'Jornada normal: se trabaja dentro del horario y NO descuenta de la bolsa de horas.';
+  updateLogBudgetOptions();
 }
 
 function updateDurationPreview() {
@@ -881,10 +950,12 @@ async function submitLog(event) {
   const improve = $('#logMejorar').value.trim();
   const workType = $('#logTipoTrabajo').value;
   const logScope = norm($('#logScope')?.value).includes('bolsa') ? 'bolsa' : 'jornada';
+  const budgetId = logScope === 'bolsa' ? String($('#logBudgetId')?.value || '') : '';
 
   if (!id) return showFormMessage('Falta el ID de la tarea.', true);
   if (calculated <= 0) return showFormMessage('La fecha de fin debe ser posterior al inicio.', true);
   if (!advanced) return showFormMessage('Describe qué se avanzó.', true);
+  if (logScope === 'bolsa' && !budgetId) return showFormMessage('Selecciona la bolsa o semana a la que se sumarán estas horas.', true);
 
   const submitButton = $('#logForm button[type="submit"]');
   submitButton.disabled = true;
@@ -901,7 +972,7 @@ async function submitLog(event) {
     start, end,
     durationHours: calculated,
     recognizedHours: recognized,
-    workType, logScope, state,
+    workType, logScope, budgetId, state,
     advanced, missing, improve,
     createdAt: new Date().toISOString()
   };
@@ -939,6 +1010,7 @@ function clearLogFormKeepTask() {
   });
   setDefaultLogTimes();
   updateDurationPreview();
+  updateLogBudgetOptions();
 }
 
 async function saveEstimate(event) {
@@ -1043,28 +1115,61 @@ async function saveBudget(event) {
   }
   const person = assigned.label;
   const hours = toNumber($('#budgetHours').value);
+  const toleranceDays = Math.max(0, Math.min(30, Number($('#budgetToleranceDays').value) || 0));
   const note = $('#budgetNote').value.trim();
   const period = String(startDate).slice(0, 7); // mes de inicio (compatibilidad)
-  const existing = store.budgets.find(budget =>
-    String(budget.teacherEmail || '').toLowerCase() === assigned.email &&
-    dateOnly(budget.startDate) === startDate && dateOnly(budget.endDate) === endDate);
+  const editingId = String($('#budgetId').value || '');
+  const existing = editingId
+    ? store.budgets.find(budget => String(budget.id) === editingId)
+    : store.budgets.find(budget =>
+      String(budget.teacherEmail || '').toLowerCase() === assigned.email &&
+      dateOnly(budget.startDate) === startDate && dateOnly(budget.endDate) === endDate);
 
   const budget = existing
-    ? { ...existing, teacherEmail: assigned.email, teacherName: assigned.label, person, hours, note, startDate, endDate, period }
-    : { id: uid('BOLSA'), teacherEmail: assigned.email, teacherName: assigned.label, person, hours, note, startDate, endDate, period, createdAt: new Date().toISOString() };
+    ? { ...existing, teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, note, startDate, endDate, period, updatedAt: new Date().toISOString() }
+    : { id: uid('BOLSA'), teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, note, startDate, endDate, period, createdAt: new Date().toISOString() };
 
   try {
     await dbSaveBudget(budget);
     if (existing) Object.assign(existing, budget);
     else store.budgets.push(budget);
     renderAll();
-    form.reset();
-    fillTeacherSelect($('#budgetTeacherEmail'), assigned.email);
-    $('#budgetPerson').value = person;
+    resetBudgetForm(assigned.email);
   } catch (err) {
     console.error(err);
     alert(`No se pudo guardar la bolsa: ${err.message}`);
   }
+}
+
+function resetBudgetForm(teacherEmail = '') {
+  const form = $('#budgetForm');
+  form?.reset();
+  $('#budgetId').value = '';
+  $('#budgetToleranceDays').value = '7';
+  $('#budgetSubmit').textContent = 'Guardar bolsa';
+  $('#budgetCancelEdit').hidden = true;
+  fillTeacherSelect($('#budgetTeacherEmail'), teacherEmail || (isAdminContext() ? '' : ME));
+  const teacher = getTeacherFromDirectory(teacherEmail || ME);
+  $('#budgetPerson').value = teacher?.label || (isAdminContext() ? '' : inferPerson());
+  $('#budgetStart').value = todayISO();
+  $('#budgetEnd').value = addDaysISO(todayISO(), 7);
+}
+
+function editBudget(budgetId) {
+  if (!isAdminContext()) return;
+  const budget = store.budgets.find(item => String(item.id) === String(budgetId));
+  if (!budget) return;
+  $('#budgetId').value = budget.id;
+  fillTeacherSelect($('#budgetTeacherEmail'), String(budget.teacherEmail || '').toLowerCase());
+  $('#budgetPerson').value = budget.teacherName || budget.person || '';
+  $('#budgetHours').value = round2(budget.hours);
+  $('#budgetStart').value = dateOnly(budget.startDate);
+  $('#budgetEnd').value = dateOnly(budget.endDate);
+  $('#budgetToleranceDays').value = budgetToleranceDays(budget);
+  $('#budgetNote').value = budget.note || '';
+  $('#budgetSubmit').textContent = 'Actualizar bolsa';
+  $('#budgetCancelEdit').hidden = false;
+  $('#budgetForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 
@@ -1178,6 +1283,8 @@ function attachEvents() {
   document.addEventListener('click', event => {
     const detail = event.target.closest('.btn-detail');
     if (detail?.dataset?.id) openDetailById(detail.dataset.id);
+    const editBudgetButton = event.target.closest('.btn-edit-budget');
+    if (editBudgetButton?.dataset?.budgetId) editBudget(editBudgetButton.dataset.budgetId);
     if (event.target.dataset.close) hideModal(event.target.closest('.modal') ? `#${event.target.closest('.modal').id}` : null);
   });
 
@@ -1190,8 +1297,10 @@ function attachEvents() {
   $('#btnExportHours')?.addEventListener('click', exportHoursCsv);
   $('#btnExportJson')?.addEventListener('click', exportJson);
   $('#logInicio')?.addEventListener('change', updateDurationPreview);
+  $('#logInicio')?.addEventListener('change', updateLogBudgetOptions);
   $('#logFin')?.addEventListener('change', updateDurationPreview);
   $('#logScope')?.addEventListener('change', updateLogScopeHint);
+  $('#budgetCancelEdit')?.addEventListener('click', () => resetBudgetForm());
   $('#btnBackHub')?.addEventListener('click', goBackToHub);
 
   // Estos botones eran de la era localStorage; ya no aplican (todo va a Firebase).
@@ -1202,13 +1311,10 @@ function attachEvents() {
 async function init() {
   readContextFromUrl();
   attachEvents();
-  // Rango por defecto de la bolsa: de hoy a una semana.
+  // Rango por defecto de la bolsa: de hoy a una semana, más 7 días de tolerancia.
   if ($('#budgetStart')) $('#budgetStart').value = todayISO();
-  if ($('#budgetEnd')) {
-    const week = new Date();
-    week.setDate(week.getDate() + 7);
-    $('#budgetEnd').value = week.toLocaleDateString('en-CA');
-  }
+  if ($('#budgetEnd')) $('#budgetEnd').value = addDaysISO(todayISO(), 7);
+  if ($('#budgetToleranceDays')) $('#budgetToleranceDays').value = '7';
   $('#objPeriod').value = todayMonth();
 
   // Firebase: reutiliza la sesión del HUB (mismo origen).
