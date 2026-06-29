@@ -904,7 +904,8 @@ function updateLogBudgetOptions(preferredId = '') {
     ? budgets.map(budget => {
       const usage = budgetUsage(budget);
       const remaining = Math.max(0, usage.remaining);
-      return `<option value="${esc(budget.id)}">${esc(fmtBudgetRange(budget))} · faltan ${fmtHours(remaining)}</option>`;
+      const completed = remaining <= 0;
+      return `<option value="${esc(budget.id)}" ${completed ? 'disabled' : ''}>${esc(fmtBudgetRange(budget))} · ${completed ? 'ya cumplida' : `faltan ${fmtHours(remaining)}`}</option>`;
     }).join('')
     : '<option value="">No hay una bolsa disponible para esta fecha</option>';
   const wanted = preferredId || select.dataset.selected || '';
@@ -956,6 +957,15 @@ async function submitLog(event) {
   if (calculated <= 0) return showFormMessage('La fecha de fin debe ser posterior al inicio.', true);
   if (!advanced) return showFormMessage('Describe qué se avanzó.', true);
   if (logScope === 'bolsa' && !budgetId) return showFormMessage('Selecciona la bolsa o semana a la que se sumarán estas horas.', true);
+  if (logScope === 'bolsa') {
+    const selectedBudget = store.budgets.find(budget => String(budget.id) === budgetId);
+    if (!selectedBudget) return showFormMessage('La bolsa seleccionada ya no está disponible.', true);
+    const remaining = Math.max(0, budgetUsage(selectedBudget).remaining);
+    if (remaining <= 0) return showFormMessage('Ya se cumplió esta bolsa. Selecciona otra semana pendiente.', true);
+    if (recognized > remaining) {
+      return showFormMessage(`Esta bolsa solo tiene ${fmtHours(remaining)} pendientes. Ajusta las horas reconocidas para no excederla.`, true);
+    }
+  }
 
   const submitButton = $('#logForm button[type="submit"]');
   submitButton.disabled = true;
