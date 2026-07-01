@@ -266,11 +266,21 @@ function updateStudentMessagesBadge(count = 0) {
   APP_STATE.unreadStudentMessages = Math.max(0, Number(count) || 0);
   const tile = document.querySelector('button[data-id="studentMessages"]');
   if (!tile) return;
+  const actionBadge = $(".badge", tile);
   let badge = $(".messageTileBadge", tile);
   if (!badge) {
     badge = document.createElement("span");
     badge.className = "messageTileBadge";
-    tile.appendChild(badge);
+    badge.setAttribute("aria-hidden", "true");
+    if (actionBadge) {
+      actionBadge.classList.add("badgeWithNotify");
+      actionBadge.appendChild(badge);
+    } else {
+      tile.appendChild(badge);
+    }
+  } else if (actionBadge && badge.parentElement !== actionBadge) {
+    actionBadge.classList.add("badgeWithNotify");
+    actionBadge.appendChild(badge);
   }
   badge.textContent = APP_STATE.unreadStudentMessages > 99 ? "99+" : String(APP_STATE.unreadStudentMessages);
   badge.hidden = APP_STATE.unreadStudentMessages === 0;
