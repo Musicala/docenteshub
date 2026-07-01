@@ -412,6 +412,20 @@
               <textarea id="logMejorar" rows="3" placeholder="Ej.: Aclarar tiempos de ejecución y simplificar ejemplos."></textarea>
             </label>
 
+            <fieldset class="evidence-field full">
+              <legend>Evidencias del avance</legend>
+              <label>
+                <span>Fotos o videos</span>
+                <input id="logEvidenceFiles" type="file" accept="image/*,video/*" multiple />
+                <small class="field-hint">Hasta 5 archivos. Cada foto puede pesar máximo 8 MB y cada video máximo 30 MB.</small>
+              </label>
+              <label>
+                <span>Links de evidencia</span>
+                <textarea id="logEvidenceLinks" rows="3" placeholder="Pega un link por línea: Drive, YouTube, Canva, documento, etc."></textarea>
+                <small class="field-hint">Máximo 5 enlaces que comiencen por http:// o https://.</small>
+              </label>
+            </fieldset>
+
             <div class="form-actions full">
               <button type="submit" class="btn btn-dark">Guardar registro</button>
               <button type="button" class="btn btn-soft" data-close="1">Cerrar</button>
@@ -494,6 +508,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-06-29.2"></script>
+  <script type="module" src="script.js?v=2026-07-01.1"></script>
 </body>
 </html>

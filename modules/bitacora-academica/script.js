@@ -30,6 +30,7 @@ import {
   deleteDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 /* Mismo proyecto que el HUB (config pública del cliente). */
 const firebaseConfig = {
@@ -94,6 +95,7 @@ const ACADEMIC_CTX = { email: '', name: '', role: 'Docente', embedded: false };
 
 let DB = null;
 let AUTH = null;
+let STORAGE = null;
 let ME = '';        // correo autenticado (fuente de verdad para escribir)
 let currentTask = null;
 let activeView = 'resumen';
@@ -855,7 +857,7 @@ function loadLogs(id) {
     .filter(log => String(log.taskId) === String(id))
     .sort((a, b) => String(b.start).localeCompare(String(a.start)));
 
-  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Estado</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Evidencias</th><th>Estado</th></tr>';
   table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => {
     const scope = logScopeOf(log);
     const budget = log.budgetId ? store.budgets.find(item => String(item.id) === String(log.budgetId)) : null;
@@ -867,10 +869,11 @@ function loadLogs(id) {
       <td data-th="Ámbito / bolsa"><span class="${logScopeClass(scope)}">${esc(scopeDetail)}</span></td>
       <td data-th="Horas">${fmtHours(log.recognizedHours || log.durationHours)}</td>
       <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
+      <td data-th="Evidencias" class="wrap">${renderEvidence(log.evidence)}</td>
       <td data-th="Estado">${esc(log.state || '')}</td>
     </tr>
   `;
-  }).join('') : emptyRow(6, 'No hay registros para esta tarea todavía.');
+  }).join('') : emptyRow(7, 'No hay registros para esta tarea todavía.');
   $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
 }
 
@@ -886,6 +889,57 @@ function availableBudgetsForLog() {
       return (!start || logDate >= start) && (!effectiveEnd || logDate <= effectiveEnd);
     })
     .sort((a, b) => String(a.endDate || '').localeCompare(String(b.endDate || '')));
+}
+
+function renderEvidence(items = []) {
+  if (!Array.isArray(items) || !items.length) return '<span class="status">Sin evidencia</span>';
+  return items.map((item, index) => {
+    const label = item.kind === 'link' ? `🔗 Enlace ${index + 1}` : item.type?.startsWith('video/') ? '🎬 Video' : '📷 Foto';
+    return `<a class="evidence-chip" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  }).join(' ');
+}
+
+function evidenceLinks() {
+  return String($('#logEvidenceLinks')?.value || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+}
+
+function validateEvidence(files, links) {
+  if (files.length > 5) return 'Puedes adjuntar máximo 5 archivos por avance.';
+  if (links.length > 5) return 'Puedes agregar máximo 5 enlaces por avance.';
+  for (const link of links) {
+    try {
+      const url = new URL(link);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    } catch (_) { return `El enlace no es válido: ${link}`; }
+  }
+  for (const file of files) {
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    if (!isImage && !isVideo) return `${file.name}: solo se permiten fotos o videos.`;
+    const limit = isVideo ? 30 : 8;
+    if (file.size > limit * 1024 * 1024) return `${file.name} supera el límite de ${limit} MB.`;
+  }
+  return '';
+}
+
+function safeStorageName(name) {
+  return String(name || 'archivo').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100);
+}
+
+async function uploadEvidence(files, teacherEmail, taskId, logId) {
+  const uploaded = [];
+  try {
+    for (const file of files) {
+      const path = `academic-evidence/${teacherEmail}/${taskId}/${logId}/${Date.now()}-${safeStorageName(file.name)}`;
+      const storageRef = ref(STORAGE, path);
+      await uploadBytes(storageRef, file, { contentType: file.type });
+      uploaded.push({ kind: 'file', name: file.name, type: file.type, size: file.size, path, url: await getDownloadURL(storageRef) });
+    }
+    return uploaded;
+  } catch (error) {
+    await Promise.allSettled(uploaded.map(item => deleteObject(ref(STORAGE, item.path))));
+    throw error;
+  }
 }
 
 function updateLogBudgetOptions(preferredId = '') {
@@ -952,10 +1006,14 @@ async function submitLog(event) {
   const workType = $('#logTipoTrabajo').value;
   const logScope = norm($('#logScope')?.value).includes('bolsa') ? 'bolsa' : 'jornada';
   const budgetId = logScope === 'bolsa' ? String($('#logBudgetId')?.value || '') : '';
+  const files = Array.from($('#logEvidenceFiles')?.files || []);
+  const links = evidenceLinks();
+  const evidenceError = validateEvidence(files, links);
 
   if (!id) return showFormMessage('Falta el ID de la tarea.', true);
   if (calculated <= 0) return showFormMessage('La fecha de fin debe ser posterior al inicio.', true);
   if (!advanced) return showFormMessage('Describe qué se avanzó.', true);
+  if (evidenceError) return showFormMessage(evidenceError, true);
   if (logScope === 'bolsa' && !budgetId) return showFormMessage('Selecciona la bolsa o semana a la que se sumarán estas horas.', true);
   if (logScope === 'bolsa') {
     const selectedBudget = store.budgets.find(budget => String(budget.id) === budgetId);
@@ -971,8 +1029,9 @@ async function submitLog(event) {
   submitButton.disabled = true;
   showFormMessage('Guardando…');
 
+  const logId = uid('LOG');
   const log = {
-    id: uid('LOG'),
+    id: logId,
     taskId: id,
     taskTitle: task?.title || $('#logTaskName').textContent.trim(),
     teacherEmail: task?.teacherEmail || ME,
@@ -983,11 +1042,14 @@ async function submitLog(event) {
     durationHours: calculated,
     recognizedHours: recognized,
     workType, logScope, budgetId, state,
-    advanced, missing, improve,
+    advanced, missing, improve, evidence: [],
     createdAt: new Date().toISOString()
   };
 
   try {
+    showFormMessage(files.length ? `Subiendo ${files.length} archivo${files.length === 1 ? '' : 's'}…` : 'Guardando…');
+    const uploaded = await uploadEvidence(files, log.teacherEmail, id, logId);
+    log.evidence = [...uploaded, ...links.map(url => ({ kind: 'link', url }))];
     await dbSaveHourLog(log);
     store.hourLogs.push(log);
     // Actualiza el estado de la tarea según el último cierre.
@@ -1015,7 +1077,7 @@ function showFormMessage(message, isError = false) {
 }
 
 function clearLogFormKeepTask() {
-  ['#logInicio', '#logFin', '#logHorasReconocidas', '#logAvanzo', '#logFalta', '#logMejorar'].forEach(sel => {
+  ['#logInicio', '#logFin', '#logHorasReconocidas', '#logAvanzo', '#logFalta', '#logMejorar', '#logEvidenceLinks', '#logEvidenceFiles'].forEach(sel => {
     if ($(sel)) $(sel).value = '';
   });
   setDefaultLogTimes();
@@ -1331,6 +1393,7 @@ async function init() {
   const app = initializeApp(firebaseConfig);
   AUTH = getAuth(app);
   DB = getFirestore(app);
+  STORAGE = getStorage(app);
 
   setStatus('Verificando sesión…');
   onAuthStateChanged(AUTH, async (user) => {

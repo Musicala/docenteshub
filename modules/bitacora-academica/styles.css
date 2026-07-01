@@ -372,3 +372,8 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
 }
 
 .admin-only-field[hidden]{display:none!important}
+.evidence-field{margin:0;padding:14px;border:1px solid var(--line);border-radius:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.evidence-field legend{padding:0 6px;font-weight:950;color:var(--ink)}
+.evidence-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:#f2edff;color:#39206f;font-size:12px;font-weight:800;text-decoration:none}
+.evidence-chip:hover{text-decoration:underline}
+@media (max-width:720px){.evidence-field{grid-template-columns:1fr}}
