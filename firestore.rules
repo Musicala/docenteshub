@@ -161,6 +161,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdminReader();
     }
 
+    // Directorio mínimo compartido con Estudiantes HUB. No expone áreas,
+    // vencimientos ni configuración interna de hubUsers.
+    match /teacherDirectory/{userEmail} {
+      allow read: if true;
+      allow create, update, delete: if isAdminReader();
+    }
+
     // Botones personalizados creados desde el panel admin. Cualquier docente con
     // acceso puede leerlos (para pintarlos en su HUB); solo admins los gestionan.
     match /hubButtons/{buttonId} {

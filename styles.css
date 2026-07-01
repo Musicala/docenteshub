@@ -3802,3 +3802,17 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
     grid-template-columns:1fr;
   }
 }
+/* Mensajes privados Estudiantes HUB */
+.messageHub{width:min(980px,94vw);height:min(760px,90vh);display:flex;flex-direction:column}
+.messageHubHead,.messageConversationHead{display:flex;justify-content:space-between;gap:16px;align-items:center}
+.messageHubLayout{display:grid;grid-template-columns:280px 1fr;gap:14px;min-height:0;flex:1;margin-top:14px}
+#messageThreads{overflow:auto;border-right:1px solid #e6e8ef;padding-right:10px}
+.messageThread{width:100%;border:0;background:#f7f8fc;border-radius:14px;padding:12px;text-align:left;margin-bottom:8px;display:grid;gap:3px;cursor:pointer}
+.messageThread span,.messageThread small{color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.messageNew{display:inline-block;background:#ce0039;color:white;border-radius:999px;padding:2px 7px;font-size:10px;margin-left:5px}
+#messageConversation{display:flex;flex-direction:column;min-height:0}
+.messageBubbles{flex:1;overflow:auto;padding:12px;background:#f7f8fc;border-radius:16px}
+.messageBubble{max-width:78%;background:white;border-radius:14px;padding:10px 12px;margin:7px 0;box-shadow:0 2px 8px #15204412}
+.messageBubble.own{margin-left:auto;background:#e8f0ff}.messageBubble p{margin:4px 0;white-space:pre-wrap}
+.messageComposer{display:flex;gap:8px;margin-top:10px}.messageComposer textarea{flex:1;border:1px solid #d7dce5;border-radius:12px;padding:10px;resize:none}
+@media(max-width:700px){.messageHubLayout{grid-template-columns:1fr;grid-template-rows:180px 1fr}#messageThreads{border-right:0;border-bottom:1px solid #e6e8ef;padding-right:0}.messageHub{height:94vh}}

@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-06-29.3";
+const BUILD = "2026-07-01.3";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -44,6 +44,15 @@ const BIBLIOTECA_FIREBASE_CONFIG = {
 };
 
 // Áreas macro que se asignan a cada docente desde el panel admin.
+const STUDENTS_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDQcHQEzGE1DDpD1b_foUTmVo3D9LK_0N0",
+  authDomain: "bitacoras-de-clase.firebaseapp.com",
+  projectId: "bitacoras-de-clase",
+  storageBucket: "bitacoras-de-clase.appspot.com",
+  messagingSenderId: "1047385643159",
+  appId: "1:1047385643159:web:074d75890a648f6ac5f1d2"
+};
+
 const BIBLIOTECA_MACRO_AREAS = ["Música", "Danzas", "Artes plásticas", "Teatro"];
 
 /* ============================================================================
@@ -167,6 +176,7 @@ const HUB = {
       section: "Gestión docente"
     },
 
+    { id: "studentMessages", icon: "💬", title: "Mensajes de estudiantes", subtitle: "Conversaciones privadas", section: "Gestión docente" },
     { id: "bibliotecaRecursos", icon: "📚", title: "Biblioteca de Recursos", subtitle: "Materiales por área", section: "Recursos" },
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
@@ -214,6 +224,10 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  addDoc,
+  updateDoc,
+  onSnapshot,
+  writeBatch,
   deleteDoc,
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
@@ -231,6 +245,8 @@ const APP_STATE = {
   hubUserDoc: null,    // doc de hubUsers del usuario activo (areas, especialidades…)
   db: null,
   bibliotecaDb: null,  // Firestore del proyecto biblioteca (solo lectura)
+  studentsDb: null,
+  studentsAuth: null,
   bibliotecaCache: { recursos: null, areasConfig: null },
   teacherSchedule: {
     loading: false,
@@ -3641,11 +3657,19 @@ async function saveHubUser(email, data) {
   // esa ilusión tan humana de “guardó” cuando Firebase estaba diciendo “pues no”.
   const check = await getDoc(ref);
   if (!check.exists()) throw new Error("No se pudo verificar el docente guardado en Firestore.");
+  const saved = check.data() || {};
+  await setDoc(doc(APP_STATE.db, "teacherDirectory", email), {
+    email,
+    name: saved.label || saved.name || email,
+    enabled: saved.enabled !== false && !isAccessExpired(saved.accessExpiresAt),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
   return { email, ...(check.data() || {}) };
 }
 
 async function deleteHubUser(email) {
   await deleteDoc(doc(APP_STATE.db, "hubUsers", email));
+  await deleteDoc(doc(APP_STATE.db, "teacherDirectory", email));
 }
 
 function isValidEmail(value) {
@@ -4915,6 +4939,89 @@ function ensureMusiProfeBot() {
   });
 }
 
+function ensureStudentsServices() {
+  if (APP_STATE.studentsDb) return;
+  const secondary = initializeApp(STUDENTS_FIREBASE_CONFIG, "estudiantes-mensajes");
+  APP_STATE.studentsDb = getFirestore(secondary);
+  APP_STATE.studentsAuth = getAuth(secondary);
+}
+
+async function connectStudentsMessages() {
+  ensureStudentsServices();
+  if (emailKey(APP_STATE.studentsAuth.currentUser) === emailKey(APP_STATE.activeUser)) return;
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ login_hint: emailKey(APP_STATE.activeUser), prompt: "select_account" });
+  const result = await signInWithPopup(APP_STATE.studentsAuth, provider);
+  if (emailKey(result.user) !== emailKey(APP_STATE.activeUser)) {
+    await signOut(APP_STATE.studentsAuth);
+    throw new Error("Conecta la misma cuenta que usas en Docentes HUB.");
+  }
+}
+
+function openStudentMessages() {
+  let threadsUnsubscribe = null;
+  let conversationUnsubscribe = null;
+  const overlay = document.createElement("div");
+  overlay.className = "adminSubModal";
+  overlay.innerHTML = `<div class="adminSubCard adminSubCardWide messageHub" role="dialog" aria-modal="true">
+    <div class="messageHubHead"><div><h3>Mensajes de estudiantes</h3><p class="adminSubSub">Privados entre estudiante, docente asignado y coordinación.</p></div><button class="btnGhost" id="messagesClose" type="button">Cerrar</button></div>
+    <div id="messagesConnect"><button class="btnGoogle" id="messagesConnectBtn" type="button">Conectar mensajes</button><p class="adminNote">Google confirmará el acceso al Firebase académico la primera vez.</p></div>
+    <div class="messageHubLayout" id="messagesLayout" hidden><aside id="messageThreads"></aside><section id="messageConversation"><p class="adminNote">Elige una conversación.</p></section></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close = () => { threadsUnsubscribe?.(); conversationUnsubscribe?.(); overlay.remove(); };
+  $("#messagesClose", overlay)?.addEventListener("click", close);
+
+  const openConversation = (studentId, thread) => {
+    conversationUnsubscribe?.();
+    const panel = $("#messageConversation", overlay);
+    const ref = collection(APP_STATE.studentsDb, "student_messages", studentId, "messages");
+    conversationUnsubscribe = onSnapshot(query(ref, orderBy("createdAt", "asc"), limit(150)), async (snap) => {
+      const messages = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+      panel.innerHTML = `<div class="messageConversationHead"><strong>${escapeHtml(thread.studentName || studentId)}</strong><span>${escapeHtml(thread.teacherName || thread.teacherEmail || "")}</span></div>
+        <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${message.senderRole === "teacher" ? "own" : ""}"><strong>${escapeHtml(message.senderName || message.senderRole)}</strong><p>${escapeHtml(message.text || "")}</p></article>`).join("") || `<p class="adminNote">Aún no hay mensajes.</p>`}</div>
+        <form class="messageComposer"><textarea rows="2" maxlength="800" placeholder="Escribe una respuesta…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
+      const unread = messages.filter((message) => message.senderRole === "student" && message.read !== true);
+      if (unread.length) {
+        const batch = writeBatch(APP_STATE.studentsDb);
+        unread.forEach((message) => batch.update(doc(APP_STATE.studentsDb, "student_messages", studentId, "messages", message.id), { read: true }));
+        batch.commit().catch(() => {});
+        setDoc(doc(APP_STATE.studentsDb, "student_messages", studentId), { teacherUnread: false }, { merge: true }).catch(() => {});
+      }
+      $(".messageComposer", panel)?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const input = $("textarea", event.currentTarget);
+        const text = input.value.trim(); if (!text) return;
+        await addDoc(ref, { studentId, teacherEmail: thread.teacherEmail, text, senderRole: "teacher", senderName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente", senderEmail: emailKey(APP_STATE.activeUser), read: false, createdAt: serverTimestamp() });
+        await setDoc(doc(APP_STATE.studentsDb, "student_messages", studentId), { lastMessage: text.slice(0, 160), lastSenderRole: "teacher", studentUnread: true, updatedAt: serverTimestamp() }, { merge: true });
+        input.value = "";
+      });
+    });
+  };
+
+  const connect = async () => {
+    try {
+      await connectStudentsMessages();
+      $("#messagesConnect", overlay).hidden = true;
+      $("#messagesLayout", overlay).hidden = false;
+      const base = collection(APP_STATE.studentsDb, "student_messages");
+      const inboxQuery = isAdminUser(APP_STATE.activeUser)
+        ? query(base, orderBy("updatedAt", "desc"), limit(100))
+        : query(base, where("teacherEmail", "==", emailKey(APP_STATE.activeUser)), limit(100));
+      threadsUnsubscribe = onSnapshot(inboxQuery, (snap) => {
+        const threads = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+        const list = $("#messageThreads", overlay);
+        list.innerHTML = threads.length ? threads.map((thread) => `<button class="messageThread" data-id="${escapeHtml(thread.id)}" type="button"><strong>${escapeHtml(thread.studentName || thread.id)} ${thread.teacherUnread ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.teacherName || thread.teacherEmail || "")}</span><small>${escapeHtml(thread.lastMessage || "Sin mensajes")}</small></button>`).join("") : `<p class="adminNote">No hay conversaciones asignadas.</p>`;
+        $$(".messageThread", list).forEach((button) => button.addEventListener("click", () => openConversation(button.dataset.id, threads.find((item) => item.id === button.dataset.id))));
+      }, (error) => { console.error(error); toast("Publica primero las reglas de Estudiantes HUB."); });
+    } catch (error) { console.error(error); toast(error?.message || "No se pudo conectar."); }
+  };
+  $("#messagesConnectBtn", overlay)?.addEventListener("click", connect);
+  ensureStudentsServices();
+  if (APP_STATE.studentsAuth.currentUser) connect();
+}
+
 async function handleButtonAction(id, trigger = null) {
   if (!id) return;
 
@@ -4945,6 +5052,11 @@ async function handleButtonAction(id, trigger = null) {
 
   if (id === "bibliotecaRecursos") {
     openBibliotecaModule();
+    return;
+  }
+
+  if (id === "studentMessages") {
+    openStudentMessages();
     return;
   }
 
