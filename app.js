@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-01.5";
+const BUILD = "2026-07-01.6";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -247,6 +247,9 @@ const APP_STATE = {
   bibliotecaDb: null,  // Firestore del proyecto biblioteca (solo lectura)
   studentsDb: null,
   studentsAuth: null,
+  studentsAuthWired: false,
+  unreadStudentMessages: 0,
+  unreadMessagesUnsubscribe: null,
   bibliotecaCache: { recursos: null, areasConfig: null },
   teacherSchedule: {
     loading: false,
@@ -258,6 +261,43 @@ const APP_STATE = {
     record: null
   }
 };
+
+function updateStudentMessagesBadge(count = 0) {
+  APP_STATE.unreadStudentMessages = Math.max(0, Number(count) || 0);
+  const tile = document.querySelector('button[data-id="studentMessages"]');
+  if (!tile) return;
+  let badge = $(".messageTileBadge", tile);
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "messageTileBadge";
+    tile.appendChild(badge);
+  }
+  badge.textContent = APP_STATE.unreadStudentMessages > 99 ? "99+" : String(APP_STATE.unreadStudentMessages);
+  badge.hidden = APP_STATE.unreadStudentMessages === 0;
+  tile.setAttribute("aria-label", APP_STATE.unreadStudentMessages
+    ? `Mensajes de estudiantes, ${APP_STATE.unreadStudentMessages} sin leer`
+    : "Mensajes de estudiantes");
+}
+
+function startStudentMessagesBadge() {
+  APP_STATE.unreadMessagesUnsubscribe?.();
+  APP_STATE.unreadMessagesUnsubscribe = null;
+  ensureStudentsServices();
+  if (emailKey(APP_STATE.studentsAuth.currentUser) !== emailKey(APP_STATE.activeUser)) {
+    updateStudentMessagesBadge(0);
+    return;
+  }
+  const base = collection(APP_STATE.studentsDb, "student_messages");
+  const inboxQuery = isAdminUser(APP_STATE.activeUser)
+    ? query(base, limit(100))
+    : query(base, where("teacherEmail", "==", emailKey(APP_STATE.activeUser)), limit(100));
+  APP_STATE.unreadMessagesUnsubscribe = onSnapshot(inboxQuery, (snap) => {
+    updateStudentMessagesBadge(snap.docs.filter((item) => item.data()?.teacherUnread === true).length);
+  }, (error) => {
+    console.warn("No se pudo actualizar el contador de mensajes", error);
+    updateStudentMessagesBadge(0);
+  });
+}
 
 const TEACHER_SITE_QR_ARRIVAL = "ADM-LLEGADA";
 const TEACHER_SITE_QR_EXIT = "ADM-SALIDA";
@@ -4716,6 +4756,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   }
 
   grid.innerHTML = html;
+  updateStudentMessagesBadge(APP_STATE.unreadStudentMessages);
   ensureMusiProfeBot();
   setupHubSearch(grid);
 
@@ -4967,6 +5008,14 @@ function ensureStudentsServices() {
   const secondary = initializeApp(STUDENTS_FIREBASE_CONFIG, "estudiantes-mensajes");
   APP_STATE.studentsDb = getFirestore(secondary);
   APP_STATE.studentsAuth = getAuth(secondary);
+  if (!APP_STATE.studentsAuthWired) {
+    APP_STATE.studentsAuthWired = true;
+    onAuthStateChanged(APP_STATE.studentsAuth, (user) => {
+      if (user && APP_STATE.activeUser && emailKey(user) === emailKey(APP_STATE.activeUser)) {
+        startStudentMessagesBadge();
+      }
+    });
+  }
 }
 
 async function connectStudentsMessages() {
@@ -5061,6 +5110,7 @@ function openStudentMessages() {
   const connect = async () => {
     try {
       await connectStudentsMessages();
+      startStudentMessagesBadge();
       $("#messagesConnect", overlay).hidden = true;
       $("#messagesLayout", overlay).hidden = false;
       const base = collection(APP_STATE.studentsDb, "student_messages");
@@ -5815,6 +5865,7 @@ async function handleAuthorizedUser(user, managed = null) {
 
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
+  startStudentMessagesBadge();
   await refreshTeacherJornadaStatus();
 }
 
