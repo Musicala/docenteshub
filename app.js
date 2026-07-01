@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-01.4";
+const BUILD = "2026-07-01.5";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -4984,26 +4984,62 @@ async function connectStudentsMessages() {
 function openStudentMessages() {
   let threadsUnsubscribe = null;
   let conversationUnsubscribe = null;
+  let allThreads = [];
+  let activeStudentId = "";
   const overlay = document.createElement("div");
   overlay.className = "adminSubModal";
   overlay.innerHTML = `<div class="adminSubCard adminSubCardWide messageHub" role="dialog" aria-modal="true">
     <div class="messageHubHead"><div><h3>Mensajes de estudiantes</h3><p class="adminSubSub">Privados entre estudiante, docente asignado y coordinación.</p></div><button class="btnGhost" id="messagesClose" type="button">Cerrar</button></div>
     <div id="messagesConnect"><button class="btnGoogle" id="messagesConnectBtn" type="button">Conectar mensajes</button><p class="adminNote">Google confirmará el acceso al Firebase académico la primera vez.</p></div>
-    <div class="messageHubLayout" id="messagesLayout" hidden><aside id="messageThreads"></aside><section id="messageConversation"><p class="adminNote">Elige una conversación.</p></section></div>
+    <div class="messageHubLayout" id="messagesLayout" hidden><aside class="messageInbox"><label class="messageSearch"><span>Buscar</span><input id="messageSearchInput" type="search" placeholder="Estudiante, docente o mensaje…" /></label><div id="messageInboxCount"></div><div id="messageThreads"></div></aside><section id="messageConversation"><div class="messageEmpty"><span>💬</span><strong>Elige una conversación</strong><p>Aquí podrás leer y responder sin perder de vista tu bandeja.</p></div></section></div>
   </div>`;
   document.body.appendChild(overlay);
   const close = () => { threadsUnsubscribe?.(); conversationUnsubscribe?.(); overlay.remove(); };
   $("#messagesClose", overlay)?.addEventListener("click", close);
 
+  const renderThreadList = () => {
+    const term = normalizeText($("#messageSearchInput", overlay)?.value || "");
+    const threads = allThreads.filter((thread) => !term || normalizeText(`${thread.studentName} ${thread.teacherName} ${thread.teacherEmail} ${thread.lastMessage}`).includes(term));
+    const list = $("#messageThreads", overlay);
+    $("#messageInboxCount", overlay).textContent = `${threads.length} conversación${threads.length === 1 ? "" : "es"}`;
+    list.innerHTML = threads.length ? threads.map((thread) => {
+      const date = thread.updatedAt?.toDate?.();
+      const dateLabel = date ? date.toLocaleDateString("es-CO", { day: "numeric", month: "short" }) : "";
+      return `<button class="messageThread ${activeStudentId === thread.id ? "active" : ""}" data-id="${escapeHtml(thread.id)}" type="button"><span class="messageThreadAvatar">${escapeHtml((thread.studentName || "E").trim().charAt(0).toUpperCase())}</span><span class="messageThreadCopy"><strong>${escapeHtml(thread.studentName || thread.id)} ${thread.teacherUnread ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.lastMessage || "Sin mensajes")}</span><small>${escapeHtml(thread.teacherName || thread.teacherEmail || "")}</small></span><time>${escapeHtml(dateLabel)}</time></button>`;
+    }).join("") : `<div class="messageEmpty small"><strong>Sin resultados</strong><p>No encontramos conversaciones con esa búsqueda.</p></div>`;
+    $$(".messageThread", list).forEach((button) => button.addEventListener("click", () => openConversation(button.dataset.id, allThreads.find((item) => item.id === button.dataset.id))));
+  };
+
+  const deleteConversation = async (studentId, thread) => {
+    if (!isAdminUser(APP_STATE.activeUser)) return;
+    if (!confirm(`¿Eliminar definitivamente la conversación con ${thread.studentName || studentId}? Esta acción no se puede deshacer.`)) return;
+    const messages = await getDocs(collection(APP_STATE.studentsDb, "student_messages", studentId, "messages"));
+    for (let index = 0; index < messages.docs.length; index += 400) {
+      const batch = writeBatch(APP_STATE.studentsDb);
+      messages.docs.slice(index, index + 400).forEach((item) => batch.delete(item.ref));
+      await batch.commit();
+    }
+    await deleteDoc(doc(APP_STATE.studentsDb, "student_messages", studentId));
+    activeStudentId = "";
+    $("#messageConversation", overlay).innerHTML = `<div class="messageEmpty"><span>✓</span><strong>Conversación eliminada</strong></div>`;
+    overlay.classList.remove("messageConversationOpen");
+    toast("Conversación eliminada.");
+  };
+
   const openConversation = (studentId, thread) => {
+    activeStudentId = studentId;
+    renderThreadList();
+    overlay.classList.add("messageConversationOpen");
     conversationUnsubscribe?.();
     const panel = $("#messageConversation", overlay);
     const ref = collection(APP_STATE.studentsDb, "student_messages", studentId, "messages");
     conversationUnsubscribe = onSnapshot(query(ref, orderBy("createdAt", "asc"), limit(150)), async (snap) => {
       const messages = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
-      panel.innerHTML = `<div class="messageConversationHead"><strong>${escapeHtml(thread.studentName || studentId)}</strong><span>${escapeHtml(thread.teacherName || thread.teacherEmail || "")}</span></div>
+      panel.innerHTML = `<div class="messageConversationHead"><button class="messageBack" type="button" aria-label="Volver a conversaciones">←</button><div><strong>${escapeHtml(thread.studentName || studentId)}</strong><span>Con ${escapeHtml(thread.teacherName || thread.teacherEmail || "docente")}</span></div>${isAdminUser(APP_STATE.activeUser) ? '<button class="messageDelete" type="button">Eliminar</button>' : ""}</div>
         <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${message.senderRole === "teacher" ? "own" : ""}"><strong>${escapeHtml(message.senderName || message.senderRole)}</strong><p>${escapeHtml(message.text || "")}</p></article>`).join("") || `<p class="adminNote">Aún no hay mensajes.</p>`}</div>
         <form class="messageComposer"><textarea rows="2" maxlength="800" placeholder="Escribe una respuesta…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
+      $(".messageBack", panel)?.addEventListener("click", () => overlay.classList.remove("messageConversationOpen"));
+      $(".messageDelete", panel)?.addEventListener("click", () => deleteConversation(studentId, thread));
       const unread = messages.filter((message) => message.senderRole === "student" && message.read !== true);
       if (unread.length) {
         const batch = writeBatch(APP_STATE.studentsDb);
@@ -5032,15 +5068,14 @@ function openStudentMessages() {
         ? query(base, orderBy("updatedAt", "desc"), limit(100))
         : query(base, where("teacherEmail", "==", emailKey(APP_STATE.activeUser)), limit(100));
       threadsUnsubscribe = onSnapshot(inboxQuery, (snap) => {
-        const threads = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
+        allThreads = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
           .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
-        const list = $("#messageThreads", overlay);
-        list.innerHTML = threads.length ? threads.map((thread) => `<button class="messageThread" data-id="${escapeHtml(thread.id)}" type="button"><strong>${escapeHtml(thread.studentName || thread.id)} ${thread.teacherUnread ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.teacherName || thread.teacherEmail || "")}</span><small>${escapeHtml(thread.lastMessage || "Sin mensajes")}</small></button>`).join("") : `<p class="adminNote">No hay conversaciones asignadas.</p>`;
-        $$(".messageThread", list).forEach((button) => button.addEventListener("click", () => openConversation(button.dataset.id, threads.find((item) => item.id === button.dataset.id))));
+        renderThreadList();
       }, (error) => { console.error(error); toast("Publica primero las reglas de Estudiantes HUB."); });
     } catch (error) { console.error(error); toast(error?.message || "No se pudo conectar."); }
   };
   $("#messagesConnectBtn", overlay)?.addEventListener("click", connect);
+  $("#messageSearchInput", overlay)?.addEventListener("input", renderThreadList);
   ensureStudentsServices();
   if (APP_STATE.studentsAuth.currentUser) connect();
 }

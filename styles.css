@@ -3803,16 +3803,18 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   }
 }
 /* Mensajes privados Estudiantes HUB */
-.messageHub{width:min(980px,94vw);height:min(760px,90vh);display:flex;flex-direction:column}
+.messageHub{width:min(1120px,94vw);height:min(780px,90vh);display:flex;flex-direction:column;padding:24px}
 .messageHubHead,.messageConversationHead{display:flex;justify-content:space-between;gap:16px;align-items:center}
-.messageHubLayout{display:grid;grid-template-columns:280px 1fr;gap:14px;min-height:0;flex:1;margin-top:14px}
-#messageThreads{overflow:auto;border-right:1px solid #e6e8ef;padding-right:10px}
-.messageThread{width:100%;border:0;background:#f7f8fc;border-radius:14px;padding:12px;text-align:left;margin-bottom:8px;display:grid;gap:3px;cursor:pointer}
-.messageThread span,.messageThread small{color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.messageHubLayout{display:grid;grid-template-columns:minmax(300px,36%) 1fr;min-height:0;flex:1;margin-top:18px;border:1px solid #e6e8ef;border-radius:18px;overflow:hidden;background:#fff}
+.messageInbox{display:flex;flex-direction:column;min-height:0;background:#fafbfe;border-right:1px solid #e6e8ef;padding:14px}
+.messageSearch{display:grid;gap:5px}.messageSearch span{font-size:12px;font-weight:800;color:#667085}.messageSearch input{width:100%;border:1px solid #d7dce5;border-radius:12px;padding:11px 12px;background:#fff}
+#messageInboxCount{font-size:12px;color:#667085;padding:10px 2px 7px}#messageThreads{overflow:auto;min-height:0}
+.messageThread{width:100%;border:1px solid transparent;background:transparent;border-radius:14px;padding:11px;text-align:left;margin-bottom:5px;display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;cursor:pointer}
+.messageThread:hover,.messageThread.active{background:#fff;border-color:#dfe4ef;box-shadow:0 5px 18px #1725540d}.messageThreadAvatar{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,#4f46e5,#c90083);color:#fff;font-weight:900}.messageThreadCopy{display:grid;min-width:0;gap:2px}.messageThreadCopy span,.messageThreadCopy small{color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.messageThread time{font-size:11px;color:#98a2b3;align-self:start}
 .messageNew{display:inline-block;background:#ce0039;color:white;border-radius:999px;padding:2px 7px;font-size:10px;margin-left:5px}
-#messageConversation{display:flex;flex-direction:column;min-height:0}
-.messageBubbles{flex:1;overflow:auto;padding:12px;background:#f7f8fc;border-radius:16px}
-.messageBubble{max-width:78%;background:white;border-radius:14px;padding:10px 12px;margin:7px 0;box-shadow:0 2px 8px #15204412}
+#messageConversation{display:flex;flex-direction:column;min-height:0;padding:16px;background:#f7f8fc}.messageConversationHead{padding:0 2px 14px}.messageConversationHead>div{display:grid}.messageConversationHead>div span{font-size:12px;color:#667085}.messageBack{display:none}.messageDelete{border:0;background:#fff0f3;color:#b42318;border-radius:10px;padding:8px 11px;font-weight:800;cursor:pointer}
+.messageBubbles{flex:1;overflow:auto;padding:14px;background:#f7f8fc}
+.messageBubble{max-width:72%;background:white;border-radius:16px;padding:11px 14px;margin:8px 0;box-shadow:0 3px 12px #15204410}
 .messageBubble.own{margin-left:auto;background:#e8f0ff}.messageBubble p{margin:4px 0;white-space:pre-wrap}
-.messageComposer{display:flex;gap:8px;margin-top:10px}.messageComposer textarea{flex:1;border:1px solid #d7dce5;border-radius:12px;padding:10px;resize:none}
-@media(max-width:700px){.messageHubLayout{grid-template-columns:1fr;grid-template-rows:180px 1fr}#messageThreads{border-right:0;border-bottom:1px solid #e6e8ef;padding-right:0}.messageHub{height:94vh}}
+.messageComposer{display:flex;gap:8px;margin-top:10px}.messageComposer textarea{flex:1;border:1px solid #d7dce5;border-radius:13px;padding:11px;resize:none}.messageEmpty{margin:auto;text-align:center;color:#667085;display:grid;gap:6px;place-items:center}.messageEmpty>span{font-size:34px}.messageEmpty.small{padding:24px 8px}
+@media(max-width:700px){.messageHub{width:100vw;height:100dvh;max-height:none;border-radius:0;padding:16px}.messageHubHead h3{font-size:20px}.messageHubLayout{display:block;position:relative}.messageInbox,#messageConversation{position:absolute;inset:0;border:0}.messageInbox{padding:12px}#messageConversation{transform:translateX(105%);transition:transform .22s ease;z-index:2}.messageConversationOpen #messageConversation{transform:translateX(0)}.messageBack{display:grid;place-items:center;border:0;background:white;border-radius:10px;width:38px;height:38px;font-size:22px}.messageConversationHead{justify-content:flex-start}.messageConversationHead .messageDelete{margin-left:auto}.messageBubble{max-width:86%}.messageComposer .btnGoogle{padding:10px 13px}}
