@@ -567,7 +567,7 @@ function renderMainTable() {
   const tbody = $('#tbl tbody');
   if (!thead || !tbody) return;
 
-  thead.innerHTML = '<tr><th>ID</th><th>Tarea</th><th>Responsable</th><th>Periodo</th><th>Estado</th><th>Horas</th><th>Acciones</th></tr>';
+  thead.innerHTML = '<tr><th>Tarea agregada</th><th>Tarea</th><th>Responsable</th><th>Periodo</th><th>Estado</th><th>Horas</th><th>Acciones</th></tr>';
   const rows = filteredTaskRows();
 
   if (!rows.length) {
@@ -584,7 +584,7 @@ function renderMainTable() {
       : `<div class="hours-cell"><strong>${fmtHours(used)}</strong><small>registradas</small></div>`;
     return `
       <tr data-id="${esc(task.id)}">
-        <td data-th="ID"><span class="mono">${esc(task.id)}</span></td>
+        <td data-th="Tarea agregada"><span class="mono">${esc(formatCreatedAt(task))}</span></td>
         <td data-th="Tarea" class="wrap"><strong>${esc(task.title)}</strong><small>${esc(task.description || task.criteria || '')}</small></td>
         <td data-th="Responsable">${esc(task.person || '—')}</td>
         <td data-th="Periodo">${esc(task.period || '—')}</td>
@@ -646,10 +646,10 @@ function renderNeedsEstimate() {
   const table = $('#tblNeedsEstimate');
   if (!table) return;
   const tasks = getAllTasks().filter(task => toNumber(task.estimatedHours) <= 0).slice(0, 10);
-  table.querySelector('thead').innerHTML = '<tr><th>ID</th><th>Tarea</th><th>Responsable</th><th>Estado</th><th>Acción</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Tarea agregada</th><th>Tarea</th><th>Responsable</th><th>Estado</th><th>Acción</th></tr>';
   table.querySelector('tbody').innerHTML = tasks.length ? tasks.map(task => `
     <tr>
-      <td data-th="ID">${esc(task.id)}</td>
+      <td data-th="Tarea agregada">${esc(formatCreatedAt(task))}</td>
       <td data-th="Tarea" class="wrap"><strong>${esc(task.title)}</strong></td>
       <td data-th="Responsable">${esc(task.person || '—')}</td>
       <td data-th="Estado"><span class="${stateClass(task.state)}">${esc(normalizeState(task.state))}</span></td>
@@ -727,7 +727,7 @@ function renderObjectivesTable() {
   const table = $('#tblObjectives');
   if (!table) return;
   const tasks = getSelectedObjectiveTasks();
-  table.querySelector('thead').innerHTML = '<tr><th>ID</th><th>Tarea / objetivo</th><th>Responsable</th><th>Periodo</th><th>Categoría</th><th>Estimado</th><th>Usado (bolsa)</th><th>Estado</th><th>Acción</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Tarea agregada</th><th>Tarea / objetivo</th><th>Responsable</th><th>Periodo</th><th>Categoría</th><th>Estimado</th><th>Usado (bolsa)</th><th>Estado</th><th>Acción</th></tr>';
 
   if (!tasks.length) {
     table.querySelector('tbody').innerHTML = emptyRow(9, 'Aún no hay avances cargados a esta bolsa. Aparecerán aquí cuando un docente registre un avance marcado como “Bolsa de horas”.');
@@ -740,7 +740,7 @@ function renderObjectivesTable() {
     const over = toNumber(task.estimatedHours) > 0 && used > toNumber(task.estimatedHours);
     return `
       <tr>
-        <td data-th="ID"><span class="mono">${esc(task.id)}</span></td>
+        <td data-th="Tarea agregada"><span class="mono">${esc(formatCreatedAt(task))}</span></td>
         <td data-th="Tarea" class="wrap"><strong>${esc(task.title)}</strong><small>${esc(task.description || task.criteria || '')}</small></td>
         <td data-th="Responsable">${esc(task.person || '—')}</td>
         <td data-th="Periodo">${esc(task.period || '—')}</td>
@@ -757,8 +757,8 @@ function renderObjectivesTable() {
 function renderHourLogs() {
   const table = $('#tblHourLogs');
   if (!table) return;
-  table.querySelector('thead').innerHTML = '<tr><th>Fecha</th><th>Tarea</th><th>Responsable</th><th>Ámbito</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th></tr>';
-  const logs = [...store.hourLogs].sort((a, b) => String(b.start).localeCompare(String(a.start)));
+  table.querySelector('thead').innerHTML = '<tr><th>Bitácora registrada</th><th>Tarea</th><th>Responsable</th><th>Ámbito</th><th>Tipo</th><th>Duración</th><th>Reconocidas</th><th>Avance</th></tr>';
+  const logs = [...store.hourLogs].sort((a, b) => String(b.createdAt || b.start).localeCompare(String(a.createdAt || a.start)));
   if (!logs.length) {
     table.querySelector('tbody').innerHTML = emptyRow(8, 'Todavía no hay horas registradas.');
     return;
@@ -767,8 +767,8 @@ function renderHourLogs() {
     const scope = logScopeOf(log);
     return `
     <tr>
-      <td data-th="Fecha"><span class="mono">${esc(formatDateTime(log.start))}</span></td>
-      <td data-th="Tarea" class="wrap"><strong>${esc(log.taskTitle || log.taskId)}</strong><small>${esc(log.taskId)}</small></td>
+      <td data-th="Bitácora registrada"><span class="mono">${esc(formatCreatedAt(log))}</span></td>
+      <td data-th="Tarea" class="wrap"><strong>${esc(log.taskTitle || log.taskId)}</strong></td>
       <td data-th="Responsable">${esc(log.person || '—')}</td>
       <td data-th="Ámbito"><span class="${logScopeClass(scope)}">${esc(logScopeLabel(scope))}</span></td>
       <td data-th="Tipo">${esc(log.workType || '—')}</td>
@@ -784,7 +784,14 @@ function formatDateTime(value) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
+}
+
+function formatCreatedAt(record) {
+  if (record?.createdAt) return formatDateTime(record.createdAt);
+  const encodedTime = String(record?.id || '').split('-')[1];
+  const timestamp = encodedTime ? parseInt(encodedTime, 36) : NaN;
+  return Number.isFinite(timestamp) ? formatDateTime(timestamp) : '—';
 }
 
 function renderAll() {
@@ -821,7 +828,7 @@ function openDetailById(id) {
 
   $('#logTaskId').value = task.id;
   $('#logTaskSource').value = task.source;
-  $('#logTaskIdTxt').textContent = task.id;
+  $('#logTaskIdTxt').textContent = formatCreatedAt(task);
   $('#logTaskName').textContent = task.title || '—';
   $('#logTaskPerson').textContent = task.person || '—';
   $('#logTaskState').textContent = normalizeState(task.state);
@@ -855,15 +862,16 @@ function loadLogs(id) {
   const table = $('#tblLogs');
   const logs = store.hourLogs
     .filter(log => String(log.taskId) === String(id))
-    .sort((a, b) => String(b.start).localeCompare(String(a.start)));
+    .sort((a, b) => String(b.createdAt || b.start).localeCompare(String(a.createdAt || a.start)));
 
-  table.querySelector('thead').innerHTML = '<tr><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Evidencias</th><th>Estado</th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Bitácora registrada</th><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Evidencias</th><th>Estado</th></tr>';
   table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => {
     const scope = logScopeOf(log);
     const budget = log.budgetId ? store.budgets.find(item => String(item.id) === String(log.budgetId)) : null;
     const scopeDetail = budget ? `${logScopeLabel(scope)} · ${fmtBudgetRange(budget)}` : logScopeLabel(scope);
     return `
     <tr>
+      <td data-th="Bitácora registrada">${esc(formatCreatedAt(log))}</td>
       <td data-th="Inicio">${esc(formatDateTime(log.start))}</td>
       <td data-th="Fin">${esc(formatDateTime(log.end))}</td>
       <td data-th="Ámbito / bolsa"><span class="${logScopeClass(scope)}">${esc(scopeDetail)}</span></td>
@@ -873,7 +881,7 @@ function loadLogs(id) {
       <td data-th="Estado">${esc(log.state || '')}</td>
     </tr>
   `;
-  }).join('') : emptyRow(7, 'No hay registros para esta tarea todavía.');
+  }).join('') : emptyRow(8, 'No hay registros para esta tarea todavía.');
   $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
 }
 
