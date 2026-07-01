@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-01.3";
+const BUILD = "2026-07-01.4";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -3592,7 +3592,29 @@ async function fetchHubUsers() {
     return {};
   }
   ADMIN_STATE.hubUsersError = "";
+  try {
+    await syncTeacherDirectory(map);
+  } catch (error) {
+    console.warn("No se pudo sincronizar teacherDirectory. Publica las reglas nuevas.", error);
+  }
   return map;
+}
+
+async function syncTeacherDirectory(managed = {}) {
+  if (!isAdminUser(APP_STATE.activeUser)) return;
+  const emails = new Set([...Object.keys(HUB.USERS || {}), ...Object.keys(managed || {})]);
+  await Promise.all(Array.from(emails).map(async (email) => {
+    const base = HUB.USERS?.[email] || {};
+    const data = managed?.[email] || {};
+    const enabled = ADMIN_EMAILS.includes(email)
+      || (data.enabled !== false && !isAccessExpired(data.accessExpiresAt));
+    await setDoc(doc(APP_STATE.db, "teacherDirectory", email), {
+      email,
+      name: data.label || data.name || base.label || email,
+      enabled,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }));
 }
 
 // Acceso temporal: convierte una opción de duración en una fecha de corte (epoch ms).
@@ -4558,12 +4580,13 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "adminPanel" ||
     button?.id === "bitacoraAcademica" ||
     button?.id === "academicModule" ||
+    button?.id === "studentMessages" ||
     button?.id === "bibliotecaRecursos";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
-  if (assignedButtons && !button?.adminOnly && !assignedButtons.includes(button?.id)) {
+  if (assignedButtons && !button?.adminOnly && button?.id !== "studentMessages" && !assignedButtons.includes(button?.id)) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.id === "horarioAnual") {
@@ -4572,7 +4595,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: true, url: "__SPECIAL__", available: visible, visible };
   }
   // Módulos internos disponibles para cualquier usuario con acceso al HUB.
-  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "bibliotecaRecursos") {
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
