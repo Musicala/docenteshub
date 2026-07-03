@@ -5283,6 +5283,13 @@ function macroAreaForBibliotecaArea(areaRaw) {
   return "Música";
 }
 
+// Macro de un recurso completo: la disciplina "institucional" es una carpeta
+// propia (material interno para docentes), independiente del área granular.
+function macroForRecurso(recurso) {
+  if (normalizeText(recurso?.disciplina) === "institucional") return "Institucional";
+  return macroAreaForBibliotecaArea(recurso?.area);
+}
+
 function getBibliotecaAccess() {
   if (isAdminUser()) return { all: true, areas: [], especialidades: [] };
   const docData = APP_STATE.hubUserDoc || {};
@@ -5299,8 +5306,10 @@ function canSeeRecurso(recurso, access) {
   if (!hasConfig) return false;
 
   const area = normalizeText(recurso?.area);
-  const macro = macroAreaForBibliotecaArea(area);
-  if (macro === "*") return true;
+  const macro = macroForRecurso(recurso);
+  // Recursos generales e institucionales: visibles para cualquier docente activo
+  // (este HUB es solo de docentes; los estudiantes tienen su propia app).
+  if (macro === "*" || macro === "Institucional") return true;
 
   if (!access.areas.includes(macro)) {
     // No tiene el área macro: solo ve la especialidad si está asignada explícitamente.
@@ -5439,6 +5448,7 @@ function biblioAreaEmoji(area) {
   if (a.includes("danza") || a.includes("ballet") || a.includes("baile")) return "💃";
   if (a.includes("teatro")) return "🎭";
   if (a.includes("plastica") || a.includes("dibujo") || a.includes("pintura") || a.includes("arte")) return "🎨";
+  if (a.includes("institucional")) return "🏫";
   if (a.includes("musica")) return "🎵";
   return "📁";
 }
@@ -5447,7 +5457,7 @@ function renderBiblioteca(body, visibles, access) {
   // Agrupación arte (macro) → área → tema → recursos para la navegación tipo carpetas.
   const byArte = new Map();
   visibles.forEach((r) => {
-    const macro = macroAreaForBibliotecaArea(r.area);
+    const macro = macroForRecurso(r);
     const arte = macro === "*" ? "General" : macro;
     const area = String(r.area || "").trim() || "General";
     const tema = String(r.tema || "").trim() || "Sin tema";
@@ -5595,7 +5605,7 @@ function renderBiblioteca(body, visibles, access) {
       let source = visibles;
       if (BIBLIO_STATE.navArte) {
         source = source.filter((r) => {
-          const macro = macroAreaForBibliotecaArea(r.area);
+          const macro = macroForRecurso(r);
           return (macro === "*" ? "General" : macro) === BIBLIO_STATE.navArte;
         });
       }
