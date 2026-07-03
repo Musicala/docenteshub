@@ -318,6 +318,12 @@ function budgetUsage(budget) {
   return { used: round2(used), remaining: round2(toNumber(budget.hours) - used) };
 }
 
+/* Una bolsa se considera cumplida si ya no le faltan horas o si coordinación
+   la dio por hecha manualmente (p. ej. horas trabajadas fuera del rango por error). */
+function isBudgetDone(budget, usage = budgetUsage(budget)) {
+  return !!budget?.manualDone || usage.remaining <= 0;
+}
+
 function budgetStatus(budget) {
   const today = todayISO();
   const start = dateOnly(budget.startDate);
@@ -664,12 +670,16 @@ function budgetTotals() {
   const budgets = store.budgets.filter(budget => !selectedPerson || budget.person === selectedPerson);
   let budgetHours = 0;
   let used = 0;
+  let remaining = 0;
   budgets.forEach(budget => {
     budgetHours += toNumber(budget.hours);
-    used += budgetUsage(budget).used; // solo avances de bolsa dentro del rango
+    const usage = budgetUsage(budget); // solo avances de bolsa dentro del rango
+    used += usage.used;
+    // Si coordinación la dio por cumplida, no queda saldo pendiente (pero el exceso sí se refleja).
+    remaining += budget.manualDone ? Math.min(0, usage.remaining) : usage.remaining;
   });
   const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
-  return { budgetHours: round2(budgetHours), estimated, used: round2(used), remaining: round2(budgetHours - used), tasks, budgets };
+  return { budgetHours: round2(budgetHours), estimated, used: round2(used), remaining: round2(remaining), tasks, budgets };
 }
 
 function progressBar(value, max) {
@@ -701,24 +711,34 @@ function renderBudgetSummary() {
   balance.innerHTML = sortedBudgets.length ? sortedBudgets.map(budget => {
     const usage = budgetUsage(budget);
     const st = budgetStatus(budget);
-    const done = usage.remaining <= 0;
+    const done = isBudgetDone(budget, usage);
+    const manualOnly = !!budget.manualDone && usage.remaining > 0;
+    const doneLabel = manualOnly ? 'Cumplida (ajuste)' : 'Cumplida';
     const faltanCls = done ? '' : (st.label === 'Vencida' ? 'danger-text' : '');
+    const pendingLeft = budget.manualDone ? 0 : Math.max(0, usage.remaining);
     return `
     <div class="balance-card">
       <div class="balance-card__head">
         <strong>${esc(budget.person)}</strong>
-        <span class="${done ? 'pill pill--ok' : st.cls}">${esc(done ? 'Cumplida' : st.label)}</span>
+        <span class="${done ? 'pill pill--ok' : st.cls}">${esc(done ? doneLabel : st.label)}</span>
       </div>
       <small class="balance-card__range">📅 ${esc(fmtBudgetRange(budget))} · ${esc(budget.note || 'Sin nota')}</small>
       <small class="balance-card__range">Tolerancia: ${budgetToleranceDays(budget)} día${budgetToleranceDays(budget) === 1 ? '' : 's'} · hasta ${esc(fmtShortDate(budgetEffectiveEnd(budget)))}</small>
+      ${budget.manualDone ? `<small class="balance-card__range">✔️ Dada por cumplida por coordinación${budget.manualDoneNote ? ` · ${esc(budget.manualDoneNote)}` : ''}</small>` : ''}
       <div class="budget-kpis budget-kpis--mini">
         <div><span>Asignadas</span><strong>${fmtHours(budget.hours)}</strong></div>
         <div><span>Cumplidas</span><strong>${fmtHours(usage.used)}</strong></div>
-        <div><span>Faltan</span><strong class="${faltanCls}">${fmtHours(Math.max(0, usage.remaining))}</strong></div>
+        <div><span>Faltan</span><strong class="${faltanCls}">${fmtHours(pendingLeft)}</strong></div>
         ${usage.remaining < 0 ? `<div><span>Horas de más</span><strong>${fmtHours(Math.abs(usage.remaining))}</strong></div>` : ''}
       </div>
-      ${progressBar(usage.used, toNumber(budget.hours) || 1)}
-      ${isAdminContext() ? `<button class="btn btn-soft btn-edit-budget" type="button" data-budget-id="${esc(budget.id)}">Editar bolsa</button>` : ''}
+      ${progressBar(budget.manualDone ? toNumber(budget.hours) : usage.used, toNumber(budget.hours) || 1)}
+      ${isAdminContext() ? `
+        <div class="balance-card__actions">
+          <button class="btn btn-soft btn-edit-budget" type="button" data-budget-id="${esc(budget.id)}">Editar bolsa</button>
+          ${budget.manualDone
+            ? `<button class="btn btn-soft btn-toggle-budget-done" type="button" data-budget-id="${esc(budget.id)}" data-done="0">Reabrir bolsa</button>`
+            : (usage.remaining > 0 ? `<button class="btn btn-soft btn-toggle-budget-done" type="button" data-budget-id="${esc(budget.id)}" data-done="1">Dar por cumplida</button>` : '')}
+        </div>` : ''}
     </div>`;
   }).join('') : '<p class="helper-text">Crea una bolsa de horas (con su rango de fechas) para empezar a comparar acuerdo vs. uso real.</p>';
 }
@@ -966,7 +986,7 @@ function updateLogBudgetOptions(preferredId = '') {
     ? budgets.map(budget => {
       const usage = budgetUsage(budget);
       const remaining = Math.max(0, usage.remaining);
-      const completed = remaining <= 0;
+      const completed = isBudgetDone(budget, usage);
       return `<option value="${esc(budget.id)}" ${completed ? 'disabled' : ''}>${esc(fmtBudgetRange(budget))} · ${completed ? 'ya cumplida' : `faltan ${fmtHours(remaining)}`}</option>`;
     }).join('')
     : '<option value="">No hay una bolsa disponible para esta fecha</option>';
@@ -974,7 +994,7 @@ function updateLogBudgetOptions(preferredId = '') {
   if (wanted && budgets.some(budget => String(budget.id) === String(wanted))) {
     select.value = wanted;
   } else {
-    const oldestPending = budgets.find(budget => budgetUsage(budget).remaining > 0);
+    const oldestPending = budgets.find(budget => !isBudgetDone(budget));
     if (oldestPending) select.value = oldestPending.id;
   }
   delete select.dataset.selected;
@@ -1026,6 +1046,7 @@ async function submitLog(event) {
   if (logScope === 'bolsa') {
     const selectedBudget = store.budgets.find(budget => String(budget.id) === budgetId);
     if (!selectedBudget) return showFormMessage('La bolsa seleccionada ya no está disponible.', true);
+    if (selectedBudget.manualDone) return showFormMessage('Coordinación ya dio por cumplida esta bolsa. Selecciona otra semana pendiente.', true);
     const remaining = Math.max(0, budgetUsage(selectedBudget).remaining);
     if (remaining <= 0) return showFormMessage('Ya se cumplió esta bolsa. Selecciona otra semana pendiente.', true);
     if (recognized > remaining) {
@@ -1253,6 +1274,39 @@ function editBudget(budgetId) {
 }
 
 
+/* Coordinación puede dar por cumplida una bolsa aunque las horas no cuadren
+   (p. ej. la docente trabajó, pero registró fuera del rango o hubo un error). */
+async function toggleBudgetDone(budgetId, markDone) {
+  if (!isAdminContext()) {
+    alert('Solo coordinación puede dar por cumplida o reabrir una bolsa.');
+    return;
+  }
+  const budget = store.budgets.find(item => String(item.id) === String(budgetId));
+  if (!budget) return;
+
+  let note = '';
+  if (markDone) {
+    note = prompt('¿Por qué se da por cumplida esta bolsa? (motivo del ajuste, opcional)') ?? null;
+    if (note === null) return; // canceló
+    note = note.trim();
+  } else if (!confirm('¿Reabrir esta bolsa? Volverá a mostrar las horas que faltan.')) {
+    return;
+  }
+
+  const updated = markDone
+    ? { ...budget, manualDone: true, manualDoneNote: note, manualDoneBy: ME, manualDoneAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    : { ...budget, manualDone: false, manualDoneNote: '', updatedAt: new Date().toISOString() };
+
+  try {
+    await dbSaveBudget(updated);
+    Object.assign(budget, updated);
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    alert(`No se pudo actualizar la bolsa: ${err.message}`);
+  }
+}
+
 /* --------------------------- Export / utilidades ----------------------- */
 function downloadText(filename, content, mime = 'text/plain;charset=utf-8') {
   const blob = new Blob([content], { type: mime });
@@ -1365,6 +1419,8 @@ function attachEvents() {
     if (detail?.dataset?.id) openDetailById(detail.dataset.id);
     const editBudgetButton = event.target.closest('.btn-edit-budget');
     if (editBudgetButton?.dataset?.budgetId) editBudget(editBudgetButton.dataset.budgetId);
+    const toggleDoneButton = event.target.closest('.btn-toggle-budget-done');
+    if (toggleDoneButton?.dataset?.budgetId) toggleBudgetDone(toggleDoneButton.dataset.budgetId, toggleDoneButton.dataset.done === '1');
     if (event.target.dataset.close) hideModal(event.target.closest('.modal') ? `#${event.target.closest('.modal').id}` : null);
   });
 

@@ -262,6 +262,7 @@ tbody tr:last-child td{border-bottom:0}
 .balance-card__head{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .balance-card__head strong{font-size:15px}
 .balance-card__range{color:var(--muted);font-weight:700}
+.balance-card__actions{display:flex;flex-wrap:wrap;gap:8px}
 .budget-kpis--mini{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .budget-kpis--mini strong{font-size:17px}
 
