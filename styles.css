@@ -3030,6 +3030,96 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .kpiEarly .kpiNum{ color:var(--a2); }
 .kpiAvg .kpiNum{ color:var(--a1); }
 
+/* ---- Look Admin: toolbar, botón pequeño, tags, KPIs y rankings ---- */
+.admToolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.btnSmall{ padding:6px 14px; font-size:13px; border-radius:999px; }
+
+.admTag{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+  vertical-align:middle;
+}
+.admTagVoid{ background:rgba(206,0,57,.12); color:#ce0039; }
+.admTagFix{ background:rgba(214,122,0,.14); color:#b86c08; }
+.admTagOk{ background:rgba(16,138,90,.12); color:#0c8a52; }
+.admTagInfo{ background:rgba(12,65,196,.1); color:var(--a1); }
+.admRowVoid td{ opacity:.55; text-decoration:line-through; }
+.admRowVoid td:last-child{ text-decoration:none; }
+.admRowWarn td{ background:rgba(214,122,0,.06); }
+
+.admKpiGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;
+  margin:0 0 16px;
+}
+.admKpi{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:14px 16px;
+  border-radius:var(--r);
+  background:var(--card2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow2);
+}
+.admKpiNum{ font-size:24px; font-weight:800; line-height:1; color:var(--text); }
+.admKpiLbl{ font-size:12px; color:var(--muted); font-weight:600; }
+.admKpi-ok{ border-color:rgba(16,138,90,.3); } .admKpi-ok .admKpiNum{ color:#0c8a52; }
+.admKpi-warn{ border-color:rgba(214,122,0,.32); } .admKpi-warn .admKpiNum{ color:#c9760a; }
+.admKpi-late{ border-color:rgba(214,122,0,.32); } .admKpi-late .admKpiNum{ color:#c9760a; }
+.admKpi-absent{ border-color:rgba(206,0,57,.3); } .admKpi-absent .admKpiNum{ color:#ce0039; }
+.admKpi-info{ border-color:rgba(12,65,196,.28); } .admKpi-info .admKpiNum{ color:var(--a1); }
+
+.admRankCols{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:12px;
+  margin:0 0 12px;
+}
+.admCard{
+  padding:14px 16px;
+  border-radius:var(--r);
+  background:var(--card2);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow2);
+  margin:0 0 12px;
+}
+.admCardH{ margin:0 0 10px; font-size:15px; }
+.admRankRow{
+  display:grid;
+  grid-template-columns:34px 1fr 90px auto;
+  align-items:center;
+  gap:10px;
+  padding:5px 0;
+}
+.admRankPos{ font-weight:800; color:var(--muted); font-size:13px; }
+.admRankName{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admRankBarWrap{ background:var(--pendingBg); border-radius:999px; height:8px; overflow:hidden; }
+.admRankBar{ display:block; height:100%; border-radius:999px; }
+.admBar-ok{ background:#0c8a52; }
+.admBar-late{ background:#c9760a; }
+.admBar-warn{ background:#c9760a; }
+.admRankVal{ font-size:13px; font-weight:700; color:var(--muted); text-align:right; }
+
+.adminSubNote{ margin:0 0 12px; color:var(--muted); font-size:12.5px; }
+
+@media (max-width:560px){
+  .admRankRow{ grid-template-columns:26px 1fr 70px; }
+  .admRankVal{ grid-column:2 / 4; text-align:left; }
+}
+
 .puntBadge{
   display:inline-block;
   padding:3px 9px;

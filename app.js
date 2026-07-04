@@ -1154,7 +1154,8 @@ function getTeacherShiftSourceLabel(source = "") {
     manual_virtual: "Manual virtual",
     manual_fin: "Cierre manual",
     auto_cierre: "Cierre automático",
-    auto_fin_sin_cierre: "Cierre automático"
+    auto_fin_sin_cierre: "Cierre automático",
+    admin_manual: "Registro admin"
   }[source] || source || "-";
 }
 
@@ -2402,8 +2403,8 @@ async function loadAdminData() {
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
-      // Para puntualidad necesitamos horarios + overrides del rango.
-      if (ADMIN_STATE.tab === "puntualidad") {
+      // Para puntualidad y estadísticas necesitamos horarios + overrides del rango.
+      if (ADMIN_STATE.tab === "puntualidad" || ADMIN_STATE.tab === "mensual") {
         const [schedules, overrides] = await Promise.all([
           fetchAdminSchedules(),
           fetchAdminOverrides()
@@ -2960,33 +2961,199 @@ function renderAdminMarcaciones(body) {
     return;
   }
 
-  const rows = records.map((r) => `
-    <tr>
+  const rows = records.map((r) => {
+    const flags = [];
+    if (r.voided) flags.push(`<span class="admTag admTagVoid">Anulada</span>`);
+    else if (r.manualCorrection) flags.push(`<span class="admTag admTagFix" title="${escapeHtml(r.correctionReason || "")}">Corregida</span>`);
+    if (r.statusOverride === "puntual") flags.push(`<span class="admTag admTagOk">Puntual (admin)</span>`);
+    else if (r.statusOverride === "justificado") flags.push(`<span class="admTag admTagInfo">Justificado</span>`);
+    return `
+    <tr class="${r.voided ? "admRowVoid" : ""}">
       <td>${escapeHtml(r.date || "-")}</td>
       <td>${escapeHtml(r.time || "-")}</td>
       <td>${escapeHtml(r.name || r.email || "-")}</td>
       <td>${escapeHtml(getTeacherShiftActionLabel(r.action))}</td>
       <td>${escapeHtml(getTeacherShiftModeLabel(r.modalidad))}</td>
-      <td>${escapeHtml(getTeacherShiftSourceLabel(r.source))}</td>
+      <td>${escapeHtml(getTeacherShiftSourceLabel(r.source))} ${flags.join(" ")}</td>
+      <td><button class="btnGhost btnSmall admEditBtn" type="button" data-edit="${escapeHtml(r.id)}">Editar</button></td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 
+  const activas = records.filter((r) => !r.voided).length;
   body.innerHTML = `
-    <p class="adminMeta">${records.length} marcaciones</p>
+    <p class="adminMeta">${activas} marcaciones${records.length !== activas ? ` · ${records.length - activas} anuladas` : ""}</p>
     <div class="recordTableWrap">
       <table class="recordTable">
         <thead><tr>
-          <th>Fecha</th><th>Hora</th><th>Docente</th><th>Tipo</th><th>Modalidad</th><th>Fuente</th>
+          <th>Fecha</th><th>Hora</th><th>Docente</th><th>Tipo</th><th>Modalidad</th><th>Fuente</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
   `;
+
+  body.querySelectorAll(".admEditBtn").forEach((btn) => {
+    btn.addEventListener("click", () => openAdminEditRecordModal(btn.dataset.edit));
+  });
+}
+
+/* ---- Edición / corrección de una marcación (solo admin) ---- */
+function findAdminRecord(id) {
+  return (ADMIN_STATE.records || []).find((r) => r.id === id) || null;
+}
+
+function stampFromDateTime(date, time) {
+  // Reconstruye un ISO aproximado en zona Bogotá (UTC-5) para una fecha/hora HH:mm.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) || !/^\d{1,2}:\d{2}$/.test(String(time || ""))) return null;
+  const [h, m] = time.split(":");
+  return `${date}T${String(h).padStart(2, "0")}:${m}:00-05:00`;
+}
+
+function openAdminEditRecordModal(id) {
+  if (!isAdminUser()) { toast("No tienes permisos para editar marcaciones."); return; }
+  const r = findAdminRecord(id);
+  if (!r) { toast("No se encontró la marcación."); return; }
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Editar / corregir marcación</h3>
+      <p class="adminSubSub">${escapeHtml(r.name || r.email || "")} · ${escapeHtml(r.date || "")}</p>
+      <p class="adminSubNote">Editar esta marcación <strong>no cambia</strong> el horario semanal del docente. Solo corrige este registro puntual.</p>
+      <div class="adminOverrideGrid">
+        <label>Hora (HH:mm)
+          <input type="time" id="edTime" value="${escapeHtml(r.time || "")}" />
+        </label>
+        <label>Tipo
+          <select id="edAction">
+            <option value="inicio_clase" ${r.action !== "fin_jornada" ? "selected" : ""}>Ingreso</option>
+            <option value="fin_jornada" ${r.action === "fin_jornada" ? "selected" : ""}>Salida</option>
+          </select>
+        </label>
+        <label>Modalidad
+          <select id="edMod">
+            ${["sede", "hogar", "virtual", "jornada"].map((m) => `<option value="${m}" ${(r.modalidad || "") === m ? "selected" : ""}>${escapeHtml(getTeacherShiftModeLabel(m))}</option>`).join("")}
+          </select>
+        </label>
+        <label>Estado manual
+          <select id="edStatus">
+            <option value="" ${!r.statusOverride ? "selected" : ""}>Automático (calculado)</option>
+            <option value="puntual" ${r.statusOverride === "puntual" ? "selected" : ""}>Contar como puntual</option>
+            <option value="justificado" ${r.statusOverride === "justificado" ? "selected" : ""}>Justificado</option>
+          </select>
+        </label>
+      </div>
+      <p class="adminSubNote"><strong>Contar como puntual</strong> conserva la hora real registrada pero elimina la tardanza de las estadísticas. El motivo queda en el historial.</p>
+      <label>Nota administrativa
+        <input type="text" id="edNotes" maxlength="200" value="${escapeHtml(r.adminNotes || "")}" placeholder="Opcional" />
+      </label>
+      <label>Motivo de la corrección (obligatorio)
+        <input type="text" id="edReason" maxlength="200" placeholder="Ej: ese día se autorizó un ingreso diferente por reunión externa." />
+      </label>
+      <div class="adminSubActions">
+        ${r.voided ? "<span></span>" : `<button class="btnGhost adminDanger" id="edVoid" type="button">Anular marcación</button>`}
+        <div>
+          <button class="btnGhost" id="edCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="edSave" type="button">Guardar corrección</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#edCancel", dialog)?.addEventListener("click", close);
+
+  $("#edSave", dialog)?.addEventListener("click", async () => {
+    const reason = $("#edReason", dialog).value.trim();
+    if (!reason) { toast("Escribe el motivo de la corrección para poder guardar."); $("#edReason", dialog).focus(); return; }
+    const time = $("#edTime", dialog).value || r.time || "";
+    const patch = {
+      time,
+      stamp: stampFromDateTime(r.date, time) || r.stamp || null,
+      action: $("#edAction", dialog).value,
+      modalidad: $("#edMod", dialog).value,
+      adminNotes: $("#edNotes", dialog).value.trim(),
+      statusOverride: $("#edStatus", dialog).value
+    };
+    const saveBtn = $("#edSave", dialog);
+    saveBtn.disabled = true; saveBtn.textContent = "Guardando…";
+    const ok = await saveAdminRecordCorrection(id, patch, reason);
+    if (ok) { close(); renderAdminBody(); }
+    else { saveBtn.disabled = false; saveBtn.textContent = "Guardar corrección"; }
+  });
+
+  $("#edVoid", dialog)?.addEventListener("click", async () => {
+    const reason = $("#edReason", dialog).value.trim();
+    if (!reason) { toast("Indica el motivo de la anulación en el campo de motivo."); $("#edReason", dialog).focus(); return; }
+    if (!confirm("¿Anular esta marcación? No se borra: queda marcada como anulada y deja de contar en estadísticas.")) return;
+    const ok = await voidAdminRecord(id, reason);
+    if (ok) { close(); renderAdminBody(); }
+  });
+}
+
+async function saveAdminRecordCorrection(id, patch, reason) {
+  const r = findAdminRecord(id);
+  if (!r || !APP_STATE.db) { toast("No se encontró la marcación."); return false; }
+  const by = emailKey(APP_STATE.activeUser);
+  const previousData = { time: r.time || "", action: r.action || "", modalidad: r.modalidad || "", statusOverride: r.statusOverride || "" };
+  const newData = { time: patch.time, action: patch.action, modalidad: patch.modalidad, statusOverride: patch.statusOverride };
+  const history = Array.isArray(r.correctionHistory) ? r.correctionHistory.slice() : [];
+  history.push({ correctedBy: by, correctedAtClient: Date.now(), previousData, newData, reason });
+  try {
+    await updateDoc(doc(APP_STATE.db, "teacherClassStartRecords", id), {
+      ...patch,
+      manualCorrection: true,
+      correctionReason: reason,
+      correctedBy: by,
+      correctedAtClient: Date.now(),
+      correctedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      correctionHistory: history
+    });
+    Object.assign(r, patch, { manualCorrection: true, correctionReason: reason, correctedBy: by, correctionHistory: history });
+    toast("Marcación corregida.");
+    return true;
+  } catch (error) {
+    console.error(error);
+    toast(error?.code === "permission-denied"
+      ? "Firebase rechazó la corrección por permisos. Verifica que ingresaste como administrador."
+      : "No se pudo guardar la corrección. Revisa tu conexión.");
+    return false;
+  }
+}
+
+async function voidAdminRecord(id, reason) {
+  const r = findAdminRecord(id);
+  if (!r || !APP_STATE.db) { toast("No se encontró la marcación."); return false; }
+  const by = emailKey(APP_STATE.activeUser);
+  try {
+    await updateDoc(doc(APP_STATE.db, "teacherClassStartRecords", id), {
+      voided: true,
+      voidReason: reason,
+      voidedBy: by,
+      voidedAtClient: Date.now(),
+      voidedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    Object.assign(r, { voided: true, voidReason: reason, voidedBy: by });
+    toast("Marcación anulada.");
+    return true;
+  } catch (error) {
+    console.error(error);
+    toast(error?.code === "permission-denied"
+      ? "Firebase rechazó la anulación por permisos. Verifica que ingresaste como administrador."
+      : "No se pudo anular la marcación. Revisa tu conexión.");
+    return false;
+  }
 }
 
 function pairDailyShifts(records) {
   const byKey = new Map();
   for (const r of records) {
+    if (r.voided) continue; // las marcaciones anuladas no cuentan para jornadas/estadísticas
     const key = `${r.email}|${r.date}`;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(r);
@@ -3013,12 +3180,15 @@ function pairDailyShifts(records) {
     }
 
     const modalidades = Array.from(new Set(list.map((r) => getTeacherShiftModeLabel(r.modalidad)))).join(", ");
+    // Ajuste manual del admin sobre una marca del día (prioriza el de ingreso).
+    const statusOverride = firstIn?.statusOverride || list.find((r) => r.statusOverride)?.statusOverride || "";
     rows.push({
       date, name, email,
       entrada: firstIn?.time || "-",
       salida: lastOut?.time || (firstIn ? "Sin cierre" : "-"),
       horas,
       modalidades,
+      statusOverride,
       total: list.length
     });
   }
@@ -3037,8 +3207,13 @@ function renderAdminDiario(body) {
     return;
   }
 
-  const html = rows.map((r) => `
-    <tr>
+  const html = rows.map((r) => {
+    const sinCierre = r.salida === "Sin cierre";
+    const action = sinCierre
+      ? `<button class="btnGhost btnSmall admCloseBtn" type="button" data-email="${escapeHtml(r.email)}" data-date="${escapeHtml(r.date)}">Registrar cierre</button>`
+      : "";
+    return `
+    <tr class="${sinCierre ? "admRowWarn" : ""}">
       <td>${escapeHtml(r.date)}</td>
       <td>${escapeHtml(r.name)}</td>
       <td>${escapeHtml(r.entrada)}</td>
@@ -3046,20 +3221,138 @@ function renderAdminDiario(body) {
       <td>${escapeHtml(r.horas)}</td>
       <td>${escapeHtml(r.modalidades)}</td>
       <td>${escapeHtml(String(r.total))}</td>
+      <td>${action}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 
   body.innerHTML = `
-    <p class="adminMeta">${rows.length} días-docente</p>
+    <div class="admToolbar">
+      <p class="adminMeta">${rows.length} días-docente</p>
+      <button class="btnGoogle btnSmall" id="admAddShift" type="button">＋ Registrar jornada manual</button>
+    </div>
     <div class="recordTableWrap">
       <table class="recordTable">
         <thead><tr>
-          <th>Fecha</th><th>Docente</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Modalidades</th><th>Marcas</th>
+          <th>Fecha</th><th>Docente</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Modalidades</th><th>Marcas</th><th></th>
         </tr></thead>
         <tbody>${html}</tbody>
       </table>
     </div>
   `;
+
+  $("#admAddShift", body)?.addEventListener("click", () => openAdminCreateShiftModal());
+  body.querySelectorAll(".admCloseBtn").forEach((btn) => {
+    btn.addEventListener("click", () => openAdminCreateShiftModal({ email: btn.dataset.email, date: btn.dataset.date, onlyClose: true }));
+  });
+}
+
+/* ---- Registro manual de una jornada por parte del admin ---- */
+function openAdminCreateShiftModal(prefill = {}) {
+  if (!isAdminUser()) { toast("No tienes permisos para registrar jornadas."); return; }
+  const onlyClose = !!prefill.onlyClose;
+  const teachers = getAdminTeacherOptions().filter((t) => !ADMIN_EMAILS.includes(t.email));
+  const options = teachers
+    .map((t) => `<option value="${escapeHtml(t.email)}" ${prefill.email === t.email ? "selected" : ""}>${escapeHtml(t.label)}</option>`)
+    .join("");
+  const today = bogotaParts().date;
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>${onlyClose ? "Registrar cierre de jornada" : "Registrar jornada manual"}</h3>
+      <p class="adminSubNote">El registro será creado por un administrador y quedará identificado y auditado (fuente “Registro admin”).</p>
+      <label>Docente
+        <select id="csEmail" ${onlyClose ? "disabled" : ""}>${options}</select>
+      </label>
+      <div class="adminOverrideGrid">
+        <label>Fecha
+          <input type="date" id="csDate" value="${escapeHtml(prefill.date || today)}" ${onlyClose ? "disabled" : ""} />
+        </label>
+        <label>Modalidad
+          <select id="csMod">
+            ${["sede", "hogar", "virtual", "jornada"].map((m) => `<option value="${m}">${escapeHtml(getTeacherShiftModeLabel(m))}</option>`).join("")}
+          </select>
+        </label>
+        ${onlyClose ? "" : `<label>Hora de ingreso<input type="time" id="csIn" /></label>`}
+        <label>Hora de salida<input type="time" id="csOut" /></label>
+      </div>
+      <label>Motivo (obligatorio)
+        <input type="text" id="csReason" maxlength="200" placeholder="Ej: la docente trabajó pero su marcación no quedó guardada." />
+      </label>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="csCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="csSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#csCancel", dialog)?.addEventListener("click", close);
+
+  $("#csSave", dialog)?.addEventListener("click", async () => {
+    const email = onlyClose ? prefill.email : ($("#csEmail", dialog).value || "");
+    const date = onlyClose ? prefill.date : ($("#csDate", dialog).value || "");
+    const modalidad = $("#csMod", dialog).value;
+    const reason = $("#csReason", dialog).value.trim();
+    const inTime = onlyClose ? "" : ($("#csIn", dialog)?.value || "");
+    const outTime = $("#csOut", dialog)?.value || "";
+    if (!email || !date) { toast("Selecciona docente y fecha."); return; }
+    if (!reason) { toast("Escribe el motivo del registro."); $("#csReason", dialog).focus(); return; }
+    if (!onlyClose && !inTime) { toast("Indica la hora de ingreso."); return; }
+    if (!outTime && !onlyClose && !inTime) { toast("Indica al menos una hora."); return; }
+
+    const saveBtn = $("#csSave", dialog);
+    saveBtn.disabled = true; saveBtn.textContent = "Guardando…";
+    const ok = await createAdminShiftRecords({ email, date, modalidad, inTime, outTime, reason });
+    if (ok) {
+      close();
+      await loadAdminData();
+    } else {
+      saveBtn.disabled = false; saveBtn.textContent = "Guardar";
+    }
+  });
+}
+
+async function createAdminShiftRecords({ email, date, modalidad, inTime, outTime, reason }) {
+  if (!APP_STATE.db) return false;
+  const by = emailKey(APP_STATE.activeUser);
+  const teacher = getAdminTeacherOptions().find((t) => t.email === email);
+  const base = {
+    role: "docente",
+    email,
+    name: teacher?.label || email,
+    modalidad,
+    source: "admin_manual",
+    manualCreation: true,
+    createdBy: by,
+    creationReason: reason,
+    createdAt: serverTimestamp(),
+    createdAtClient: Date.now(),
+    raw: "admin_manual"
+  };
+  try {
+    const col = collection(APP_STATE.db, "teacherClassStartRecords");
+    if (inTime) {
+      await addDoc(col, { ...base, date, time: inTime, stamp: stampFromDateTime(date, inTime), action: "inicio_clase" });
+    }
+    if (outTime) {
+      await addDoc(col, { ...base, date, time: outTime, stamp: stampFromDateTime(date, outTime), action: "fin_jornada", createdAtClient: Date.now() + 1 });
+    }
+    toast("Jornada registrada.");
+    return true;
+  } catch (error) {
+    console.error(error);
+    toast(error?.code === "permission-denied"
+      ? "Firebase rechazó el registro por permisos. Verifica que ingresaste como administrador."
+      : "No se pudo registrar la jornada. Revisa tu conexión.");
+    return false;
+  }
 }
 
 function renderAdminMensual(body) {
@@ -3126,8 +3419,52 @@ function renderAdminMensual(body) {
     `;
   }).join("");
 
+  // --- Estadísticas de puntualidad del rango (reutiliza el motor de la pestaña Puntualidad) ---
+  const stats = computeAdminStats();
+  const totalHorasMs = list.reduce((acc, t) => acc + t.horasMs, 0);
+  const totalH = Math.floor(totalHorasMs / 3600000);
+  const totalM = Math.floor((totalHorasMs % 3600000) / 60000);
+  const incompletas = pairDailyShifts(records).filter((r) => r.salida === "Sin cierre").length;
+
+  const kpis = `
+    <div class="admKpiGrid">
+      ${admKpi(stats.pctPuntual + "%", "Puntualidad", stats.pctPuntual >= 80 ? "ok" : "warn")}
+      ${admKpi(String(stats.tarde), `Tardanzas · prom. ${stats.avgLate ? minutesToLabel(stats.avgLate) : "0m"}`, stats.tarde ? "late" : "ok")}
+      ${admKpi(String(stats.ausente), "Ausencias", stats.ausente ? "absent" : "ok")}
+      ${admKpi(String(stats.salida_temprana), "Salidas antes", stats.salida_temprana ? "warn" : "ok")}
+      ${admKpi(`${totalH}h ${String(totalM).padStart(2, "0")}m`, "Horas trabajadas", "info")}
+      ${admKpi(String(incompletas), "Jornadas sin cierre", incompletas ? "warn" : "ok")}
+      ${admKpi(minutesToLabel(stats.impacto) === "-" ? "0m" : minutesToLabel(stats.impacto), "Impacto (min)", stats.impacto ? "warn" : "ok")}
+      ${admKpi(String(stats.justificado), "Justificados", "info")}
+    </div>
+  `;
+
+  const best = stats.perTeacher.filter((m) => m.evaluables > 0).sort((a, b) => b.pct - a.pct).slice(0, 5);
+  const worstLate = stats.perTeacher.filter((m) => m.tarde > 0).sort((a, b) => b.tarde - a.tarde).slice(0, 5);
+  const worstDays = stats.perDay.filter((d) => d.tarde + d.ausente > 0).sort((a, b) => (b.tarde + b.ausente) - (a.tarde + a.ausente)).slice(0, 5);
+  const maxLate = worstLate[0]?.tarde || 1;
+  const maxDay = worstDays[0] ? (worstDays[0].tarde + worstDays[0].ausente) : 1;
+
   body.innerHTML = `
-    <p class="adminMeta">${list.length} docentes en el rango ${escapeHtml(ADMIN_STATE.filters.from)} → ${escapeHtml(ADMIN_STATE.filters.to)}</p>
+    <div class="admToolbar">
+      <p class="adminMeta">${list.length} docentes · ${escapeHtml(ADMIN_STATE.filters.from)} → ${escapeHtml(ADMIN_STATE.filters.to)}</p>
+      <button class="btnGhost btnSmall" id="admCopyStats" type="button">Copiar resumen</button>
+    </div>
+    ${kpis}
+    <div class="admRankCols">
+      <section class="admCard">
+        <h3 class="admCardH">🏆 Mejor puntualidad</h3>
+        ${best.length ? best.map((m, i) => admRankRow(i + 1, m.name, m.pct + "%", m.pct, "ok")).join("") : `<p class="adminNote">Sin datos suficientes.</p>`}
+      </section>
+      <section class="admCard">
+        <h3 class="admCardH">⏰ Más llegadas tarde</h3>
+        ${worstLate.length ? worstLate.map((m, i) => admRankRow(i + 1, m.name, m.tarde + " tarde", Math.round((m.tarde / maxLate) * 100), "late")).join("") : `<p class="adminNote">Sin llegadas tarde. 👌</p>`}
+      </section>
+    </div>
+    <section class="admCard">
+      <h3 class="admCardH">📅 Días con más problemas</h3>
+      ${worstDays.length ? worstDays.map((d) => admRankRow("", d.date, `${d.tarde} tarde · ${d.ausente} ausentes`, Math.round(((d.tarde + d.ausente) / maxDay) * 100), "warn")).join("") : `<p class="adminNote">Sin problemas en el rango. 👌</p>`}
+    </section>
     <div class="recordTableWrap">
       <table class="recordTable">
         <thead><tr>
@@ -3136,8 +3473,79 @@ function renderAdminMensual(body) {
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. Si una jornada quedó sin cierre manual, el sistema puede cerrarla automáticamente con marca “sin cierre”.</p>
+    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. La puntualidad compara la primera marca de ingreso contra el horario/override del día.</p>
   `;
+
+  $("#admCopyStats", body)?.addEventListener("click", () => {
+    const lines = [
+      `Estadísticas docentes · ${ADMIN_STATE.filters.from} → ${ADMIN_STATE.filters.to}`,
+      `Puntualidad: ${stats.pctPuntual}% · Tardanzas: ${stats.tarde} (prom. ${stats.avgLate ? minutesToLabel(stats.avgLate) : "0m"}) · Ausencias: ${stats.ausente}`,
+      `Salidas antes: ${stats.salida_temprana} · Justificados: ${stats.justificado} · Horas trabajadas: ${totalH}h ${String(totalM).padStart(2, "0")}m · Jornadas sin cierre: ${incompletas}`,
+      "",
+      "Mejor puntualidad:",
+      ...best.map((m, i) => `  ${i + 1}. ${m.name} — ${m.pct}%`),
+      "",
+      "Más llegadas tarde:",
+      ...worstLate.map((m, i) => `  ${i + 1}. ${m.name} — ${m.tarde} tarde`)
+    ];
+    navigator.clipboard?.writeText(lines.join("\n")).then(
+      () => toast("Resumen copiado."),
+      () => toast("No se pudo copiar.")
+    );
+  });
+}
+
+/* Helpers de presentación para las estadísticas (look Admin). */
+function admKpi(num, label, kind = "") {
+  return `<div class="admKpi admKpi-${kind}"><span class="admKpiNum">${escapeHtml(String(num))}</span><span class="admKpiLbl">${escapeHtml(label)}</span></div>`;
+}
+
+function admRankRow(pos, name, value, pct, kind) {
+  const width = Math.max(0, Math.min(100, Number(pct) || 0));
+  return `
+    <div class="admRankRow">
+      <span class="admRankPos">${pos ? "#" + pos : ""}</span>
+      <span class="admRankName">${escapeHtml(name)}</span>
+      <span class="admRankBarWrap"><span class="admRankBar admBar-${kind}" style="width:${width}%"></span></span>
+      <span class="admRankVal">${escapeHtml(value)}</span>
+    </div>
+  `;
+}
+
+/* Agrega puntualidad por docente y por día para el rango actual. */
+function computeAdminStats() {
+  const rows = buildPunctualityRows();
+  const totals = { a_tiempo: 0, tarde: 0, salida_temprana: 0, ausente: 0, justificado: 0 };
+  let lateSum = 0, lateN = 0, earlySum = 0;
+  const perTeacher = new Map();
+  const perDay = new Map();
+
+  for (const r of rows) {
+    if (totals[r.status] != null) totals[r.status] += 1;
+    if (r.status === "tarde" && Number.isFinite(r.lateMin)) { lateSum += r.lateMin; lateN += 1; }
+    if (r.status === "salida_temprana" && Number.isFinite(r.earlyMin)) earlySum += r.earlyMin;
+
+    if (!perTeacher.has(r.email)) perTeacher.set(r.email, { name: r.name, a_tiempo: 0, tarde: 0, evaluables: 0 });
+    const t = perTeacher.get(r.email);
+    if (["a_tiempo", "tarde", "salida_temprana", "ausente"].includes(r.status)) t.evaluables += 1;
+    if (r.status === "a_tiempo") t.a_tiempo += 1;
+    if (r.status === "tarde") t.tarde += 1;
+
+    if (!perDay.has(r.date)) perDay.set(r.date, { date: r.date, tarde: 0, ausente: 0 });
+    const d = perDay.get(r.date);
+    if (r.status === "tarde") d.tarde += 1;
+    if (r.status === "ausente") d.ausente += 1;
+  }
+
+  const evaluables = totals.a_tiempo + totals.tarde + totals.salida_temprana + totals.ausente;
+  return {
+    ...totals,
+    pctPuntual: evaluables ? Math.round((totals.a_tiempo / evaluables) * 100) : 0,
+    avgLate: lateN ? Math.round(lateSum / lateN) : 0,
+    impacto: lateSum + earlySum,
+    perTeacher: Array.from(perTeacher.values()).map((t) => ({ ...t, pct: t.evaluables ? Math.round((t.a_tiempo / t.evaluables) * 100) : 0 })),
+    perDay: Array.from(perDay.values())
+  };
 }
 
 function renderAdminVivo(body) {
@@ -3228,7 +3636,15 @@ function buildPunctualityRows() {
 
       const firstIn = rec && validTime(rec.entrada) ? rec.entrada : "";
       const lastOut = rec && validTime(rec.salida) ? rec.salida : "";
-      const evalResult = evaluatePunctuality(t.email, date, firstIn, lastOut);
+      let evalResult = evaluatePunctuality(t.email, date, firstIn, lastOut);
+
+      // Ajuste manual del admin sobre la marcación (pestaña Marcaciones → Editar).
+      const so = rec?.statusOverride;
+      if (so === "puntual" && (evalResult.status === "tarde" || evalResult.status === "salida_temprana")) {
+        evalResult = { ...evalResult, status: "a_tiempo", label: "Puntual (ajuste admin)", lateMin: null, earlyMin: null, adminAdjusted: true };
+      } else if (so === "justificado" && evalResult.status !== "sin_horario" && evalResult.status !== "a_tiempo") {
+        evalResult = { ...evalResult, status: "justificado", label: "Justificado (ajuste admin)", adminAdjusted: true };
+      }
 
       rows.push({
         email: t.email,
