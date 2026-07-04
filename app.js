@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-01.6";
+const BUILD = "2026-07-04.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -3241,7 +3241,7 @@ function renderAdminDiario(body) {
     </div>
   `;
 
-  $("#admAddShift", body)?.addEventListener("click", () => openAdminCreateShiftModal());
+  $("#admAddShift", body)?.addEventListener("click", () => openAdminCreateShiftModal({ email: ADMIN_STATE.filters.email || "" }));
   body.querySelectorAll(".admCloseBtn").forEach((btn) => {
     btn.addEventListener("click", () => openAdminCreateShiftModal({ email: btn.dataset.email, date: btn.dataset.date, onlyClose: true }));
   });
@@ -3255,6 +3255,11 @@ function openAdminCreateShiftModal(prefill = {}) {
   const options = teachers
     .map((t) => `<option value="${escapeHtml(t.email)}" ${prefill.email === t.email ? "selected" : ""}>${escapeHtml(t.label)}</option>`)
     .join("");
+  // Si no viene un docente preseleccionado (filtro en "Todos"), forzamos elección
+  // consciente para no guardar por error bajo el primer docente de la lista.
+  const placeholder = (!onlyClose && !prefill.email)
+    ? `<option value="" selected disabled>Selecciona docente…</option>`
+    : "";
   const today = bogotaParts().date;
 
   const dialog = document.createElement("div");
@@ -3264,7 +3269,7 @@ function openAdminCreateShiftModal(prefill = {}) {
       <h3>${onlyClose ? "Registrar cierre de jornada" : "Registrar jornada manual"}</h3>
       <p class="adminSubNote">El registro será creado por un administrador y quedará identificado y auditado (fuente “Registro admin”).</p>
       <label>Docente
-        <select id="csEmail" ${onlyClose ? "disabled" : ""}>${options}</select>
+        <select id="csEmail" ${onlyClose ? "disabled" : ""}>${placeholder}${options}</select>
       </label>
       <div class="adminOverrideGrid">
         <label>Fecha
