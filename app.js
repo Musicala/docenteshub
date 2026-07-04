@@ -5283,12 +5283,33 @@ function macroAreaForBibliotecaArea(areaRaw) {
   return "Música";
 }
 
-// Macro de un recurso completo: la disciplina "institucional" es una carpeta
-// propia (material interno para docentes), independiente del área granular.
+// Disciplinas conocidas → nombre de carpeta al inicio de la biblioteca.
+const BIBLIO_DISCIPLINA_LABELS = {
+  "musica": "Música",
+  "danza": "Danzas",
+  "danzas": "Danzas",
+  "artes-plasticas": "Artes plásticas",
+  "teatro": "Teatro",
+  "institucional": "Institucional",
+  "minijuegos": "Minijuegos"
+};
+
+// Macro de un recurso completo: la disciplina del recurso manda; cualquier
+// disciplina (incluidas las nuevas creadas en el admin) es una carpeta propia
+// al inicio. Solo si el recurso no tiene disciplina se infiere desde el área.
 function macroForRecurso(recurso) {
-  if (normalizeText(recurso?.disciplina) === "institucional") return "Institucional";
+  const disc = normalizeText(recurso?.disciplina);
+  if (disc) {
+    if (BIBLIO_DISCIPLINA_LABELS[disc]) return BIBLIO_DISCIPLINA_LABELS[disc];
+    const raw = String(recurso.disciplina).trim().replace(/-/g, " ");
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
   return macroAreaForBibliotecaArea(recurso?.area);
 }
+
+// Macros que se restringen por áreas del docente; el resto (Institucional,
+// Minijuegos y disciplinas nuevas) es visible para cualquier docente activo.
+const BIBLIO_MACROS_RESTRINGIDOS = new Set(["Música", "Danzas", "Artes plásticas", "Teatro"]);
 
 function getBibliotecaAccess() {
   if (isAdminUser()) return { all: true, areas: [], especialidades: [] };
@@ -5307,9 +5328,9 @@ function canSeeRecurso(recurso, access) {
 
   const area = normalizeText(recurso?.area);
   const macro = macroForRecurso(recurso);
-  // Recursos generales e institucionales: visibles para cualquier docente activo
-  // (este HUB es solo de docentes; los estudiantes tienen su propia app).
-  if (macro === "*" || macro === "Institucional") return true;
+  // Recursos generales, institucionales y de disciplinas transversales
+  // (minijuegos, etc.): visibles para cualquier docente activo.
+  if (macro === "*" || !BIBLIO_MACROS_RESTRINGIDOS.has(macro)) return true;
 
   if (!access.areas.includes(macro)) {
     // No tiene el área macro: solo ve la especialidad si está asignada explícitamente.
@@ -5449,6 +5470,7 @@ function biblioAreaEmoji(area) {
   if (a.includes("teatro")) return "🎭";
   if (a.includes("plastica") || a.includes("dibujo") || a.includes("pintura") || a.includes("arte")) return "🎨";
   if (a.includes("institucional")) return "🏫";
+  if (a.includes("minijuego") || a.includes("juego")) return "🎮";
   if (a.includes("musica")) return "🎵";
   return "📁";
 }
