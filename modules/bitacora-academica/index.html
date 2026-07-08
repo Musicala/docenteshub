@@ -149,7 +149,7 @@
             </div>
           </div>
           <p class="helper-text">
-            La <strong>bolsa de horas</strong> son horas que la docente debe reponer en un rango definido. Al registrar un avance como <strong>“Bolsa de horas”</strong>, la docente elige la semana a la que desea abonarlo. Cada bolsa puede tener días adicionales de tolerancia y, una vez cumplida, ya no acepta más horas.
+            La <strong>bolsa de horas</strong> son horas que la docente debe reponer en un rango definido. Al registrar un avance como <strong>“Bolsa de horas”</strong>, la docente elige la semana a la que desea abonarlo. Cada bolsa puede tener <strong>días de anticipación</strong> (para adelantar trabajo antes del inicio) y <strong>días de tolerancia</strong> (para reponer después del final). Una vez cumplida, ya no acepta más horas.
           </p>
 
           <form id="budgetForm" class="mini-form" novalidate>
@@ -177,6 +177,10 @@
             <label>
               <span>Cumplir hasta <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
               <input id="budgetEnd" type="date" required />
+            </label>
+            <label>
+              <span>Días de anticipación</span>
+              <input id="budgetLeadDays" type="number" min="0" max="30" step="1" value="0" required />
             </label>
             <label>
               <span>Días adicionales de tolerancia</span>
@@ -512,6 +516,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-07-08.1"></script>
+  <script type="module" src="script.js?v=2026-07-08.2"></script>
 </body>
 </html>

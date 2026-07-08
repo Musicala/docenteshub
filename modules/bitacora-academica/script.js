@@ -276,12 +276,21 @@ function daysBetween(fromISO, toISO) {
 function addDaysISO(iso, days) {
   const date = new Date(`${dateOnly(iso)}T12:00`);
   if (Number.isNaN(date.getTime())) return '';
-  date.setDate(date.getDate() + Math.max(0, Number(days) || 0));
+  date.setDate(date.getDate() + (Number(days) || 0));
   return date.toLocaleDateString('en-CA');
 }
 function budgetToleranceDays(budget) {
   const value = Number(budget?.toleranceDays);
   return Number.isFinite(value) ? Math.max(0, value) : 7;
+}
+/* Días en que la docente puede adelantar trabajo ANTES de la fecha de inicio. */
+function budgetLeadDays(budget) {
+  const value = Number(budget?.leadDays);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+function budgetEffectiveStart(budget) {
+  const start = dateOnly(budget?.startDate);
+  return start ? addDaysISO(start, -budgetLeadDays(budget)) : '';
 }
 function budgetEffectiveEnd(budget) {
   const end = dateOnly(budget?.endDate);
@@ -313,7 +322,7 @@ function logBelongsToBudget(log, budget) {
     : norm(log.person) === norm(budget.person);
   if (!sameTeacher) return false;
   if (log.budgetId) return String(log.budgetId) === String(budget.id);
-  const start = dateOnly(budget.startDate);
+  const start = budgetEffectiveStart(budget);
   const end = dateOnly(budget.endDate);
   const when = dateOnly(log.start);
   if (start && when < start) return false;
@@ -341,6 +350,12 @@ function budgetStatus(budget) {
   const start = dateOnly(budget.startDate);
   const end = dateOnly(budget.endDate);
   if (start && today < start) {
+    const effectiveStart = budgetEffectiveStart(budget);
+    // Dentro de la ventana de anticipación: ya se puede adelantar trabajo.
+    if (effectiveStart && today >= effectiveStart) {
+      const d = daysBetween(today, start);
+      return { label: `Anticipada · inicia en ${d} día${d === 1 ? '' : 's'}`, cls: 'pill pill--ok' };
+    }
     const d = daysBetween(today, start);
     return { label: d === 1 ? 'Empieza mañana' : `Empieza en ${d} días`, cls: 'pill pill--neutral' };
   }
@@ -735,6 +750,7 @@ function renderBudgetSummary() {
         <span class="${done ? 'pill pill--ok' : st.cls}">${esc(done ? doneLabel : st.label)}</span>
       </div>
       <small class="balance-card__range">📅 ${esc(fmtBudgetRange(budget))} · ${esc(budget.note || 'Sin nota')}</small>
+      ${budgetLeadDays(budget) > 0 ? `<small class="balance-card__range">Anticipación: ${budgetLeadDays(budget)} día${budgetLeadDays(budget) === 1 ? '' : 's'} · desde ${esc(fmtShortDate(budgetEffectiveStart(budget)))}</small>` : ''}
       <small class="balance-card__range">Tolerancia: ${budgetToleranceDays(budget)} día${budgetToleranceDays(budget) === 1 ? '' : 's'} · hasta ${esc(fmtShortDate(budgetEffectiveEnd(budget)))}</small>
       ${budget.manualDone ? `<small class="balance-card__range">✔️ Dada por cumplida por coordinación${budget.manualDoneNote ? ` · ${esc(budget.manualDoneNote)}` : ''}</small>` : ''}
       <div class="budget-kpis budget-kpis--mini">
@@ -1235,6 +1251,7 @@ async function saveBudget(event) {
     return;
   }
   const toleranceDays = Math.max(0, Math.min(30, Number($('#budgetToleranceDays').value) || 0));
+  const leadDays = Math.max(0, Math.min(30, Number($('#budgetLeadDays').value) || 0));
   const note = $('#budgetNote').value.trim();
   const period = String(startDate).slice(0, 7); // mes de inicio (compatibilidad)
   const editingId = String($('#budgetId').value || '');
@@ -1245,8 +1262,8 @@ async function saveBudget(event) {
       dateOnly(budget.startDate) === startDate && dateOnly(budget.endDate) === endDate);
 
   const budget = existing
-    ? { ...existing, teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, note, startDate, endDate, period, updatedAt: new Date().toISOString() }
-    : { id: uid('BOLSA'), teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, note, startDate, endDate, period, createdAt: new Date().toISOString() };
+    ? { ...existing, teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, leadDays, note, startDate, endDate, period, updatedAt: new Date().toISOString() }
+    : { id: uid('BOLSA'), teacherEmail: assigned.email, teacherName: assigned.label, person, hours, toleranceDays, leadDays, note, startDate, endDate, period, createdAt: new Date().toISOString() };
 
   try {
     await dbSaveBudget(budget);
@@ -1265,6 +1282,7 @@ function resetBudgetForm(teacherEmail = '') {
   form?.reset();
   $('#budgetId').value = '';
   $('#budgetToleranceDays').value = '7';
+  $('#budgetLeadDays').value = '0';
   $('#budgetSubmit').textContent = 'Guardar bolsa';
   $('#budgetCancelEdit').hidden = true;
   fillTeacherSelect($('#budgetTeacherEmail'), teacherEmail || (isAdminContext() ? '' : ME));
@@ -1287,6 +1305,7 @@ function editBudget(budgetId) {
   $('#budgetStart').value = dateOnly(budget.startDate);
   $('#budgetEnd').value = dateOnly(budget.endDate);
   $('#budgetToleranceDays').value = budgetToleranceDays(budget);
+  $('#budgetLeadDays').value = budgetLeadDays(budget);
   $('#budgetNote').value = budget.note || '';
   $('#budgetSubmit').textContent = 'Actualizar bolsa';
   $('#budgetCancelEdit').hidden = false;
