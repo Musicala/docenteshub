@@ -164,7 +164,11 @@
             </label>
             <label>
               <span>Horas asignadas</span>
-              <input id="budgetHours" type="number" min="0" step="0.25" placeholder="Ej.: 4" required />
+              <input id="budgetHours" type="number" min="0" step="1" placeholder="Ej.: 4" />
+            </label>
+            <label>
+              <span>Minutos</span>
+              <input id="budgetMinutes" type="number" min="0" max="59" step="1" placeholder="Ej.: 15" />
             </label>
             <label>
               <span>Cumplir desde <abbr title="Obligatorio" aria-hidden="true">*</abbr></span>
@@ -508,6 +512,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-07-01.2"></script>
+  <script type="module" src="script.js?v=2026-07-08.1"></script>
 </body>
 </html>

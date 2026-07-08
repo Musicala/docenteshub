@@ -79,7 +79,19 @@ const toNumber = value => {
   return Number.isFinite(n) ? n : 0;
 };
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
-const fmtHours = n => `${round2(n).toLocaleString('es-CO', { maximumFractionDigits: 2 })} h`;
+// Muestra las horas en formato legible "X h Y min" para evitar confusiones
+// con los decimales (p. ej. 4,25 h → "4 h 15 min").
+const fmtHours = n => {
+  const sign = Number(n) < 0 ? '-' : '';
+  const totalMin = Math.round(Math.abs(Number(n) || 0) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  let body;
+  if (h && m) body = `${h} h ${m} min`;
+  else if (h) body = `${h} h`;
+  else body = `${m} min`;
+  return `${sign}${body}`;
+};
 const todayMonth = () => new Date().toISOString().slice(0, 7);
 const uid = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
 const debounce = (fn, delay = 250) => {
@@ -1215,7 +1227,13 @@ async function saveBudget(event) {
     return;
   }
   const person = assigned.label;
-  const hours = toNumber($('#budgetHours').value);
+  const wholeHours = Math.max(0, Number($('#budgetHours').value) || 0);
+  const minutes = Math.max(0, Math.min(59, Number($('#budgetMinutes').value) || 0));
+  const hours = round2(wholeHours + minutes / 60);
+  if (hours <= 0) {
+    alert('Indica cuántas horas o minutos se deben cumplir.');
+    return;
+  }
   const toleranceDays = Math.max(0, Math.min(30, Number($('#budgetToleranceDays').value) || 0));
   const note = $('#budgetNote').value.trim();
   const period = String(startDate).slice(0, 7); // mes de inicio (compatibilidad)
@@ -1263,7 +1281,9 @@ function editBudget(budgetId) {
   $('#budgetId').value = budget.id;
   fillTeacherSelect($('#budgetTeacherEmail'), String(budget.teacherEmail || '').toLowerCase());
   $('#budgetPerson').value = budget.teacherName || budget.person || '';
-  $('#budgetHours').value = round2(budget.hours);
+  const totalMin = Math.round((Number(budget.hours) || 0) * 60);
+  $('#budgetHours').value = Math.floor(totalMin / 60) || '';
+  $('#budgetMinutes').value = totalMin % 60 || '';
   $('#budgetStart').value = dateOnly(budget.startDate);
   $('#budgetEnd').value = dateOnly(budget.endDate);
   $('#budgetToleranceDays').value = budgetToleranceDays(budget);
