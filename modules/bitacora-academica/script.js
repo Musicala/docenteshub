@@ -1383,6 +1383,79 @@ function exportJson() {
   downloadText(`respaldo-bitacora-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
 }
 
+function reportTeacherOptions() {
+  const select = $('#academicReportTeacher');
+  if (!select) return;
+  const selected = select.value;
+  const teachers = new Map();
+  [...store.objectives, ...store.hourLogs, ...store.budgets].forEach(item => {
+    const email = String(item.teacherEmail || '').toLowerCase().trim();
+    const name = String(item.teacherName || item.person || '').trim();
+    if (email) teachers.set(email, name || email);
+  });
+  teacherDirectory.forEach(teacher => { if (teacher?.email && !teacher.isAdmin) teachers.set(teacher.email, teacher.label || teacher.email); });
+  select.innerHTML = `<option value="">Todas las docentes</option>${[...teachers.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es')).map(([email, name]) => `<option value="${esc(email)}">${esc(name)}${name !== email ? ` · ${esc(email)}` : ''}</option>`).join('')}`;
+  select.value = teachers.has(selected) ? selected : '';
+}
+
+function reportDate(record) {
+  const time = new Date(record?.start || record?.createdAt || record?.updatedAt || '').getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mdValue(value) { return String(value ?? '').trim() || 'Sin información registrada.'; }
+
+function buildAcademicReport(teacherEmail = '') {
+  const matchesTeacher = item => !teacherEmail || String(item.teacherEmail || '').toLowerCase() === teacherEmail;
+  const tasks = store.objectives.filter(matchesTeacher).sort((a, b) => reportDate(a) - reportDate(b));
+  const logs = store.hourLogs.filter(matchesTeacher).sort((a, b) => reportDate(a) - reportDate(b));
+  const selectedName = teacherEmail ? (teacherDirectory.find(item => item.email === teacherEmail)?.label || tasks[0]?.person || logs[0]?.person || teacherEmail) : 'Todas las docentes';
+  const taskIds = new Set(tasks.map(task => String(task.id)));
+  const orphanLogs = logs.filter(log => !taskIds.has(String(log.taskId)));
+  const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
+  const recognized = logs.reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
+  const stateCount = tasks.reduce((acc, task) => { const state = normalizeState(task.state); acc[state] = (acc[state] || 0) + 1; return acc; }, {});
+  const lines = [
+    '# Informe de bitácoras de tareas académicas', '',
+    `- Generado: ${formatDateTime(new Date().toISOString())}`,
+    `- Alcance: ${selectedName}`,
+    `- Tareas incluidas: ${tasks.length}`,
+    `- Registros de avance incluidos: ${logs.length}`,
+    `- Horas estimadas: ${fmtHours(estimated)}`,
+    `- Horas reconocidas registradas: ${fmtHours(recognized)}`,
+    `- Estados de tareas: ${Object.entries(stateCount).map(([state, count]) => `${state} (${count})`).join(', ') || 'Sin tareas.'}`, '',
+    '## Instrucción para la IA', '',
+    'Analiza exclusivamente la evidencia de este informe. Para cada docente y tarea: (1) evalúa si avances, pendientes y mejoras son coherentes con el objetivo y estado; (2) califica el diligenciamiento como completo, parcial o insuficiente y explica qué falta; (3) describe el avance real frente a horas estimadas y estado declarado, sin inventar información; (4) identifica riesgos, bloqueos, contradicciones o falta de evidencia; (5) propone recomendaciones concretas y respetuosas. Cierra con un resumen ejecutivo y prioriza las tareas que requieren seguimiento de coordinación.', '',
+    '## Detalle por tarea', ''
+  ];
+  tasks.forEach((task, index) => {
+    const taskLogs = logs.filter(log => String(log.taskId) === String(task.id));
+    const taskHours = taskLogs.reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
+    lines.push(`### ${index + 1}. ${mdValue(task.title)}`, '', `- Responsable: ${mdValue(task.person || task.teacherName || task.teacherEmail)}`, `- Periodo: ${mdValue(task.period)}`, `- Estado declarado: ${normalizeState(task.state)}`, `- Creada: ${formatCreatedAt(task)}`, `- Horas estimadas: ${fmtHours(task.estimatedHours)}`, `- Horas reconocidas en avances: ${fmtHours(taskHours)}`, `- Objetivo / entregable: ${mdValue(task.description || task.criteria)}`, '', '#### Registros de avance', '');
+    if (!taskLogs.length) lines.push('- No hay registros de avance para esta tarea.', '');
+    taskLogs.forEach((log, logIndex) => lines.push(`**Registro ${logIndex + 1} · ${formatDateTime(log.start || log.createdAt)}**`, `- Estado: ${mdValue(log.state)}`, `- Ámbito: ${logScopeLabel(logScopeOf(log))} · Tipo: ${mdValue(log.workType)}`, `- Duración: ${fmtHours(log.durationHours)} · Reconocidas: ${fmtHours(log.recognizedHours || log.durationHours)}`, `- Avancé: ${mdValue(log.advanced)}`, `- Falta: ${mdValue(log.missing)}`, `- Por mejorar: ${mdValue(log.improve)}`, `- Evidencias: ${mdValue(log.evidenceLinks)}`, ''));
+  });
+  if (orphanLogs.length) {
+    lines.push('## Registros sin tarea asociada', '');
+    orphanLogs.forEach(log => lines.push(`- ${formatDateTime(log.start || log.createdAt)} · ${mdValue(log.taskTitle || log.taskId)} · ${mdValue(log.advanced)}`));
+  }
+  return lines.join('\n');
+}
+
+function openAcademicReportModal() {
+  if (!isAdminContext()) return;
+  reportTeacherOptions();
+  showModal('#modalAcademicReport');
+}
+
+function downloadAcademicReport() {
+  if (!isAdminContext()) return;
+  const teacherEmail = $('#academicReportTeacher')?.value || '';
+  const slug = teacherEmail ? teacherEmail.split('@')[0].replace(/[^a-z0-9]+/gi, '-') : 'todas-docentes';
+  downloadText(`informe-bitacoras-ia-${slug}-${new Date().toISOString().slice(0, 10)}.md`, buildAcademicReport(teacherEmail), 'text/markdown;charset=utf-8');
+  hideModal('#modalAcademicReport');
+}
+
 /* ============================== Eventos =============================== */
 function goBackToHub() {
   try {
@@ -1399,6 +1472,8 @@ function applyRoleScope() {
   if (back) back.hidden = !ACADEMIC_CTX.embedded;
 
   const admin = isAdminContext();
+  const reportButton = $('#btnAcademicReport');
+  if (reportButton) reportButton.hidden = !admin;
   ['#btnNewObjective', '#budgetForm', '#estimateForm'].forEach(sel => {
     const el = $(sel);
     if (el) el.hidden = !admin;
@@ -1471,6 +1546,8 @@ function attachEvents() {
   $('#budgetForm')?.addEventListener('submit', saveBudget);
   $('#btnExportHours')?.addEventListener('click', exportHoursCsv);
   $('#btnExportJson')?.addEventListener('click', exportJson);
+  $('#btnAcademicReport')?.addEventListener('click', openAcademicReportModal);
+  $('#btnDownloadAcademicReport')?.addEventListener('click', downloadAcademicReport);
   $('#logInicio')?.addEventListener('change', updateDurationPreview);
   $('#logInicio')?.addEventListener('change', updateLogBudgetOptions);
   $('#logFin')?.addEventListener('change', updateDurationPreview);
