@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-10.1";
+const BUILD = "2026-07-11.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -744,7 +744,7 @@ async function registerServiceWorker() {
   };
 
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js?v=2026-06-29.3", {
+    const registration = await navigator.serviceWorker.register("./sw.js?v=2026-07-11.1", {
       scope: "./",
       updateViaCache: "none"
     });

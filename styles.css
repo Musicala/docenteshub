@@ -105,7 +105,12 @@
 *::before,
 *::after{ box-sizing:border-box; }
 
-html,body{ height:100%; }
+html,body{
+  height:100%;
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+}
 
 html{
   -webkit-text-size-adjust:100%;
@@ -171,6 +176,8 @@ input, textarea, select{
 .appRoot{
   min-height:100%;
   width:100%;
+  max-width:100%;
+  min-width:0;
   display:flex;
   justify-content:center;
   padding:
@@ -182,8 +189,9 @@ input, textarea, select{
 /* Pantalla principal */
 .screen{
   width:100%;
+  min-width:0;
   max-width:var(--maxW);
-  margin:0 auto;
+  margin-inline:auto;
   border-radius: clamp(26px, 3vw, 36px);
   background:
     linear-gradient(145deg, rgba(236,241,255,.74), rgba(250,244,255,.70) 48%, rgba(255,238,249,.62));
@@ -193,7 +201,9 @@ input, textarea, select{
     0 32px 96px rgba(11,16,32,.16);
   position:relative;
 
-  overflow:auto;
+  /* Evita que un elemento ancho desplace toda la interfaz en Safari/iPhone. */
+  overflow-x:hidden;
+  overflow-y:auto;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
 
