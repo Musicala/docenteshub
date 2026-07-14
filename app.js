@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-11.1";
+const BUILD = "2026-07-14.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -4238,7 +4238,8 @@ function renderAdminDocentes(body) {
       actions = `<span class="adminNote">—</span>`;
     } else {
       const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
-      let btns = `<button class="btnGhost docMini docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
+      let btns = `<button class="btnGhost docMini docEdit" type="button" data-email="${escapeHtml(r.email)}">Editar</button>`;
+      btns += `<button class="btnGhost docMini docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
       btns += `<button class="btnGhost docMini docButtons" type="button" data-email="${escapeHtml(r.email)}">Botones</button>`;
       btns += `<button class="btnGhost docMini docAccess" type="button" data-email="${escapeHtml(r.email)}">Acceso</button>`;
       btns += `<button class="btnGhost docMini docToggle" type="button" data-email="${escapeHtml(r.email)}" data-enable="${r.enabled ? "0" : "1"}">${toggleLabel}</button>`;
@@ -4323,6 +4324,10 @@ function renderAdminDocentes(body) {
     });
   });
 
+  body.querySelectorAll(".docEdit").forEach((btn) => {
+    btn.addEventListener("click", () => openDocenteEditor(btn.dataset.email));
+  });
+
   body.querySelectorAll(".docAreas").forEach((btn) => {
     btn.addEventListener("click", () => openDocenteAreasEditor(btn.dataset.email));
   });
@@ -4350,6 +4355,79 @@ function renderAdminDocentes(body) {
         toast("No se pudo quitar. Revisa permisos/reglas.");
       }
     });
+  });
+}
+
+/* ---- Editor de datos básicos (nombre y correo) ---- */
+function openDocenteEditor(email) {
+  const md = ADMIN_STATE.hubUsers?.[email] || {};
+  const base = HUB.USERS?.[email] || null;
+  const name = md.label || md.name || base?.label || "";
+  // El correo de los docentes de "Código" está fijo en la base del código: solo se
+  // puede cambiar el nombre; el correo se edita únicamente en docentes gestionados.
+  const inBase = !!base;
+
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard" role="dialog" aria-modal="true">
+      <h3>Editar docente</h3>
+      <p class="adminSubSub">Corrige el nombre o el correo de acceso. El correo debe ser el de su cuenta de Google.</p>
+      <div class="docAddForm">
+        <input type="text" id="docEditName" placeholder="Nombre" value="${escapeHtml(name)}" />
+        <input type="email" id="docEditEmail" placeholder="correo@gmail.com" value="${escapeHtml(email)}" ${inBase ? "disabled" : ""} />
+      </div>
+      ${inBase
+        ? `<p class="adminNote" style="margin-top:8px">Esta docente viene de la base de código: su correo no se puede cambiar desde el panel.</p>`
+        : `<p class="adminNote" style="margin-top:8px">Si cambias el correo, se migran sus áreas, botones y vigencia de acceso al correo nuevo, y el anterior deja de tener acceso.</p>`}
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="docEditCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="docEditSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#docEditCancel", dialog)?.addEventListener("click", close);
+
+  $("#docEditSave", dialog)?.addEventListener("click", async () => {
+    const newName = $("#docEditName", dialog).value.trim();
+    const newEmail = inBase ? email : $("#docEditEmail", dialog).value.trim().toLowerCase();
+    if (!isValidEmail(newEmail)) { toast("Correo inválido 🙃"); return; }
+    if (newEmail !== email && (ADMIN_STATE.hubUsers?.[newEmail] || HUB.USERS?.[newEmail])) {
+      toast("Ese correo ya está registrado.");
+      return;
+    }
+
+    const payload = {
+      label: newName || newEmail,
+      role: md.role || "docente",
+      enabled: md.enabled !== false
+    };
+    if (typeof md.accessExpiresAt === "number" && md.accessExpiresAt > 0) payload.accessExpiresAt = md.accessExpiresAt;
+    if (Array.isArray(md.areas)) payload.areas = md.areas;
+    if (Array.isArray(md.especialidades)) payload.especialidades = md.especialidades;
+    if (Array.isArray(md.visibleButtons)) payload.visibleButtons = md.visibleButtons;
+
+    try {
+      const saved = await saveHubUser(newEmail, payload);
+      if (newEmail !== email) {
+        await deleteHubUser(email);
+        delete ADMIN_STATE.hubUsers[email];
+      }
+      ADMIN_STATE.hubUsers[newEmail] = { ...(ADMIN_STATE.hubUsers[newEmail] || {}), ...saved, email: newEmail };
+      refreshAdminTeacherFilterOptions();
+      toast(newEmail !== email ? "Docente actualizada · correo cambiado ✅" : "Docente actualizada ✅");
+      close();
+      renderAdminBody();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo guardar. Revisa permisos/reglas.");
+    }
   });
 }
 
