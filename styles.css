@@ -3419,6 +3419,7 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 }
 .adminSubCard input[type="time"],
 .adminSubCard input[type="text"],
+.adminSubCard input[type="email"],
 .adminSubCard input[type="number"],
 .adminSubCard select{
   padding:9px 11px;
@@ -3809,6 +3810,17 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 }
 .docAddForm .btnGoogle{ white-space:nowrap; height:42px; }
 
+/* Dentro de un modal el formulario se apila: los campos necesitan ancho completo */
+.adminSubCard .docAddForm{ flex-direction:column; gap:10px; }
+.adminSubCard .docAddForm input,
+.adminSubCard .docAddForm select{ flex:none; width:100%; min-width:0; }
+.adminSubCard .docAddForm input:disabled{
+  background:rgba(11,16,32,.05);
+  color:var(--muted);
+  cursor:not-allowed;
+}
+.docEditField{ display:block; margin-bottom:4px; font-size:12px; font-weight:700; color:var(--muted); }
+
 /* Acciones compactas de la tabla de docentes */
 .docActions{
   display:flex;
@@ -3823,8 +3835,20 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   font-weight:700;
 }
 .adminBody .recordTable td .puntBadge{ margin-bottom:2px; }
-/* Columna de áreas: que los badges respiren sin estirar la fila */
-.adminBody .recordTable td:nth-child(4){ max-width:280px; }
+
+/* Tabla de docentes: celdas que respiran (la regla global fuerza nowrap y
+   hacía que los badges se montaran sobre la columna de al lado). */
+.docTable{ min-width:860px; table-layout:fixed; }
+.docTable th,
+.docTable td{ white-space:normal; vertical-align:middle; }
+.docTable col.colDocente{ width:18%; }
+.docTable col.colCorreo{ width:24%; }
+.docTable col.colEstado{ width:13%; }
+.docTable col.colAreas{ width:20%; }
+.docTable col.colOrigen{ width:8%; }
+.docTable col.colAcciones{ width:17%; }
+.docTable td .mono{ word-break:break-all; }
+.docTable td.docAreasCell .puntBadge{ margin:0 4px 4px 0; }
 
 /* ===== Pestaña admin: Botones personalizados ===== */
 .customBtnList{ display:flex; flex-direction:column; gap:10px; margin:12px 0 18px; }

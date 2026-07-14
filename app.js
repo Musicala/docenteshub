@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-14.1";
+const BUILD = "2026-07-14.2";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -4255,9 +4255,9 @@ function renderAdminDocentes(body) {
         <td>${escapeHtml(r.name)}</td>
         <td><span class="mono">${escapeHtml(r.email)}</span></td>
         <td>${estado}</td>
-        <td>${areasLabel}</td>
+        <td class="docAreasCell">${areasLabel}</td>
         <td>${origen}</td>
-        <td>${actions}</td>
+        <td class="docActionsCell">${actions}</td>
       </tr>
     `;
   }).join("");
@@ -4279,7 +4279,11 @@ function renderAdminDocentes(body) {
     ${errorNote}
     <p class="adminMeta">${rows.length} docente(s) · base de código + gestionados</p>
     <div class="recordTableWrap">
-      <table class="recordTable">
+      <table class="recordTable docTable">
+        <colgroup>
+          <col class="colDocente" /><col class="colCorreo" /><col class="colEstado" />
+          <col class="colAreas" /><col class="colOrigen" /><col class="colAcciones" />
+        </colgroup>
         <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Áreas</th><th>Origen</th><th>Acciones</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
@@ -4374,8 +4378,14 @@ function openDocenteEditor(email) {
       <h3>Editar docente</h3>
       <p class="adminSubSub">Corrige el nombre o el correo de acceso. El correo debe ser el de su cuenta de Google.</p>
       <div class="docAddForm">
-        <input type="text" id="docEditName" placeholder="Nombre" value="${escapeHtml(name)}" />
-        <input type="email" id="docEditEmail" placeholder="correo@gmail.com" value="${escapeHtml(email)}" ${inBase ? "disabled" : ""} />
+        <div>
+          <span class="docEditField">Nombre</span>
+          <input type="text" id="docEditName" placeholder="Nombre" value="${escapeHtml(name)}" />
+        </div>
+        <div>
+          <span class="docEditField">Correo de acceso</span>
+          <input type="email" id="docEditEmail" placeholder="correo@gmail.com" value="${escapeHtml(email)}" ${inBase ? "disabled" : ""} />
+        </div>
       </div>
       ${inBase
         ? `<p class="adminNote" style="margin-top:8px">Esta docente viene de la base de código: su correo no se puede cambiar desde el panel.</p>`
