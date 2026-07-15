@@ -2387,13 +2387,14 @@ async function loadAdminData() {
     if (ADMIN_STATE.tab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
     } else if (ADMIN_STATE.tab === "horarios") {
+      ADMIN_STATE.schedules = await fetchAdminSchedules();
+      const selEmail = resolveScheduleTeacherEmail();
+      ADMIN_STATE.scheduleTeacher = selEmail;
       const range = scheduleMonthWeekRange(ADMIN_STATE.scheduleYear, ADMIN_STATE.scheduleMonth);
-      const [schedules, overrides, monthRecords] = await Promise.all([
-        fetchAdminSchedules(),
+      const [overrides, monthRecords] = await Promise.all([
         fetchScheduleOverridesForYear(ADMIN_STATE.scheduleYear),
-        fetchRecordsForRange(range.from, range.to)
+        selEmail ? fetchRecordsForRange(range.from, range.to, selEmail) : Promise.resolve([])
       ]);
-      ADMIN_STATE.schedules = schedules;
       ADMIN_STATE.overrides = overrides;
       ADMIN_STATE.scheduleRecords = monthRecords;
     } else if (ADMIN_STATE.tab === "academica") {
@@ -2442,18 +2443,27 @@ async function fetchAdminRecords() {
   return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
 }
 
-// Jornadas de todos los docentes en un rango (para el cumplimiento del calendario).
-async function fetchRecordsForRange(from, to) {
+// Jornadas en un rango para el cumplimiento del calendario. Si se pasa `email`,
+// filtra por ese docente (mismo patrón que fetchAdminRecords, ya con índice).
+async function fetchRecordsForRange(from, to, email = "") {
   if (!APP_STATE.db || !from || !to) return [];
-  const q = query(
-    collection(APP_STATE.db, "teacherClassStartRecords"),
-    where("date", ">=", from),
-    where("date", "<=", to),
-    orderBy("date", "desc"),
-    limit(1500)
-  );
+  const constraints = [];
+  if (email) constraints.push(where("email", "==", email));
+  constraints.push(where("date", ">=", from));
+  constraints.push(where("date", "<=", to));
+  constraints.push(orderBy("date", "desc"));
+  constraints.push(limit(1500));
+  const q = query(collection(APP_STATE.db, "teacherClassStartRecords"), ...constraints);
   const snapshot = await getDocs(q);
   return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+}
+
+// Resuelve el docente fijo seleccionado en la pestaña Horarios (o el primero).
+function resolveScheduleTeacherEmail() {
+  const fixed = getAdminTeacherOptions()
+    .filter((t) => !ADMIN_EMAILS.includes(t.email) && (ADMIN_STATE.schedules[t.email]?.type || "flexible") === "fijo");
+  if (fixed.some((t) => t.email === ADMIN_STATE.scheduleTeacher)) return ADMIN_STATE.scheduleTeacher;
+  return fixed[0]?.email || "";
 }
 
 // Lunes de la semana (lun–dom) que contiene una fecha.
@@ -4787,11 +4797,12 @@ function computeScheduleWeeks(email, year, monthIndex) {
   const { date: today } = bogotaParts();
   const { from, to } = scheduleMonthWeekRange(year, monthIndex);
 
+  const target = String(email || "").toLowerCase().trim();
   const worked = new Map();
   for (const row of pairDailyShifts(ADMIN_STATE.scheduleRecords || [])) {
-    if (row.email !== email) continue;
+    if (String(row.email || "").toLowerCase().trim() !== target) continue;
     const m = String(row.horas).match(/(\d+)h (\d+)m/);
-    worked.set(row.date, m ? Number(m[1]) * 60 + Number(m[2]) : 0);
+    worked.set(row.date, (worked.get(row.date) || 0) + (m ? Number(m[1]) * 60 + Number(m[2]) : 0));
   }
 
   const weeks = [];
@@ -4959,28 +4970,19 @@ function renderAdminHorarios(body) {
       if (m < 0) { m = 11; y -= 1; }
       else if (m > 11) { m = 0; y += 1; }
       ADMIN_STATE.scheduleMonth = m;
-      if (y !== ADMIN_STATE.scheduleYear) {
-        ADMIN_STATE.scheduleYear = y;
-        loadAdminData(); // recarga excepciones del nuevo año
-      } else {
-        renderAdminBody();
-      }
+      ADMIN_STATE.scheduleYear = y;
+      loadAdminData(); // recarga excepciones y jornadas del nuevo mes
     });
   });
   $(".scheduleMonthToday", body)?.addEventListener("click", () => {
     const now = new Date();
-    const y = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(now));
+    ADMIN_STATE.scheduleYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(now));
     ADMIN_STATE.scheduleMonth = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(now)) - 1;
-    if (y !== ADMIN_STATE.scheduleYear) {
-      ADMIN_STATE.scheduleYear = y;
-      loadAdminData();
-    } else {
-      renderAdminBody();
-    }
+    loadAdminData();
   });
   $("#scheduleTeacherSelect", body)?.addEventListener("change", (e) => {
     ADMIN_STATE.scheduleTeacher = e.target.value || "";
-    renderAdminBody();
+    loadAdminData(); // recarga las jornadas del docente seleccionado
   });
 
   body.querySelectorAll(".scheduleSoloWrap .scheduleDay:not(.isBlank)").forEach((dayEl) => {
