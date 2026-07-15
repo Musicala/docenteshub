@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-15.7";
+const BUILD = "2026-07-15.8";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5956,11 +5956,28 @@ function getBibliotecaDb() {
 function macroAreaForBibliotecaArea(areaRaw) {
   const area = normalizeText(areaRaw);
   if (!area) return "*";
-  if (/(sala de profesores|vacacional)/.test(area)) return "*";
+  if (isGeneralBibliotecaArea(area)) return "*";
   if (/(ballet|danza|baile)/.test(area)) return "Danzas";
   if (/(dibujo|pintura|escultura|plastic|manualidad|ceramica)/.test(area)) return "Artes plásticas";
   if (/(teatro|actuacion|impro|dramat)/.test(area)) return "Teatro";
   return "Música";
+}
+
+// Algunos recursos antiguos usan "general" o "teoria-musical" como área,
+// mientras que el catálogo de asignación usa nombres más legibles. Centramos
+// aquí esas equivalencias para que una especialidad no dependa del formato con
+// el que se importó originalmente el recurso.
+function isGeneralBibliotecaArea(areaRaw) {
+  const area = normalizeText(areaRaw);
+  return !area || /^(general|sin[- ]?area|todos?)$/.test(area)
+    || /(sala de profesores|vacacional)/.test(area);
+}
+
+function canonicalBibliotecaEspecialidad(areaRaw) {
+  const area = normalizeText(areaRaw);
+  if (/^teoria([ -].*)?$/.test(area)) return "teoria";
+  if (/^ukelele([ -].*)?$/.test(area)) return "ukelele";
+  return area;
 }
 
 // Disciplinas conocidas → nombre de carpeta al inicio de la biblioteca.
@@ -6006,7 +6023,11 @@ function canSeeRecurso(recurso, access) {
   const hasConfig = access.areas.length > 0 || access.especialidades.length > 0;
   if (!hasConfig) return false;
 
-  const area = normalizeText(recurso?.area);
+  // "general" es material transversal: no debe desaparecer cuando una
+  // docente tenga una lista de especialidades limitada.
+  if (isGeneralBibliotecaArea(recurso?.area)) return true;
+
+  const area = canonicalBibliotecaEspecialidad(recurso?.area);
   const macro = macroForRecurso(recurso);
   // Recursos generales, institucionales y de disciplinas transversales
   // (minijuegos, etc.): visibles para cualquier docente activo.
