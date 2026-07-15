@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-15.6";
+const BUILD = "2026-07-15.7";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5175,6 +5175,34 @@ function renderAdminBotones(body) {
     </div>
   `;
 
+  const emojiGroups = [
+    ["Generales", ["🔗", "⭐", "✨", "🎯", "📌", "📍", "🔔", "✅", "📝", "💡", "🚀", "🌟", "🏆", "🥇"]],
+    ["Documentos y organización", ["📚", "📖", "🗂️", "📁", "📄", "🧾", "📅", "⏰", "🕒", "📊", "📈", "🔍"]],
+    ["Docencia y música", ["🎓", "👩‍🏫", "👨‍🏫", "🧑‍🏫", "🏫", "🎼", "🎵", "🎶", "🎤", "🎸", "🎹", "🎻", "🥁", "🎭", "🎨", "💃", "🩰"]],
+    ["Comunicación y tecnología", ["💬", "📣", "📩", "📧", "📞", "📱", "💻", "🖥️", "🌐", "🔒", "🔑", "⚙️", "🛠️", "🧰"]],
+    ["Personas y actividades", ["🤝", "👥", "🧑‍🤝‍🧑", "❤️", "🌱", "☀️", "🌈", "🏠", "🚗", "🚌", "✈️", "🧳", "🍎", "🎒", "👶", "🧒"]]
+  ];
+  const iconInput = $("#cbIcon", body);
+  const setIconValue = (value = "") => {
+    const iconPicker = $("#cbIcon", body);
+    if (!iconPicker) return;
+    if (value && !Array.from(iconPicker.options).some((option) => option.value === value)) {
+      const option = new Option(value, value);
+      iconPicker.add(option, 1);
+    }
+    iconPicker.value = value;
+  };
+
+  if (iconInput) {
+    const iconPicker = document.createElement("select");
+    iconPicker.id = "cbIcon";
+    iconPicker.setAttribute("aria-label", "Icono del botón");
+    iconPicker.innerHTML = `<option value="">Escoge un emoji</option>${emojiGroups.map(([label, emojis]) =>
+      `<optgroup label="${label}">${emojis.map((emoji) => `<option value="${emoji}">${emoji}</option>`).join("")}</optgroup>`
+    ).join("")}`;
+    iconInput.replaceWith(iconPicker);
+  }
+
   const resetForm = () => {
     $("#cbId", body).value = "";
     $("#cbIcon", body).value = "";
@@ -5192,7 +5220,7 @@ function renderAdminBotones(body) {
       const b = list.find((x) => x.id === btn.dataset.id);
       if (!b) return;
       $("#cbId", body).value = b.id;
-      $("#cbIcon", body).value = b.icon || "";
+      setIconValue(b.icon || "");
       $("#cbTitle", body).value = b.title || "";
       $("#cbSubtitle", body).value = b.subtitle || "";
       $("#cbSection", body).value = b.section || "";

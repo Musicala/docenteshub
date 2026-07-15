@@ -3930,7 +3930,8 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .customBtnForm h3{ margin:0 0 12px; }
 .customBtnFields{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
 .customBtnFields label{ display:flex; flex-direction:column; gap:4px; font-size:.82rem; font-weight:600; color:var(--muted); }
-.customBtnFields input{
+.customBtnFields input,
+.customBtnFields select{
   height:40px; padding:0 12px; border-radius:10px;
   border:1px solid var(--line); background:#fff; font-size:.9rem;
 }
