@@ -8,7 +8,7 @@
    - Limpieza de cachés viejos + mensajes para UI
 */
 
-const BUILD = "2026-07-15.3"; // Sube la versión en cada despliegue para actualizar el service worker.
+const BUILD = "2026-07-15.4"; // Sube la versión en cada despliegue para actualizar el service worker.
 const VERSION = `v5-${BUILD}`;
 
 const CACHE_STATIC  = `musicala-static`;   // sin versión para no acumular basura

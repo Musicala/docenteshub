@@ -2176,7 +2176,6 @@ const ADMIN_STATE = {
   liveSessions: [],
   schedules: {},       // { email: scheduleDoc }
   overrides: {},       // { "email__date": overrideDoc }
-  scheduleRecords: [], // jornadas del mes visible en la pestaña Horarios
   scheduleYear: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date())),
   scheduleMonth: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(new Date())) - 1,
   academic: { objectives: [], budgets: [], hourLogs: [] },
@@ -2387,16 +2386,12 @@ async function loadAdminData() {
     if (ADMIN_STATE.tab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
     } else if (ADMIN_STATE.tab === "horarios") {
-      ADMIN_STATE.schedules = await fetchAdminSchedules();
-      const selEmail = resolveScheduleTeacherEmail();
-      ADMIN_STATE.scheduleTeacher = selEmail;
-      const range = scheduleMonthWeekRange(ADMIN_STATE.scheduleYear, ADMIN_STATE.scheduleMonth);
-      const [overrides, monthRecords] = await Promise.all([
-        fetchScheduleOverridesForYear(ADMIN_STATE.scheduleYear),
-        selEmail ? fetchRecordsForRange(range.from, range.to, selEmail) : Promise.resolve([])
+      const [schedules, overrides] = await Promise.all([
+        fetchAdminSchedules(),
+        fetchScheduleOverridesForYear(ADMIN_STATE.scheduleYear)
       ]);
+      ADMIN_STATE.schedules = schedules;
       ADMIN_STATE.overrides = overrides;
-      ADMIN_STATE.scheduleRecords = monthRecords;
     } else if (ADMIN_STATE.tab === "academica") {
       ADMIN_STATE.academic = await fetchAdminAcademic();
     } else if (ADMIN_STATE.tab === "docentes") {
@@ -2441,29 +2436,6 @@ async function fetchAdminRecords() {
   const q = query(collection(APP_STATE.db, "teacherClassStartRecords"), ...constraints);
   const snapshot = await getDocs(q);
   return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
-}
-
-// Jornadas en un rango para el cumplimiento del calendario. Si se pasa `email`,
-// filtra por ese docente (mismo patrón que fetchAdminRecords, ya con índice).
-async function fetchRecordsForRange(from, to, email = "") {
-  if (!APP_STATE.db || !from || !to) return [];
-  const constraints = [];
-  if (email) constraints.push(where("email", "==", email));
-  constraints.push(where("date", ">=", from));
-  constraints.push(where("date", "<=", to));
-  constraints.push(orderBy("date", "desc"));
-  constraints.push(limit(1500));
-  const q = query(collection(APP_STATE.db, "teacherClassStartRecords"), ...constraints);
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
-}
-
-// Resuelve el docente fijo seleccionado en la pestaña Horarios (o el primero).
-function resolveScheduleTeacherEmail() {
-  const fixed = getAdminTeacherOptions()
-    .filter((t) => !ADMIN_EMAILS.includes(t.email) && (ADMIN_STATE.schedules[t.email]?.type || "flexible") === "fijo");
-  if (fixed.some((t) => t.email === ADMIN_STATE.scheduleTeacher)) return ADMIN_STATE.scheduleTeacher;
-  return fixed[0]?.email || "";
 }
 
 // Lunes de la semana (lun–dom) que contiene una fecha.
@@ -2713,7 +2685,9 @@ function scheduleCalendarDisplayItem(item) {
     return { ...item, excused: false, start: item.note, end: "" };
   }
   if (item.start) {
-    return { ...item, start: scheduleRangeText(item.start, item.end), end: "" };
+    const s = timeToMinutes(item.start), e = timeToMinutes(item.end);
+    const lunch = s != null && e != null && e - s > 360; // más de 6h → incluye almuerzo
+    return { ...item, start: scheduleRangeText(item.start, item.end), end: "", lunch };
   }
   return item;
 }
@@ -4763,8 +4737,10 @@ function renderScheduleMonthSolo(getItem, year, monthIndex, todayStr = "", optio
     const item = getItem(date);
     let chip = "";
     if (item) {
-      const label = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `–${item.end}` : ""}`;
-      chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(item.note || label)}">${escapeHtml(label)}</span>`;
+      const baseLabel = item.excused ? "Justificado" : `${item.start || ""}${item.end ? `–${item.end}` : ""}`;
+      const label = item.lunch ? `${baseLabel} 🍴` : baseLabel;
+      const title = item.lunch ? `${item.note || baseLabel} · incluye 1h de almuerzo` : (item.note || baseLabel);
+      chip = `<span class="scheduleChip ${item.source === "override" ? "isOverride" : ""}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
     }
     const isToday = date === todayStr ? "isToday" : "";
     return `
@@ -4790,38 +4766,41 @@ function shortDayMonth(dateStr) {
     .replace(".", "");
 }
 
-// Calcula, semana a semana (lun–dom), las horas esperadas vs. trabajadas del
-// docente para las semanas que tocan el mes visible. Días "no viene" no exigen
-// horas; "justificados" son neutros. Comparación exacta (sin margen).
-function computeScheduleWeeks(email, year, monthIndex) {
-  const { date: today } = bogotaParts();
-  const { from, to } = scheduleMonthWeekRange(year, monthIndex);
-
-  const target = String(email || "").toLowerCase().trim();
-  const worked = new Map();
-  for (const row of pairDailyShifts(ADMIN_STATE.scheduleRecords || [])) {
-    if (String(row.email || "").toLowerCase().trim() !== target) continue;
-    const m = String(row.horas).match(/(\d+)h (\d+)m/);
-    worked.set(row.date, (worked.get(row.date) || 0) + (m ? Number(m[1]) * 60 + Number(m[2]) : 0));
+// Minutos netos de una jornada aplicando la regla de almuerzo: si la jornada
+// bruta supera 6 horas, se descuenta 1 hora de almuerzo.
+function netShiftMinutes(startMin, endMin) {
+  if (startMin == null || endMin == null || endMin <= startMin) {
+    return { gross: 0, net: 0, lunch: false };
   }
+  const gross = endMin - startMin;
+  const lunch = gross > 360; // más de 6 horas
+  return { gross, net: lunch ? gross - 60 : gross, lunch };
+}
 
+// Suma, semana a semana (lun–dom) del mes visible, las horas AGENDADAS del
+// horario fijo (y sus excepciones), aplicando la regla de almuerzo. Sirve para
+// confirmar que las horas semanales quedaron bien programadas de antemano.
+function computeScheduleWeeks(email, year, monthIndex) {
+  const { from, to } = scheduleMonthWeekRange(year, monthIndex);
   const weeks = [];
   let cursor = from;
   let guard = 0;
   while (cursor <= to && guard < 8) {
     const weekStart = cursor;
     const sunday = addDaysToDateStr(weekStart, 6);
-    let expected = 0, workedMin = 0, hasExpected = false, justified = false;
+    let net = 0, lunchDays = 0, hasDays = false;
     for (let i = 0; i < 7; i++) {
       const date = addDaysToDateStr(weekStart, i);
-      workedMin += worked.get(date) || 0;
       const item = getExpectedSchedule(email, date);
-      if (!item || item.dayOff) continue;      // sin jornada / "no viene"
-      if (item.excused) { justified = true; continue; } // justificado: neutro
+      if (!item || item.dayOff || item.excused) continue;
       const s = timeToMinutes(item.start), e = timeToMinutes(item.end);
-      if (s != null && e != null && e > s) { expected += e - s; hasExpected = true; }
+      const { net: dayNet, lunch } = netShiftMinutes(s, e);
+      if (dayNet <= 0) continue;
+      net += dayNet;
+      if (lunch) lunchDays += 1;
+      hasDays = true;
     }
-    weeks.push({ weekStart, sunday, expected, worked: workedMin, hasExpected, justified, closed: sunday < today });
+    weeks.push({ weekStart, sunday, net, lunchDays, hasDays });
     cursor = addDaysToDateStr(weekStart, 7);
     guard += 1;
   }
@@ -4830,33 +4809,29 @@ function computeScheduleWeeks(email, year, monthIndex) {
 
 function renderScheduleWeeksPanel(email) {
   const weeks = computeScheduleWeeks(email, ADMIN_STATE.scheduleYear, ADMIN_STATE.scheduleMonth)
-    .filter((w) => w.hasExpected);
+    .filter((w) => w.hasDays);
   if (!weeks.length) {
-    return `<p class="adminNote">Sin horas de horario fijo en las semanas de este mes.</p>`;
+    return `<p class="adminNote">Sin días agendados en las semanas de este mes.</p>`;
   }
   const rows = weeks.map((w) => {
-    const diff = w.expected - w.worked;         // exacto
-    let cls = "admComp-ok", label = "🟢 Completo";
-    if (diff > 0) {
-      cls = w.closed ? "admComp-bad" : "admComp-pend";
-      label = w.closed ? `🔴 faltan ${minutesToLabel(diff)}` : `🟡 pendiente ${minutesToLabel(diff)}`;
-    }
-    const just = w.justified ? ` · <span class="schedWeekJust">incluye justificado</span>` : "";
+    const lunchNote = w.lunchDays
+      ? ` · <span class="schedWeekJust">🍴 ${w.lunchDays} día${w.lunchDays === 1 ? "" : "s"} con almuerzo (−${w.lunchDays}h)</span>`
+      : "";
     return `
       <div class="schedWeekRow">
         <div class="schedWeekWhen">
           <strong>${escapeHtml(shortDayMonth(w.weekStart))} – ${escapeHtml(shortDayMonth(w.sunday))}</strong>
-          <small>Meta ${escapeHtml(minutesToLabel(w.expected))} · trabajado ${escapeHtml(minutesToLabel(w.worked))}${just}</small>
+          <small>Horas agendadas${lunchNote}</small>
         </div>
-        <span class="admComp ${cls}">${escapeHtml(label)}</span>
+        <span class="admComp admComp-total">${escapeHtml(minutesToLabel(w.net))}</span>
       </div>
     `;
   }).join("");
   return `
     <div class="schedWeeksPanel">
-      <h4>Cumplimiento por semana (lun–dom)</h4>
+      <h4>Horas agendadas por semana (lun–dom)</h4>
       ${rows}
-      <p class="adminNote">Compara las horas del horario fijo contra lo trabajado. 🔴 semana cerrada con horas faltantes · 🟡 semana en curso pendiente · 🟢 completa. Los días justificados o de "no viene" no exigen horas.</p>
+      <p class="adminNote">Suma las horas del horario fijo (y excepciones) de cada semana para confirmar que quedaron bien programadas. Si un día supera 6 horas, se descuenta 1 hora de almuerzo.</p>
     </div>
   `;
 }
@@ -4970,19 +4945,28 @@ function renderAdminHorarios(body) {
       if (m < 0) { m = 11; y -= 1; }
       else if (m > 11) { m = 0; y += 1; }
       ADMIN_STATE.scheduleMonth = m;
-      ADMIN_STATE.scheduleYear = y;
-      loadAdminData(); // recarga excepciones y jornadas del nuevo mes
+      if (y !== ADMIN_STATE.scheduleYear) {
+        ADMIN_STATE.scheduleYear = y;
+        loadAdminData(); // recarga excepciones del nuevo año
+      } else {
+        renderAdminBody();
+      }
     });
   });
   $(".scheduleMonthToday", body)?.addEventListener("click", () => {
     const now = new Date();
-    ADMIN_STATE.scheduleYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(now));
+    const y = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(now));
     ADMIN_STATE.scheduleMonth = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(now)) - 1;
-    loadAdminData();
+    if (y !== ADMIN_STATE.scheduleYear) {
+      ADMIN_STATE.scheduleYear = y;
+      loadAdminData();
+    } else {
+      renderAdminBody();
+    }
   });
   $("#scheduleTeacherSelect", body)?.addEventListener("change", (e) => {
     ADMIN_STATE.scheduleTeacher = e.target.value || "";
-    loadAdminData(); // recarga las jornadas del docente seleccionado
+    renderAdminBody();
   });
 
   body.querySelectorAll(".scheduleSoloWrap .scheduleDay:not(.isBlank)").forEach((dayEl) => {
