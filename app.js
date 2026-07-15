@@ -3360,6 +3360,85 @@ async function createAdminShiftRecords({ email, date, modalidad, inTime, outTime
   }
 }
 
+/* ----------------------------------------------------------------------------
+   Cumplimiento de horas semanales (horario fijo)
+   ----------------------------------------------------------------------------
+   Para cada docente con horario fijo compara, semana a semana (lun–dom), las
+   horas esperadas contra las realmente trabajadas. Los días con override de
+   "no viene" no exigen horas; los "justificados" son neutros (ni exigen ni
+   restan). Las semanas ya cerradas cuentan como déficit real (🔴); la semana
+   en curso se muestra como pendiente (🟡).
+---------------------------------------------------------------------------- */
+function mondayOfDate(dateStr) {
+  const order = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"];
+  return addDaysToDateStr(dateStr, -order.indexOf(weekdayKeyFromDate(dateStr)));
+}
+
+function computeWeeklyCompliance() {
+  const { from, to } = ADMIN_STATE.filters;
+  const schedules = ADMIN_STATE.schedules || {};
+  const overrides = ADMIN_STATE.overrides || {};
+  const { date: today } = bogotaParts();
+
+  // Minutos trabajados por email|fecha.
+  const worked = new Map();
+  for (const row of pairDailyShifts(ADMIN_STATE.records)) {
+    const m = String(row.horas).match(/(\d+)h (\d+)m/);
+    worked.set(`${row.email}|${row.date}`, m ? Number(m[1]) * 60 + Number(m[2]) : 0);
+  }
+
+  const dates = enumerateDates(from, to);
+  const result = new Map();
+
+  for (const [email, sched] of Object.entries(schedules)) {
+    if (!sched || sched.type !== "fijo" || !sched.weekly) continue;
+    const weeks = new Map();
+    for (const date of dates) {
+      const wk = mondayOfDate(date);
+      if (!weeks.has(wk)) weeks.set(wk, { expected: 0, worked: 0, sunday: addDaysToDateStr(wk, 6) });
+      const bucket = weeks.get(wk);
+      bucket.worked += worked.get(`${email}|${date}`) || 0;
+
+      const ov = overrides[`${email}__${date}`];
+      let expected = 0;
+      if (ov) {
+        const enabled = ov.enabled !== false && ov.works !== false && !ov.dayOff;
+        if (!enabled) {
+          expected = 0;                       // "no viene": no exige horas
+        } else if (ov.excused) {
+          continue;                            // justificado: día neutro
+        } else {
+          const s = timeToMinutes(ov.start), e = timeToMinutes(ov.end);
+          expected = (s != null && e != null && e > s) ? e - s : 0;
+        }
+      } else {
+        const day = sched.weekly[weekdayKeyFromDate(date)] || {};
+        const s = timeToMinutes(day.start), e = timeToMinutes(day.end);
+        expected = (s != null && e != null && e > s) ? e - s : 0;
+      }
+      bucket.expected += expected;
+    }
+
+    let deficit = 0, pending = 0, hasGoal = false;
+    for (const b of weeks.values()) {
+      if (b.expected <= 0) continue;
+      hasGoal = true;
+      const diff = b.expected - b.worked;      // exacto, sin margen
+      if (diff <= 0) continue;
+      if (b.sunday < today) deficit += diff; else pending += diff;
+    }
+    result.set(email, { deficit, pending, hasGoal });
+  }
+  return result;
+}
+
+function complianceCell(comp) {
+  if (!comp || !comp.hasGoal) return `<span class="admComp admComp-na">—</span>`;
+  if (comp.deficit > 0) return `<span class="admComp admComp-bad">🔴 faltan ${escapeHtml(minutesToLabel(comp.deficit))}</span>`;
+  if (comp.pending > 0) return `<span class="admComp admComp-pend">🟡 pendiente ${escapeHtml(minutesToLabel(comp.pending))}</span>`;
+  return `<span class="admComp admComp-ok">🟢 Completo</span>`;
+}
+
 function renderAdminMensual(body) {
   const records = ADMIN_STATE.records;
   if (!records.length) {
@@ -3406,6 +3485,8 @@ function renderAdminMensual(body) {
 
   const list = Array.from(byTeacher.values()).sort((a, b) => a.name.localeCompare(b.name, "es"));
 
+  const compliance = computeWeeklyCompliance();
+
   const rows = list.map((t) => {
     const totalH = Math.floor(t.horasMs / 3600000);
     const totalM = Math.floor((t.horasMs % 3600000) / 60000);
@@ -3420,9 +3501,17 @@ function renderAdminMensual(body) {
         <td>${t.hogar}</td>
         <td>${t.virtual}</td>
         <td>${escapeHtml(horasTotal)}</td>
+        <td>${complianceCell(compliance.get(t.email))}</td>
       </tr>
     `;
   }).join("");
+
+  // Docentes con horario fijo que no completaron sus horas semanales.
+  const deficitList = list
+    .map((t) => ({ name: t.name, comp: compliance.get(t.email) }))
+    .filter((x) => x.comp && x.comp.deficit > 0)
+    .sort((a, b) => b.comp.deficit - a.comp.deficit);
+  const pendingCount = list.filter((t) => compliance.get(t.email)?.pending > 0).length;
 
   // --- Estadísticas de puntualidad del rango (reutiliza el motor de la pestaña Puntualidad) ---
   const stats = computeAdminStats();
@@ -3439,6 +3528,7 @@ function renderAdminMensual(body) {
       ${admKpi(String(stats.salida_temprana), "Salidas antes", stats.salida_temprana ? "warn" : "ok")}
       ${admKpi(`${totalH}h ${String(totalM).padStart(2, "0")}m`, "Horas trabajadas", "info")}
       ${admKpi(String(incompletas), "Jornadas sin cierre", incompletas ? "warn" : "ok")}
+      ${admKpi(String(deficitList.length), "Horas semanales sin cumplir", deficitList.length ? "absent" : "ok")}
       ${admKpi(minutesToLabel(stats.impacto) === "-" ? "0m" : minutesToLabel(stats.impacto), "Impacto (min)", stats.impacto ? "warn" : "ok")}
       ${admKpi(String(stats.justificado), "Justificados", "info")}
     </div>
@@ -3456,6 +3546,18 @@ function renderAdminMensual(body) {
       <button class="btnGhost btnSmall" id="admCopyStats" type="button">Copiar resumen</button>
     </div>
     ${kpis}
+    ${deficitList.length ? `
+      <section class="admCard admCardAlert">
+        <h3 class="admCardH">⚠️ Horas semanales sin cumplir</h3>
+        ${deficitList.map((x) => `
+          <div class="admRankRow">
+            <span class="admRankName">${escapeHtml(x.name)}</span>
+            <span class="admRankVal admComp-bad">faltan ${escapeHtml(minutesToLabel(x.comp.deficit))}</span>
+          </div>
+        `).join("")}
+        ${pendingCount ? `<p class="adminNote">Además, ${pendingCount} docente${pendingCount === 1 ? "" : "s"} con horas 🟡 pendientes de la semana en curso.</p>` : ""}
+      </section>
+    ` : `<p class="adminNote">✅ Todos los docentes con horario fijo van al día con sus horas semanales (semanas cerradas del rango).</p>`}
     <div class="admRankCols">
       <section class="admCard">
         <h3 class="admCardH">🏆 Mejor puntualidad</h3>
@@ -3473,12 +3575,12 @@ function renderAdminMensual(body) {
     <div class="recordTableWrap">
       <table class="recordTable">
         <thead><tr>
-          <th>Docente</th><th>Días</th><th>Ingresos</th><th>Cierres</th><th>Sede</th><th>Hogar</th><th>Virtual</th><th>Horas (aprox.)</th>
+          <th>Docente</th><th>Días</th><th>Ingresos</th><th>Cierres</th><th>Sede</th><th>Hogar</th><th>Virtual</th><th>Horas (aprox.)</th><th>Cumplimiento semanal</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. La puntualidad compara la primera marca de ingreso contra el horario/override del día.</p>
+    <p class="adminNote">Horas calculadas como diferencia entre el primer ingreso y la última salida del día. La puntualidad compara la primera marca de ingreso contra el horario/override del día. El <strong>cumplimiento semanal</strong> compara las horas del horario fijo (semana lun–dom) contra lo trabajado: 🔴 semanas cerradas con déficit, 🟡 semana en curso pendiente, 🟢 completo. Los días justificados o de "no viene" no exigen horas.</p>
   `;
 
   $("#admCopyStats", body)?.addEventListener("click", () => {
@@ -3487,6 +3589,11 @@ function renderAdminMensual(body) {
       `Puntualidad: ${stats.pctPuntual}% · Tardanzas: ${stats.tarde} (prom. ${stats.avgLate ? minutesToLabel(stats.avgLate) : "0m"}) · Ausencias: ${stats.ausente}`,
       `Salidas antes: ${stats.salida_temprana} · Justificados: ${stats.justificado} · Horas trabajadas: ${totalH}h ${String(totalM).padStart(2, "0")}m · Jornadas sin cierre: ${incompletas}`,
       "",
+      ...(deficitList.length ? [
+        "Horas semanales sin cumplir:",
+        ...deficitList.map((x) => `  - ${x.name} — faltan ${minutesToLabel(x.comp.deficit)}`),
+        ""
+      ] : []),
       "Mejor puntualidad:",
       ...best.map((m, i) => `  ${i + 1}. ${m.name} — ${m.pct}%`),
       "",
