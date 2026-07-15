@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-14.2";
+const BUILD = "2026-07-15.6";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -744,7 +744,7 @@ async function registerServiceWorker() {
   };
 
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js?v=2026-07-11.1", {
+    const registration = await navigator.serviceWorker.register(`./sw.js?v=${BUILD}`, {
       scope: "./",
       updateViaCache: "none"
     });
@@ -5316,7 +5316,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   APP_STATE.activeLinks = links || {};
   APP_STATE.activeProfile = profile || null;
 
+  const hiddenHomeButtons = new Set(["salones", "bitacoraClasesNueva"]);
   const filteredButtons = buttons.filter((button) => {
+    if (hiddenHomeButtons.has(button?.id)) return false;
     const state = getResolvedButtonState(button, APP_STATE.activeLinks);
     return state.visible;
   });
@@ -5325,6 +5327,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     { id: "bitacoraClasesNueva", className: "heroSecondary", label: "Bitácoras de clase" }
   ]
     .filter((action) => {
+      if (hiddenHomeButtons.has(action.id)) return false;
       const button = getButtonMeta(action.id);
       return button && getResolvedButtonState(button, APP_STATE.activeLinks).visible;
     })
