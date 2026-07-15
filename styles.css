@@ -2955,6 +2955,37 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   height:38px;
 }
 
+.adminMonthChips{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+  margin-top:10px;
+}
+.adminMonthChipsLabel{
+  font-size:.78rem;
+  font-weight:700;
+  color:#4b5563;
+  margin-right:2px;
+}
+.adminMonthChip{
+  border:1px solid rgba(12,65,196,.25);
+  background:#fff;
+  color:#0c41c4;
+  border-radius:999px;
+  padding:5px 12px;
+  font-size:.8rem;
+  font-weight:600;
+  cursor:pointer;
+  text-transform:capitalize;
+}
+.adminMonthChip:hover{ background:rgba(12,65,196,.08); }
+.adminMonthChip.isActive{
+  background:#0c41c4;
+  color:#fff;
+  border-color:#0c41c4;
+}
+
 .adminBody{
   min-height:200px;
   min-width:0; /* permite que la tabla ancha use scroll interno y no desborde el modal */

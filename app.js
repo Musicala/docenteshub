@@ -2211,6 +2211,26 @@ function adminDefaultDateRange() {
   return { from: `${yyyy}-${mm}-${dd}`, to: today };
 }
 
+// Accesos rápidos de mes para el filtro (mes actual + los 5 anteriores).
+function adminMonthPresets(count = 6) {
+  const { date } = bogotaParts();
+  let y = Number(date.slice(0, 4));
+  let m = Number(date.slice(5, 7)) - 1; // 0-based
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const mm = String(m + 1).padStart(2, "0");
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    out.push({
+      label: `${(MONTH_NAMES_ES[m] || "").slice(0, 3)} ${y}`,
+      from: `${y}-${mm}-01`,
+      to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}`
+    });
+    m -= 1;
+    if (m < 0) { m = 11; y -= 1; }
+  }
+  return out;
+}
+
 function getAdminTeacherOptions({ includeDisabled = true } = {}) {
   const managed = ADMIN_STATE.hubUsers || {};
   const emails = new Set([
@@ -2306,6 +2326,13 @@ function ensureAdminPanelModal() {
         <button class="btnGoogle adminApply" id="adminFilterApply" type="button">Aplicar</button>
       </div>
 
+      <div class="adminMonthChips" id="adminMonthChips">
+        <span class="adminMonthChipsLabel">Mes rápido:</span>
+        ${adminMonthPresets().map((p) => `
+          <button class="adminMonthChip" type="button" data-from="${escapeHtml(p.from)}" data-to="${escapeHtml(p.to)}">${escapeHtml(p.label)}</button>
+        `).join("")}
+      </div>
+
       <div class="adminBody" id="adminBody">
         <p>Cargando…</p>
       </div>
@@ -2333,6 +2360,22 @@ function ensureAdminPanelModal() {
     ADMIN_STATE.filters.from = $("#adminFilterFrom", modal).value || "";
     ADMIN_STATE.filters.to = $("#adminFilterTo", modal).value || "";
     loadAdminData();
+  });
+
+  modal.querySelectorAll(".adminMonthChip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const from = chip.dataset.from || "";
+      const to = chip.dataset.to || "";
+      const fromInput = $("#adminFilterFrom", modal);
+      const toInput = $("#adminFilterTo", modal);
+      if (fromInput) fromInput.value = from;
+      if (toInput) toInput.value = to;
+      ADMIN_STATE.filters.email = $("#adminFilterEmail", modal).value || "";
+      ADMIN_STATE.filters.from = from;
+      ADMIN_STATE.filters.to = to;
+      modal.querySelectorAll(".adminMonthChip").forEach((c) => c.classList.toggle("isActive", c === chip));
+      loadAdminData();
+    });
   });
 
   return modal;
