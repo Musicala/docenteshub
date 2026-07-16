@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-15.8";
+const BUILD = "2026-07-16.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -931,6 +931,26 @@ function wireDrawerHandlers(auth) {
         return;
       }
 
+      if (action === "favorites") {
+        openFavoritesModal();
+        return;
+      }
+
+      if (action === "search") {
+        focusHubSearch();
+        return;
+      }
+
+      if (action === "switchHub") {
+        openHubSwitcherModal();
+        return;
+      }
+
+      if (action === "support") {
+        openSupportModal();
+        return;
+      }
+
       const href = button.getAttribute("data-href");
       if (href && !openExternal(href)) {
         toast("Ese link está raro y lo bloqueé 😶‍🌫️");
@@ -938,6 +958,227 @@ function wireDrawerHandlers(auth) {
     },
     { passive: true }
   );
+}
+
+/* ============================================================================
+   9b) ACCIONES DEL DRAWER: favoritos, buscar, cambiar hub, soporte
+============================================================================ */
+const FAV_USAGE_KEY = "hubFavUsage";
+
+// Otros hubs de Musicala. Deja url vacía mientras el hub no exista todavía.
+const OTHER_HUBS = [
+  { id: "docentes", icon: "🎓", title: "Docentes", subtitle: "Este hub", current: true },
+  { id: "admin", icon: "🛠️", title: "Admin", subtitle: "Panel de administración", adminPanel: true },
+  { id: "practicantes", icon: "🌱", title: "Practicantes", subtitle: "Hub de practicantes", url: "" }
+];
+
+function readFavUsage() {
+  try {
+    const raw = localStorage.getItem(FAV_USAGE_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function trackButtonUsage(id) {
+  if (!id || id === "adminPanel") return;
+  try {
+    const data = readFavUsage();
+    data[id] = (Number(data[id]) || 0) + 1;
+    localStorage.setItem(FAV_USAGE_KEY, JSON.stringify(data));
+  } catch {
+    /* almacenamiento lleno o bloqueado: no pasa nada */
+  }
+}
+
+// Modal genérico y liviano para las acciones del menú lateral.
+function openDrawerActionModal(title, bodyHtml) {
+  $("#drawerActionModal")?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "drawerActionModal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", title);
+  modal.style.cssText =
+    "position:fixed;inset:0;background:rgba(11,16,32,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;z-index:9999;padding:18px;";
+
+  modal.innerHTML = `
+    <div style="width:min(520px,100%);max-height:min(80vh,640px);display:flex;flex-direction:column;background:rgba(255,255,255,.96);border:1px solid rgba(11,16,32,.14);border-radius:22px;box-shadow:0 28px 80px rgba(11,16,32,.22);overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(11,16,32,.10);">
+        <div style="font-weight:900;">${escapeHtml(title)}</div>
+        <button type="button" data-modal-close class="btnGhost" style="height:36px;padding:0 12px;border-radius:12px;border:1px solid rgba(11,16,32,.14);background:rgba(255,255,255,.92);font-weight:850;cursor:pointer;">Cerrar</button>
+      </div>
+      <div style="padding:14px;overflow:auto;display:grid;gap:10px;">${bodyHtml}</div>
+    </div>
+  `;
+
+  const close = () => modal.remove();
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+    if (event.target.closest("[data-modal-close]")) close();
+  });
+  window.addEventListener(
+    "keydown",
+    function onKey(event) {
+      if (event.key === "Escape") {
+        close();
+        window.removeEventListener("keydown", onKey);
+      }
+    }
+  );
+
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function drawerModalItem({ icon, title, subtitle, dataAttr, disabled = false }) {
+  return `
+    <button type="button" ${dataAttr} ${disabled ? "disabled" : ""}
+      style="display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;border-radius:16px;border:1px solid rgba(11,16,32,.12);background:rgba(255,255,255,.9);cursor:${disabled ? "default" : "pointer"};opacity:${disabled ? ".55" : "1"};">
+      <span style="font-size:22px;" aria-hidden="true">${escapeHtml(icon)}</span>
+      <span style="display:grid;gap:2px;">
+        <span style="font-weight:850;">${escapeHtml(title)}</span>
+        <span style="font-size:12px;color:rgba(11,16,32,.62);">${escapeHtml(subtitle)}</span>
+      </span>
+    </button>
+  `;
+}
+
+function openFavoritesModal() {
+  const usage = readFavUsage();
+  const items = Object.entries(usage)
+    .map(([id, count]) => ({ id, count: Number(count) || 0, meta: getButtonMeta(id) }))
+    .filter((item) => {
+      if (!item.meta || !item.count) return false;
+      return getResolvedButtonState(item.meta, APP_STATE.activeLinks).visible;
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  if (!items.length) {
+    const modal = openDrawerActionModal(
+      "Favoritos",
+      `<p style="margin:0;color:rgba(11,16,32,.72);">Aún no tienes accesos frecuentes. A medida que uses los módulos del HUB, aquí aparecerán tus accesos más usados. ⭐</p>`
+    );
+    return modal;
+  }
+
+  const body = items
+    .map((item) =>
+      drawerModalItem({
+        icon: item.meta.icon,
+        title: item.meta.title,
+        subtitle: `${item.meta.subtitle} · usado ${item.count} ${item.count === 1 ? "vez" : "veces"}`,
+        dataAttr: `data-fav-id="${escapeHtml(item.id)}"`
+      })
+    )
+    .join("");
+
+  const modal = openDrawerActionModal("Favoritos", body);
+  modal.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-fav-id]");
+    if (!btn) return;
+    modal.remove();
+    handleButtonAction(btn.getAttribute("data-fav-id"));
+  });
+}
+
+function focusHubSearch() {
+  const input = $("#hubSearchInput");
+  if (!input) {
+    toast("El buscador aparece en la pantalla principal del HUB 🔎");
+    return;
+  }
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => input.focus({ preventScroll: true }), 250);
+}
+
+function openHubSwitcherModal() {
+  const body = OTHER_HUBS.map((hub) => {
+    const available = hub.current || hub.adminPanel ? true : !!hub.url;
+    const subtitle = hub.current
+      ? "Estás aquí ahora"
+      : available
+        ? hub.subtitle
+        : `${hub.subtitle} · próximamente`;
+    return drawerModalItem({
+      icon: hub.icon,
+      title: hub.title,
+      subtitle,
+      dataAttr: `data-hub-id="${escapeHtml(hub.id)}"`,
+      disabled: hub.current
+    });
+  }).join("");
+
+  const modal = openDrawerActionModal("Cambiar Hub", body);
+  modal.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-hub-id]");
+    if (!btn) return;
+    const hub = OTHER_HUBS.find((h) => h.id === btn.getAttribute("data-hub-id"));
+    if (!hub || hub.current) return;
+
+    if (hub.adminPanel) {
+      modal.remove();
+      if (isAdminUser()) openAdminPanel();
+      else toast("El panel Admin es solo para administradores 🛠️");
+      return;
+    }
+
+    if (!hub.url) {
+      toast(`El hub de ${hub.title} aún no está disponible 🌱`);
+      return;
+    }
+
+    modal.remove();
+    if (!openExternal(hub.url)) toast("Ese link está raro y lo bloqueé 😶‍🌫️");
+  });
+}
+
+function openSupportModal() {
+  const build = $("#drawer-build")?.textContent?.trim() || "";
+  const email = emailKey(APP_STATE.activeUser) || "";
+  const subject = encodeURIComponent("Soporte · HUB Docentes Musicala");
+  const bodyText = encodeURIComponent(
+    `Hola, necesito ayuda con el HUB Docentes.\n\nDescribe aquí el problema:\n\n\n---\nCuenta: ${email}\nVersión: ${build}\nNavegador: ${navigator.userAgent}`
+  );
+  const mailto = `mailto:${ADMIN_EMAILS.join(",")}?subject=${subject}&body=${bodyText}`;
+
+  const body = `
+    <p style="margin:0;color:rgba(11,16,32,.72);">¿Algo no funciona o tienes una duda? Escríbenos y el equipo te ayuda. Tu correo y la versión de la app se incluyen automáticamente para diagnosticar más rápido.</p>
+    ${drawerModalItem({ icon: "✉️", title: "Enviar correo a soporte", subtitle: "Abre tu app de correo con el reporte listo", dataAttr: 'data-support="mail"' })}
+    ${drawerModalItem({ icon: "📋", title: "Copiar datos de diagnóstico", subtitle: "Versión, cuenta y navegador al portapapeles", dataAttr: 'data-support="copy"' })}
+  `;
+
+  const modal = openDrawerActionModal("Soporte", body);
+  modal.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-support]");
+    if (!btn) return;
+    const kind = btn.getAttribute("data-support");
+
+    if (kind === "mail") {
+      const link = document.createElement("a");
+      link.href = mailto;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      modal.remove();
+      return;
+    }
+
+    if (kind === "copy") {
+      const info = `HUB Docentes Musicala\nCuenta: ${email}\nVersión: ${build}\nNavegador: ${navigator.userAgent}`;
+      try {
+        await navigator.clipboard.writeText(info);
+        toast("Datos de diagnóstico copiados ✅");
+      } catch {
+        toast("No pude copiar automáticamente 😔 Usa el correo de soporte.");
+      }
+    }
+  });
 }
 
 /* ============================================================================
@@ -5822,6 +6063,8 @@ function openStudentMessages() {
 
 async function handleButtonAction(id, trigger = null) {
   if (!id) return;
+
+  trackButtonUsage(id);
 
   if (id === "carnet") {
     openCarnet(APP_STATE.activeProfile);
