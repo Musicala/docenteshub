@@ -63,7 +63,6 @@ const HUB = {
 
   GENERAL_LINKS: {
     salones: "https://musicala.github.io/asignaciondesalones/",
-    nomina: "https://docs.google.com/forms/d/e/1FAIpQLSeMOhoY9d8JOf1Oq8DnD_aSEDkBmOXmzYJtlCCU-7CNVYjnLA/viewform",
     observacion: "https://docs.google.com/forms/d/1z8TEQACP6L8d0vTWEpSl2RQJ198PwQwzH4-UKqq9EQA/viewform?edit_requested=true",
     induccion: "https://musicalaescuela.github.io/inducciondocentesmusicala/",
     jornada: "__INTERNAL_TEACHER_SHIFT__",
@@ -187,7 +186,6 @@ const HUB = {
     { id: "musigym", icon: "🏋️", title: "MusiGym Training Hub", subtitle: "Entrenamiento", section: "Recursos" },
     { id: "ensambles", icon: "🎶", title: "Ensambles", subtitle: "Agrupaciones", section: "Recursos" },
 
-    { id: "nomina", icon: "💰", title: "Novedades nómina", subtitle: "General", section: "Institucional" },
     { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional", showWhenMissing: true },
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
     { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
