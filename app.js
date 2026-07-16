@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-16.1";
+const BUILD = "2026-07-16.2";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -969,7 +969,7 @@ const FAV_USAGE_KEY = "hubFavUsage";
 const OTHER_HUBS = [
   { id: "docentes", icon: "🎓", title: "Docentes", subtitle: "Este hub", current: true },
   { id: "admin", icon: "🛠️", title: "Admin", subtitle: "Panel de administración", adminPanel: true },
-  { id: "practicantes", icon: "🌱", title: "Practicantes", subtitle: "Hub de practicantes", url: "" }
+  { id: "practicantes", icon: "🌱", title: "Practicantes", subtitle: "Hub de practicantes", url: "https://musicala.github.io/practicanteshub/" }
 ];
 
 function readFavUsage() {
