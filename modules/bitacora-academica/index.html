@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bitácora Académica · Musicala</title>
   <meta name="description" content="Bitácora de tareas académicas, seguimiento de avances y bolsa de horas por objetivos para Musicala." />
-  <link rel="stylesheet" href="styles.css?v=2026-06-29.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-07-17.1" />
 </head>
 <body>
   <header class="hero" role="banner">
@@ -301,6 +301,12 @@
           </div>
         </div>
 
+        <section id="adminLogOverview" class="admin-log-overview" hidden aria-label="Resumen de supervisión">
+          <div><span>Registros</span><strong id="logCount">0</strong></div>
+          <div><span>Horas registradas</span><strong id="logTotalHours">0 h</strong></div>
+          <div><span>Último avance</span><strong id="logLastUpdate">Sin registros</strong></div>
+        </section>
+
         <div class="modal-grid">
           <section class="subpanel">
             <div class="section-head">
@@ -343,20 +349,15 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Historial</p>
-                <h4>Registros existentes</h4>
+                <h4 id="logHistoryTitle">Registros existentes</h4>
               </div>
               <span id="logStatus" class="status" aria-live="polite"></span>
             </div>
-            <div class="table-wrap table-wrap--modal">
-              <table id="tblLogs">
-                <thead></thead>
-                <tbody></tbody>
-              </table>
-            </div>
+            <div id="logTimeline" class="log-timeline"></div>
           </section>
         </div>
 
-        <section class="subpanel subpanel--wide">
+        <section id="logEntryPanel" class="subpanel subpanel--wide">
           <div class="section-head">
             <div>
               <p class="eyebrow">Evidencia + horas</p>
@@ -532,6 +533,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-07-10.1"></script>
+  <script type="module" src="script.js?v=2026-07-17.1"></script>
 </body>
 </html>

@@ -880,6 +880,11 @@ function openDetailById(id) {
   $('#logTaskName').textContent = task.title || '—';
   $('#logTaskPerson').textContent = task.person || '—';
   $('#logTaskState').textContent = normalizeState(task.state);
+  const admin = isAdminContext();
+  $('#modalLog')?.classList.toggle('modal--admin-view', admin);
+  $('#adminLogOverview').hidden = !admin;
+  $('#logEntryPanel').hidden = admin;
+  $('#logHistoryTitle').textContent = admin ? 'Avances reportados por la docente' : 'Registros existentes';
   $('#estimateTaskId').value = task.id;
   $('#estimatePeriod').value = task.period || todayMonth();
   $('#estimateHours').value = task.estimatedHours ? round2(task.estimatedHours) : '';
@@ -907,29 +912,39 @@ function setDefaultLogTimes() {
 }
 
 function loadLogs(id) {
-  const table = $('#tblLogs');
+  const timeline = $('#logTimeline');
   const logs = store.hourLogs
     .filter(log => String(log.taskId) === String(id))
     .sort((a, b) => String(b.createdAt || b.start).localeCompare(String(a.createdAt || a.start)));
 
-  table.querySelector('thead').innerHTML = '<tr><th>Bitácora registrada</th><th>Inicio</th><th>Fin</th><th>Ámbito / bolsa</th><th>Horas</th><th>Avance</th><th>Evidencias</th><th>Estado</th></tr>';
-  table.querySelector('tbody').innerHTML = logs.length ? logs.map(log => {
+  const totalHours = logs.reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
+  const latest = logs[0];
+  if ($('#logCount')) $('#logCount').textContent = String(logs.length);
+  if ($('#logTotalHours')) $('#logTotalHours').textContent = fmtHours(totalHours);
+  if ($('#logLastUpdate')) $('#logLastUpdate').textContent = latest ? formatCreatedAt(latest) : 'Sin registros';
+
+  timeline.innerHTML = logs.length ? logs.map(log => {
     const scope = logScopeOf(log);
     const budget = log.budgetId ? store.budgets.find(item => String(item.id) === String(log.budgetId)) : null;
     const scopeDetail = budget ? `${logScopeLabel(scope)} · ${fmtBudgetRange(budget)}` : logScopeLabel(scope);
     return `
-    <tr>
-      <td data-th="Bitácora registrada">${esc(formatCreatedAt(log))}</td>
-      <td data-th="Inicio">${esc(formatDateTime(log.start))}</td>
-      <td data-th="Fin">${esc(formatDateTime(log.end))}</td>
-      <td data-th="Ámbito / bolsa"><span class="${logScopeClass(scope)}">${esc(scopeDetail)}</span></td>
-      <td data-th="Horas">${fmtHours(log.recognizedHours || log.durationHours)}</td>
-      <td data-th="Avance" class="wrap">${esc(log.advanced || '')}</td>
-      <td data-th="Evidencias" class="wrap">${renderEvidence(log.evidence)}</td>
-      <td data-th="Estado">${esc(log.state || '')}</td>
-    </tr>
+      <article class="log-entry">
+        <div class="log-entry__meta">
+          <span>${esc(formatCreatedAt(log))}</span>
+          <strong>${fmtHours(log.recognizedHours || log.durationHours)}</strong>
+          <span class="${logScopeClass(scope)}">${esc(scopeDetail)}</span>
+          <span class="${stateClass(log.state)}">${esc(normalizeState(log.state))}</span>
+        </div>
+        <p class="log-entry__time">${esc(formatDateTime(log.start))} — ${esc(formatDateTime(log.end))}</p>
+        <div class="log-entry__body">
+          <div><span>Avanzó</span><p>${esc(log.advanced || 'Sin descripción del avance.')}</p></div>
+          ${log.missing ? `<div><span>Falta</span><p>${esc(log.missing)}</p></div>` : ''}
+          ${log.improve ? `<div><span>Por mejorar</span><p>${esc(log.improve)}</p></div>` : ''}
+          ${log.evidence?.length ? `<div class="log-entry__evidence"><span>Evidencias</span><p>${renderEvidence(log.evidence)}</p></div>` : ''}
+        </div>
+      </article>
   `;
-  }).join('') : emptyRow(8, 'No hay registros para esta tarea todavía.');
+  }).join('') : '<p class="log-timeline__empty">La docente todavía no ha reportado avances para esta tarea.</p>';
   $('#logStatus').textContent = `${logs.length} registro${logs.length === 1 ? '' : 's'}`;
 }
 
@@ -1472,6 +1487,7 @@ function applyRoleScope() {
   if (back) back.hidden = !ACADEMIC_CTX.embedded;
 
   const admin = isAdminContext();
+  document.body.classList.toggle('is-admin-context', admin);
   const reportButton = $('#btnAcademicReport');
   if (reportButton) reportButton.hidden = !admin;
   ['#btnNewObjective', '#budgetForm', '#estimateForm'].forEach(sel => {

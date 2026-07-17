@@ -328,6 +328,23 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
 .task-summary strong{display:block;line-height:1.35}
 .modal-grid{display:grid;grid-template-columns:.72fr 1.28fr;gap:14px;align-items:start}
 .subpanel--wide{padding:16px}
+.admin-log-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.admin-log-overview div{padding:12px 14px;border-radius:14px;background:#f7f4ff;border:1px solid #e6ddff}
+.admin-log-overview span,.log-entry__body span{display:block;color:var(--muted);font-size:10.5px;font-weight:900;text-transform:uppercase;letter-spacing:.07em}
+.admin-log-overview strong{display:block;margin-top:4px;line-height:1.3}
+.modal--admin-view .modal-grid{grid-template-columns:minmax(245px,.72fr) minmax(0,1.55fr)}
+.modal--admin-view .subpanel{min-width:0}
+.log-timeline{display:grid;gap:10px;max-height:calc(92vh - 300px);overflow:auto;padding-right:3px}
+.log-entry{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
+.log-entry__meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.log-entry__meta>span:first-child{color:var(--muted);font-size:12px;font-weight:750;margin-right:auto}
+.log-entry__meta strong{font-size:13px}
+.log-entry__time{margin:8px 0 10px;color:var(--muted);font-size:12px}
+.log-entry__body{display:grid;gap:8px}
+.log-entry__body>div{padding-top:8px;border-top:1px solid #f0edf7}
+.log-entry__body p{margin:3px 0 0;line-height:1.45;font-size:13px;white-space:pre-wrap}
+.log-entry__evidence p{display:flex;gap:6px;flex-wrap:wrap}
+.log-timeline__empty{padding:20px 8px;color:var(--muted);text-align:center}
 .noscript{max-width:900px;margin:20px auto;color:var(--danger);font-weight:900}
 
 @media (max-width:980px){
@@ -335,6 +352,7 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
   .grid-2,.modal-grid{grid-template-columns:1fr}
   .budget-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .task-summary{grid-template-columns:1fr 1fr}
+  .admin-log-overview{grid-template-columns:1fr 1fr}
 }
 
 @media (max-width:720px){
@@ -350,6 +368,8 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
   .panel{padding:14px;border-radius:20px}
   .section-head{align-items:flex-start}
   .insights,.budget-kpis,.mini-form,.form-grid,.form-grid--compact,.task-summary{grid-template-columns:1fr}
+  .admin-log-overview{grid-template-columns:1fr}
+  .log-timeline{max-height:none}
   .duration-preview{margin-left:0;width:100%}
 
   .table-wrap{border:0;background:transparent;overflow:visible}
