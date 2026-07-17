@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-17.1";
+const BUILD = "2026-07-17.2";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -1013,6 +1013,9 @@ function openDrawerActionModal(title, bodyHtml) {
     </div>
   `;
 
+  modal.firstElementChild?.classList.add("drawerActionCard");
+  modal.querySelector("div > div:last-child")?.classList.add("drawerActionContent");
+
   const close = () => modal.remove();
   modal.addEventListener("click", (event) => {
     if (event.target === modal) close();
@@ -1138,9 +1141,9 @@ function openHubSwitcherModal() {
 function openSupportModal() {
   const body = `
     <p style="margin:0;color:rgba(11,16,32,.72);">Cuéntanos el error, idea o aspecto por mejorar. Se guarda directamente en el HUB para que coordinación pueda revisarlo y darte seguimiento aquí mismo.</p>
-    <form id="supportReportForm" style="display:grid;gap:10px;">
-      <label style="display:grid;gap:5px;font-weight:750;">¿Qué quieres reportar?<select id="supportType" required style="padding:10px;border:1px solid rgba(11,16,32,.18);border-radius:10px;"><option value="error">Un error o algo que no funciona</option><option value="mejora">Una idea de mejora</option><option value="duda">Una duda o necesidad</option></select></label>
-      <label style="display:grid;gap:5px;font-weight:750;">Cuéntanos qué pasó o qué propones<textarea id="supportDetail" required maxlength="3000" rows="5" placeholder="Incluye los pasos, el módulo y cualquier detalle que ayude a entenderlo." style="resize:vertical;padding:10px;border:1px solid rgba(11,16,32,.18);border-radius:10px;font:inherit;"></textarea></label>
+    <form id="supportReportForm" class="supportReportForm">
+      <label>¿Qué quieres reportar?<select id="supportType" required><option value="error">Un error o algo que no funciona</option><option value="mejora">Una idea de mejora</option><option value="duda">Una duda o necesidad</option></select></label>
+      <label>Cuéntanos qué pasó o qué propones<textarea id="supportDetail" required maxlength="3000" rows="5" placeholder="Incluye los pasos, el módulo y cualquier detalle que ayude a entenderlo."></textarea></label>
       <button class="btnGoogle" id="supportSubmit" type="submit">Enviar a coordinación</button>
     </form>
     <div id="supportMyReports" style="display:grid;gap:8px;"><p class="adminNote">Cargando tus reportes…</p></div>
@@ -1166,7 +1169,7 @@ function openSupportModal() {
 function supportStatusLabel(status) { return ({ nuevo: "Recibido", en_revision: "En revisión", en_progreso: "En progreso", cumplido: "Mejora realizada", descartado: "No se implementará" })[status] || "Recibido"; }
 function supportTypeLabel(type) { return ({ error: "Error", mejora: "Mejora", duda: "Duda o necesidad" })[type] || "Reporte"; }
 function supportDate(value) { const ms = typeof value?.toMillis === "function" ? value.toMillis() : Number(value || 0); return ms ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium" }).format(new Date(ms)) : "Hace un momento"; }
-async function fetchSupportReportsFor(email = "") { const base = collection(APP_STATE.db, "supportReports"); const q = isAdminUser() && !email ? query(base, orderBy("createdAtClient", "desc"), limit(500)) : query(base, where("reporterEmail", "==", email), orderBy("createdAtClient", "desc"), limit(100)); const snap = await getDocs(q); return snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) })); }
+async function fetchSupportReportsFor(email = "") { const base = collection(APP_STATE.db, "supportReports"); const q = isAdminUser() && !email ? query(base, orderBy("createdAtClient", "desc"), limit(500)) : query(base, where("reporterEmail", "==", email), limit(100)); const snap = await getDocs(q); return snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) })).sort((a, b) => Number(b.createdAtClient || 0) - Number(a.createdAtClient || 0)); }
 function renderSupportReport(report, admin = false) { const response = report.adminResponse ? `<p class="supportResponse"><strong>Actualización de coordinación:</strong> ${escapeHtml(report.adminResponse)}</p>` : ""; return `<article class="supportReport support-${escapeHtml(report.status || "nuevo")}"><div class="supportReportHead"><span class="supportTag">${escapeHtml(supportTypeLabel(report.type))}</span><span class="supportStatus">${escapeHtml(supportStatusLabel(report.status))}</span></div>${admin ? `<strong>${escapeHtml(report.reporterName || report.reporterEmail || "Docente")}</strong><small>${escapeHtml(report.reporterEmail || "")}</small>` : ""}<p>${escapeHtml(report.detail || "")}</p>${response}<small>${escapeHtml(supportDate(report.createdAt || report.createdAtClient))}</small></article>`; }
 async function loadMySupportReports(modal) { const target = $("#supportMyReports", modal); if (!target || !APP_STATE.db) return; try { const reports = await fetchSupportReportsFor(emailKey(APP_STATE.activeUser)); target.innerHTML = `<strong style="margin-top:4px;">Tus reportes y avances</strong>${reports.length ? reports.map(renderSupportReport).join("") : '<p class="adminNote">Aún no has enviado reportes. Cuando coordinación implemente algo, el avance aparecerá aquí.</p>'}`; } catch (error) { target.innerHTML = `<p class="adminNote">No se pudieron cargar tus reportes: ${escapeHtml(error?.message || "sin permiso")}</p>`; } }
 
