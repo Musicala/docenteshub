@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-16.2";
+const BUILD = "2026-07-17.1";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -1136,48 +1136,39 @@ function openHubSwitcherModal() {
 }
 
 function openSupportModal() {
-  const build = $("#drawer-build")?.textContent?.trim() || "";
-  const email = emailKey(APP_STATE.activeUser) || "";
-  const subject = encodeURIComponent("Soporte · HUB Docentes Musicala");
-  const bodyText = encodeURIComponent(
-    `Hola, necesito ayuda con el HUB Docentes.\n\nDescribe aquí el problema:\n\n\n---\nCuenta: ${email}\nVersión: ${build}\nNavegador: ${navigator.userAgent}`
-  );
-  const mailto = `mailto:${ADMIN_EMAILS.join(",")}?subject=${subject}&body=${bodyText}`;
-
   const body = `
-    <p style="margin:0;color:rgba(11,16,32,.72);">¿Algo no funciona o tienes una duda? Escríbenos y el equipo te ayuda. Tu correo y la versión de la app se incluyen automáticamente para diagnosticar más rápido.</p>
-    ${drawerModalItem({ icon: "✉️", title: "Enviar correo a soporte", subtitle: "Abre tu app de correo con el reporte listo", dataAttr: 'data-support="mail"' })}
-    ${drawerModalItem({ icon: "📋", title: "Copiar datos de diagnóstico", subtitle: "Versión, cuenta y navegador al portapapeles", dataAttr: 'data-support="copy"' })}
+    <p style="margin:0;color:rgba(11,16,32,.72);">Cuéntanos el error, idea o aspecto por mejorar. Se guarda directamente en el HUB para que coordinación pueda revisarlo y darte seguimiento aquí mismo.</p>
+    <form id="supportReportForm" style="display:grid;gap:10px;">
+      <label style="display:grid;gap:5px;font-weight:750;">¿Qué quieres reportar?<select id="supportType" required style="padding:10px;border:1px solid rgba(11,16,32,.18);border-radius:10px;"><option value="error">Un error o algo que no funciona</option><option value="mejora">Una idea de mejora</option><option value="duda">Una duda o necesidad</option></select></label>
+      <label style="display:grid;gap:5px;font-weight:750;">Cuéntanos qué pasó o qué propones<textarea id="supportDetail" required maxlength="3000" rows="5" placeholder="Incluye los pasos, el módulo y cualquier detalle que ayude a entenderlo." style="resize:vertical;padding:10px;border:1px solid rgba(11,16,32,.18);border-radius:10px;font:inherit;"></textarea></label>
+      <button class="btnGoogle" id="supportSubmit" type="submit">Enviar a coordinación</button>
+    </form>
+    <div id="supportMyReports" style="display:grid;gap:8px;"><p class="adminNote">Cargando tus reportes…</p></div>
   `;
-
-  const modal = openDrawerActionModal("Soporte", body);
+  const modal = openDrawerActionModal("Soporte y mejoras", body);
+  loadMySupportReports(modal);
   modal.addEventListener("click", async (event) => {
-    const btn = event.target.closest("[data-support]");
-    if (!btn) return;
-    const kind = btn.getAttribute("data-support");
-
-    if (kind === "mail") {
-      const link = document.createElement("a");
-      link.href = mailto;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      modal.remove();
-      return;
-    }
-
-    if (kind === "copy") {
-      const info = `HUB Docentes Musicala\nCuenta: ${email}\nVersión: ${build}\nNavegador: ${navigator.userAgent}`;
-      try {
-        await navigator.clipboard.writeText(info);
-        toast("Datos de diagnóstico copiados ✅");
-      } catch {
-        toast("No pude copiar automáticamente 😔 Usa el correo de soporte.");
-      }
-    }
+    const form = event.target.closest("#supportReportForm");
+    if (!form || event.target.type !== "submit") return;
+    event.preventDefault();
+    const detail = $("#supportDetail", modal)?.value?.trim() || "";
+    if (detail.length < 8) { toast("Cuéntanos un poco más para poder ayudarte."); return; }
+    const submit = $("#supportSubmit", modal);
+    submit.disabled = true; submit.textContent = "Guardando…";
+    try {
+      await addDoc(collection(APP_STATE.db, "supportReports"), { type: $("#supportType", modal)?.value || "mejora", detail, reporterEmail: emailKey(APP_STATE.activeUser), reporterName: APP_STATE.activeUser?.displayName || emailKey(APP_STATE.activeUser), status: "nuevo", createdAt: serverTimestamp(), createdAtClient: Date.now(), build: BUILD, userAgent: navigator.userAgent });
+      form.reset(); toast("Reporte enviado. Te avisaremos aquí cuando haya avance ✅"); await loadMySupportReports(modal);
+    } catch (error) { console.error("No se pudo guardar el reporte de soporte", error); toast("No pude guardar el reporte. Intenta de nuevo."); }
+    finally { submit.disabled = false; submit.textContent = "Enviar a coordinación"; }
   });
 }
+
+function supportStatusLabel(status) { return ({ nuevo: "Recibido", en_revision: "En revisión", en_progreso: "En progreso", cumplido: "Mejora realizada", descartado: "No se implementará" })[status] || "Recibido"; }
+function supportTypeLabel(type) { return ({ error: "Error", mejora: "Mejora", duda: "Duda o necesidad" })[type] || "Reporte"; }
+function supportDate(value) { const ms = typeof value?.toMillis === "function" ? value.toMillis() : Number(value || 0); return ms ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium" }).format(new Date(ms)) : "Hace un momento"; }
+async function fetchSupportReportsFor(email = "") { const base = collection(APP_STATE.db, "supportReports"); const q = isAdminUser() && !email ? query(base, orderBy("createdAtClient", "desc"), limit(500)) : query(base, where("reporterEmail", "==", email), orderBy("createdAtClient", "desc"), limit(100)); const snap = await getDocs(q); return snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) })); }
+function renderSupportReport(report, admin = false) { const response = report.adminResponse ? `<p class="supportResponse"><strong>Actualización de coordinación:</strong> ${escapeHtml(report.adminResponse)}</p>` : ""; return `<article class="supportReport support-${escapeHtml(report.status || "nuevo")}"><div class="supportReportHead"><span class="supportTag">${escapeHtml(supportTypeLabel(report.type))}</span><span class="supportStatus">${escapeHtml(supportStatusLabel(report.status))}</span></div>${admin ? `<strong>${escapeHtml(report.reporterName || report.reporterEmail || "Docente")}</strong><small>${escapeHtml(report.reporterEmail || "")}</small>` : ""}<p>${escapeHtml(report.detail || "")}</p>${response}<small>${escapeHtml(supportDate(report.createdAt || report.createdAtClient))}</small></article>`; }
+async function loadMySupportReports(modal) { const target = $("#supportMyReports", modal); if (!target || !APP_STATE.db) return; try { const reports = await fetchSupportReportsFor(emailKey(APP_STATE.activeUser)); target.innerHTML = `<strong style="margin-top:4px;">Tus reportes y avances</strong>${reports.length ? reports.map(renderSupportReport).join("") : '<p class="adminNote">Aún no has enviado reportes. Cuando coordinación implemente algo, el avance aparecerá aquí.</p>'}`; } catch (error) { target.innerHTML = `<p class="adminNote">No se pudieron cargar tus reportes: ${escapeHtml(error?.message || "sin permiso")}</p>`; } }
 
 /* ============================================================================
    10) MODAL CARNET
@@ -2418,6 +2409,7 @@ const ADMIN_STATE = {
   scheduleYear: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric" }).format(new Date())),
   scheduleMonth: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(new Date())) - 1,
   academic: { objectives: [], budgets: [], hourLogs: [] },
+  supportReports: [],
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   customButtons: [],   // botones personalizados creados desde el panel
   scheduleTeacher: "", // email del docente seleccionado en la pestaña Horarios
@@ -2543,6 +2535,7 @@ function ensureAdminPanelModal() {
         <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
         <button class="adminTab" type="button" data-admin-tab="docentes" role="tab">Docentes</button>
         <button class="adminTab" type="button" data-admin-tab="botones" role="tab">Botones</button>
+        <button class="adminTab" type="button" data-admin-tab="soporte" role="tab">Soporte y mejoras</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
 
@@ -2648,7 +2641,7 @@ function setAdminTab(tabId) {
   });
 
   const filters = $("#adminFilters", adminPanelModal);
-  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones") ? "none" : "";
+  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones" || tabId === "soporte") ? "none" : "";
 
   renderAdminBody();
 }
@@ -2682,6 +2675,8 @@ async function loadAdminData() {
     } else if (ADMIN_STATE.tab === "botones") {
       ADMIN_STATE.customButtons = await fetchCustomButtons();
       applyCustomButtons(ADMIN_STATE.customButtons);
+    } else if (ADMIN_STATE.tab === "soporte") {
+      ADMIN_STATE.supportReports = await fetchSupportReportsFor();
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
@@ -3246,7 +3241,26 @@ function renderAdminBody() {
   if (ADMIN_STATE.tab === "docentes") return renderAdminDocentes(body);
   if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
   if (ADMIN_STATE.tab === "botones") return renderAdminBotones(body);
+  if (ADMIN_STATE.tab === "soporte") return renderAdminSupport(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
+}
+
+function renderAdminSupport(body) {
+  const reports = ADMIN_STATE.supportReports || [];
+  const pending = reports.filter((item) => !["cumplido", "descartado"].includes(item.status)).length;
+  body.innerHTML = `<p class="adminMeta">${reports.length} reporte(s) recibidos · ${pending} pendiente(s) de cierre. Actualiza el estado y explica la mejora para que la docente la vea desde Soporte.</p>${reports.length ? `<div class="supportAdminList">${reports.map((report) => `<article class="supportAdminCard">${renderSupportReport(report, true)}<label>Estado<select data-support-status="${escapeHtml(report.id)}"><option value="nuevo" ${report.status === "nuevo" ? "selected" : ""}>Recibido</option><option value="en_revision" ${report.status === "en_revision" ? "selected" : ""}>En revisión</option><option value="en_progreso" ${report.status === "en_progreso" ? "selected" : ""}>En progreso</option><option value="cumplido" ${report.status === "cumplido" ? "selected" : ""}>Mejora realizada</option><option value="descartado" ${report.status === "descartado" ? "selected" : ""}>No se implementará</option></select></label><label>Actualización visible para la docente<textarea data-support-response="${escapeHtml(report.id)}" rows="3" maxlength="1500" placeholder="Ej.: Corregimos el botón y ya puedes usarlo.">${escapeHtml(report.adminResponse || "")}</textarea></label><button class="btnGoogle supportSave" type="button" data-support-save="${escapeHtml(report.id)}">Guardar avance</button></article>`).join("")}</div>` : '<p class="adminNote">Aún no hay reportes de soporte.</p>'}`;
+  body.querySelectorAll("[data-support-save]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.supportSave;
+    const status = body.querySelector(`[data-support-status="${id}"]`)?.value || "nuevo";
+    const adminResponse = body.querySelector(`[data-support-response="${id}"]`)?.value?.trim() || "";
+    button.disabled = true; button.textContent = "Guardando…";
+    try {
+      await updateDoc(doc(APP_STATE.db, "supportReports", id), { status, adminResponse, updatedAt: serverTimestamp(), updatedBy: emailKey(APP_STATE.activeUser) });
+      const item = ADMIN_STATE.supportReports.find((report) => report.id === id);
+      if (item) Object.assign(item, { status, adminResponse });
+      toast("Avance guardado y visible para la docente ✅"); renderAdminSupport(body);
+    } catch (error) { console.error("No se pudo actualizar el reporte", error); toast("No pude guardar el avance."); button.disabled = false; button.textContent = "Guardar avance"; }
+  }));
 }
 
 function renderAdminMarcaciones(body) {

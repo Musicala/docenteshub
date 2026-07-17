@@ -3028,6 +3028,21 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   border-radius:12px;
 }
 
+.supportReport{ display:grid; gap:6px; padding:12px; border:1px solid rgba(12,65,196,.14); border-radius:13px; background:#fff; }
+.supportReport p{ margin:0; white-space:pre-wrap; }
+.supportReport small{ color:#6b7280; }
+.supportReportHead{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.supportTag,.supportStatus{ font-size:.74rem; font-weight:800; padding:3px 8px; border-radius:999px; background:#eef3ff; color:#0c41c4; }
+.supportStatus{ background:#f3f4f6; color:#374151; }
+.support-cumplido .supportStatus{ background:#e6f8ee; color:#137333; }
+.support-en_progreso .supportStatus{ background:#fff4db; color:#9a6700; }
+.supportResponse{ padding:8px; border-radius:9px; background:#f4f7ff; color:#1f3e91; }
+.supportAdminList{ display:grid; gap:12px; }
+.supportAdminCard{ display:grid; gap:9px; padding:12px; border:1px solid rgba(12,65,196,.16); border-radius:14px; background:#f9fbff; }
+.supportAdminCard label{ display:grid; gap:4px; font-size:.8rem; font-weight:750; }
+.supportAdminCard select,.supportAdminCard textarea{ width:100%; box-sizing:border-box; padding:8px; border:1px solid rgba(12,65,196,.22); border-radius:9px; background:#fff; font:inherit; }
+.supportSave{ justify-self:start; }
+
 @media (max-width:720px){
   .adminFilters{
     grid-template-columns:1fr 1fr;

@@ -260,6 +260,24 @@ service cloud.firestore {
       allow create, update, delete: if isAdminReader();
     }
 
+    /* ====================================================================
+       SOPORTE Y MEJORAS DEL HUB
+       Docentes crean y consultan solo sus propios reportes. Coordinación
+       puede verlos todos y publicar el avance o la mejora realizada.
+    ==================================================================== */
+    match /supportReports/{reportId} {
+      allow create: if isTeacherHubUser()
+        && request.resource.data.reporterEmail == request.auth.token.email
+        && request.resource.data.status == 'nuevo'
+        && request.resource.data.type in ['error', 'mejora', 'duda']
+        && request.resource.data.detail is string
+        && request.resource.data.detail.size() >= 8
+        && request.resource.data.detail.size() <= 3000;
+      allow get, list: if isAdminReader()
+        || (isTeacherHubUser() && resource.data.reporterEmail == request.auth.token.email);
+      allow update, delete: if isAdminReader();
+    }
+
 
     /* ====================================================================
        MÓDULO RESERVAS WIX
