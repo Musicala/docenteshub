@@ -4533,3 +4533,55 @@ body{
 .supVersion{
   margin:6px 12px 8px; font-size:11px; color:var(--muted);
 }
+
+/* ==========================================================================
+   AJUSTE: fondo ligero — marca presente pero sin saturar
+========================================================================== */
+body{
+  /* gris neutro muy claro, sin manchas de color */
+  background:linear-gradient(180deg, #f6f7f9, #f1f2f5) !important;
+}
+
+.screen{
+  /* pantalla casi blanca; la marca vive en acentos, no en el fondo */
+  background:#fbfcfd !important;
+  border:1px solid #eceef2 !important;
+  box-shadow:0 24px 70px rgba(28,36,48,.10) !important;
+}
+
+/* Fuera los brillos saturados detrás de la pantalla */
+.screen::before{
+  inset:0 !important;
+  filter:none !important;
+  background:
+    /* toque de marca: un velo turquesa arriba y rosa abajo, casi imperceptibles */
+    linear-gradient(180deg, rgba(18,181,165,.045), transparent 240px),
+    linear-gradient(0deg, rgba(242,80,139,.03), transparent 200px) !important;
+}
+
+/* Header limpio */
+.top::before{
+  background:linear-gradient(to bottom, rgba(251,252,253,.92), rgba(251,252,253,0)) !important;
+}
+.brand{
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+}
+
+/* Detalle de marca: hairline de color en el borde superior de la pantalla */
+.screen::after{
+  content:"" !important;
+  position:absolute !important;
+  top:0 !important; left:24px !important; right:24px !important;
+  height:3px !important;
+  border-radius:0 0 999px 999px !important;
+  background:linear-gradient(90deg, var(--a1), #4ecdc4 35%, var(--a3) 65%, var(--a2)) !important;
+  opacity:.55 !important;
+  pointer-events:none !important;
+}
+
+/* Tarjetas ligeramente más suaves para acompañar el fondo claro */
+.tile, .supCard, .progressCard, .acadPendList, .nextClassCard, .kpiChip, .heroShiftCard{
+  box-shadow:0 4px 14px rgba(28,36,48,.05) !important;
+}
