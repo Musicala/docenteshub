@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.9";
+const BUILD = "2026-07-18.10";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",

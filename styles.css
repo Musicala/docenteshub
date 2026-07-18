@@ -4786,3 +4786,43 @@ body{
 }
 .perfilKpis h3{ margin:0 0 10px; font-size:13.5px; font-weight:800; color:var(--text); }
 .perfilKpis .kpiChip{ box-shadow:none; border:1px solid var(--line); }
+
+/* ==========================================================================
+   AJUSTE: Apps en filitas (nombre completo visible) + sin cabecera superior
+========================================================================== */
+/* La cabecera (logo + ☰ + Salir) ya no aporta: Salir vive en Soporte.
+   Se oculta pero sigue en el DOM porque "Cerrar sesión" dispara #btn-logout. */
+#view-app .top{ display:none !important; }
+#view-app .wrap{ padding-top:14px; }
+
+/* Accesos de Apps como filas compactas: icono + nombre completo */
+.grid[data-tab="apps"]{
+  grid-template-columns:1fr !important;
+  gap:8px !important;
+}
+@media (min-width:640px){
+  .grid[data-tab="apps"]{ grid-template-columns:repeat(auto-fill, minmax(240px,1fr)) !important; }
+}
+
+.grid[data-tab="apps"] .tile{
+  flex-direction:row !important;
+  align-items:center !important;
+  text-align:left !important;
+  gap:10px !important;
+  padding:8px 12px !important;
+  border-radius:14px !important;
+}
+.grid[data-tab="apps"] .ico{
+  width:38px !important;
+  height:38px !important;
+  font-size:17px !important;
+  border-radius:11px !important;
+}
+.grid[data-tab="apps"] .tileText{ flex:1; min-width:0; }
+.grid[data-tab="apps"] .tTitle{
+  font-size:12.5px !important;
+  -webkit-line-clamp:unset !important;
+  display:block !important;
+  overflow:visible !important;
+  white-space:normal !important;
+}
