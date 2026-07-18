@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.8";
+const BUILD = "2026-07-18.9";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5627,7 +5627,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   let html = `
     <section class="hubHero" aria-label="Inicio de hoy">
       <div class="heroGreeting">
-        <div class="heroAvatar" aria-hidden="true">${escapeHtml(avatarInitial)}</div>
+        <button class="heroAvatar" type="button" data-sup="perfil" aria-label="Ver mi perfil">${escapeHtml(avatarInitial)}</button>
         <div class="heroCopy">
           <h1>Hola, ${escapeHtml(firstName)}</h1>
           <span>Docente Musicala</span>
@@ -5647,7 +5647,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
     <div id="slot-acad" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderAcadPanelHTML()}</div>
     <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
+    <div id="slot-perfil" class="slotWrap" data-tab-scope="perfil" style="grid-column: 1 / -1;">${renderPerfilPanelHTML()}</div>
 
+    <div id="slot-favs" class="slotWrap" data-tab-scope="apps" style="grid-column: 1 / -1;">${renderFavRowHTML()}</div>
     <div class="hubSearch" data-tab-scope="apps" style="grid-column: 1 / -1;">
       <span class="hubSearchIcon" aria-hidden="true">🔎</span>
       <input id="hubSearchInput" type="search" inputmode="search" autocomplete="off"
@@ -5715,7 +5717,28 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       else if (action === "favorites") openFavoritesModal();
       else if (action === "switchHub") openHubSwitcherModal();
       else if (action === "logout") $("#btn-logout")?.click();
+      else if (action === "perfil") applyHubTab("perfil");
+      else if (action === "back") applyHubTab("inicio");
+      else if (action === "favEdit") { APP_STATE.favEdit = !APP_STATE.favEdit; refreshHubDataUI(); }
     });
+
+    // Modo edición de favoritos: quitar tocando el favorito, agregar tocando una app.
+    grid.addEventListener("click", (event) => {
+      const unfav = event.target.closest("[data-unfav]");
+      if (unfav) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleFav(unfav.getAttribute("data-unfav"));
+        return;
+      }
+      if (!APP_STATE.favEdit) return;
+      const appBtn = event.target.closest(".tile[data-id]");
+      if (!appBtn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleFav(appBtn.getAttribute("data-id"));
+      toast("Favoritos actualizados ⭐");
+    }, { capture: true });
   }
 
   if (!grid.dataset.boundClick) {
@@ -5888,6 +5911,127 @@ function renderAcadPanelHTML() {
   `;
 }
 
+/* ============================================================================
+   FAVORITOS (fila editable en Apps) + PANTALLA "MI PERFIL"
+============================================================================ */
+const FAV_PINNED_KEY = "hubFavPinned";
+
+function readPinnedFavs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FAV_PINNED_KEY) || "[]");
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function writePinnedFavs(list) {
+  try { localStorage.setItem(FAV_PINNED_KEY, JSON.stringify(list.slice(0, 8))); } catch {}
+}
+
+function toggleFav(id) {
+  if (!id) return;
+  let list = readPinnedFavs();
+  list = list.includes(id) ? list.filter((x) => x !== id) : [...list, id].slice(-8);
+  writePinnedFavs(list);
+  refreshHubDataUI();
+}
+
+// Favoritos a mostrar: los fijados por el docente; si no hay, los 4 más usados.
+function getFavButtons() {
+  const available = (id) => {
+    const meta = getButtonMeta(id);
+    return meta && getResolvedButtonState(meta, APP_STATE.activeLinks).visible ? meta : null;
+  };
+
+  const pinned = readPinnedFavs().map(available).filter(Boolean);
+  if (pinned.length) return pinned;
+
+  return Object.entries(readFavUsage())
+    .map(([id, count]) => ({ id, count: Number(count) || 0, meta: available(id) }))
+    .filter((item) => item.meta && item.count)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4)
+    .map((item) => item.meta);
+}
+
+function renderFavRowHTML() {
+  const favs = getFavButtons();
+  const editing = !!APP_STATE.favEdit;
+  const pinnedSet = new Set(readPinnedFavs());
+
+  const tiles = favs.map((meta) => `
+    <button class="favTile ${editing ? "favEditing" : ""}" type="button"
+      ${editing ? `data-unfav="${escapeHtml(meta.id)}"` : `data-id="${escapeHtml(meta.id)}"`}
+      aria-label="${escapeHtml(meta.title)}">
+      <span class="favIco" data-sec-color aria-hidden="true">${escapeHtml(meta.icon)}
+        ${editing && pinnedSet.has(meta.id) ? '<span class="favRemove" aria-hidden="true">✕</span>' : ""}
+      </span>
+      <span class="favLabel">${escapeHtml(meta.title)}</span>
+    </button>
+  `).join("");
+
+  return `
+    <div class="favHead">
+      <span class="favTitle">Favoritos</span>
+      <button class="favEditBtn" type="button" data-sup="favEdit">${editing ? "Listo" : "Editar"}</button>
+    </div>
+    ${editing ? '<p class="favHint">Toca una app de la lista para agregarla; toca un favorito para quitarlo.</p>' : ""}
+    <div class="favRow">${tiles || '<p class="favEmpty">Usa el HUB o toca "Editar" para elegir tus favoritos ⭐</p>'}</div>
+  `;
+}
+
+// --- Mi perfil (se abre tocando el avatar o desde Soporte) ---
+function renderPerfilPanelHTML() {
+  const profile = APP_STATE.activeProfile;
+  const user = APP_STATE.activeUser;
+  const kpis = APP_STATE.hubData.kpis;
+  const name = (profile?.label || prettyName(user) || "Docente").trim();
+  const email = emailKey(user) || "—";
+  const initial = (name.charAt(0) || "M").toUpperCase();
+  const kpiVal = (v, s = "") => (kpis && v !== undefined && v !== null) ? `${v}${s}` : "—";
+
+  return `
+    <div class="perfilHead">
+      <button class="perfilBack" type="button" data-sup="back" aria-label="Volver">←</button>
+      <h2>Mi perfil</h2>
+    </div>
+
+    <article class="perfilCard">
+      <div class="perfilAvatar" aria-hidden="true">${escapeHtml(initial)}</div>
+      <div class="perfilTxt">
+        <h3>${escapeHtml(name)}</h3>
+        <span>Docente Musicala · <em class="perfilActive">● Activa</em></span>
+      </div>
+    </article>
+
+    <div class="perfilActions">
+      ${profile?.carnet ? '<button class="perfilBtnMain" type="button" data-id="carnet">Ver carnet</button>' : ""}
+      <button class="perfilBtnDanger" type="button" data-sup="logout">Cerrar sesión</button>
+    </div>
+
+    ${profile?.carnet ? `
+    <article class="perfilCarnet">
+      <p>Carnet digital</p>
+      <img src="${escapeHtml(profile.carnet)}" alt="Carnet de ${escapeHtml(name)}" loading="lazy"
+        onerror="this.closest('.perfilCarnet').style.display='none';" />
+    </article>` : ""}
+
+    <article class="perfilInfo">
+      <div class="perfilInfoRow"><span>Correo</span><strong>${escapeHtml(email)}</strong></div>
+      <div class="perfilInfoRow"><span>Hub</span><strong>Docentes</strong></div>
+      <div class="perfilInfoRow"><span>Estado</span><strong class="perfilActive">● Activa</strong></div>
+    </article>
+
+    <article class="perfilKpis ${kpis ? "" : "slotEmpty"}" data-slot="kpis">
+      <h3>Indicadores del mes ${kpis ? "" : slotTag}</h3>
+      <div class="kpiRow">
+        <div class="kpiChip kpiTeal"><span class="kpiLabel">Puntualidad</span><strong class="kpiValue">${escapeHtml(kpiVal(kpis?.puntualidad, " %"))}</strong></div>
+        <div class="kpiChip kpiOrange"><span class="kpiLabel">Bitácoras</span><strong class="kpiValue">${escapeHtml(kpiVal(kpis?.bitacoras, " %"))}</strong></div>
+        <div class="kpiChip kpiPink"><span class="kpiLabel">Promedio</span><strong class="kpiValue">${kpis ? "★ " : ""}${escapeHtml(kpiVal(kpis?.promedio))}</strong></div>
+      </div>
+    </article>
+  `;
+}
+
 // Pantalla "Soporte" (pestaña ❓): cómo funciona la app, reporte y utilidades.
 function renderSoportePanelHTML() {
   return `
@@ -5911,6 +6055,7 @@ function renderSoportePanelHTML() {
     </article>
 
     <article class="supCard supList">
+      <button class="supItem" type="button" data-sup="perfil"><span aria-hidden="true">👤</span> Mi perfil</button>
       <button class="supItem" type="button" data-sup="favorites"><span aria-hidden="true">⭐</span> Favoritos</button>
       <button class="supItem" type="button" data-sup="switchHub"><span aria-hidden="true">🧭</span> Cambiar Hub</button>
       <button class="supItem supDanger" type="button" data-sup="logout"><span aria-hidden="true">🚪</span> Cerrar sesión</button>
@@ -5925,7 +6070,9 @@ function refreshHubDataUI() {
     "slot-nextclass": renderNextClassCardHTML,
     "slot-pending": renderPendingBannerHTML,
     "slot-kpis": renderKpiRowHTML,
-    "slot-acad": renderAcadPanelHTML
+    "slot-acad": renderAcadPanelHTML,
+    "slot-favs": renderFavRowHTML,
+    "slot-perfil": renderPerfilPanelHTML
   };
   for (const [id, fn] of Object.entries(map)) {
     const el = document.getElementById(id);
@@ -5938,7 +6085,8 @@ function refreshHubDataUI() {
 const HUB_TAB_SECTIONS = {
   inicio: ["Mi trabajo hoy"],
   apps: null,
-  soporte: []
+  soporte: [],
+  perfil: []
 };
 
 function ensureBottomNav() {
