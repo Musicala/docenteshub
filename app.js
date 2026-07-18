@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.3";
+const BUILD = "2026-07-18.4";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -147,11 +147,30 @@ const HUB = {
   },
 
   BUTTONS: [
-    { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Mi trabajo hoy" },
-    { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Mi trabajo hoy" },
-    { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Mi trabajo hoy" },
-    { id: "horarioAnual", icon: "📅", title: "Horario", subtitle: "Tu semana fija", section: "Mi trabajo hoy" },
+    // "Mi trabajo hoy": 5 accesos fijos, en este orden.
+    { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Mi trabajo hoy", showWhenMissing: true },
+    {
+      id: "bitacoraClasesNueva",
+      icon: "✨",
+      title: "Bitácoras de estudiantes",
+      subtitle: "Seguimiento de clase",
+      section: "Mi trabajo hoy"
+    },
+    { id: "bibliotecaRecursos", icon: "📚", title: "Biblioteca de Recursos", subtitle: "Materiales por área", section: "Mi trabajo hoy" },
+    { id: "studentMessages", icon: "💬", title: "Mensajes de estudiantes", subtitle: "Conversaciones privadas", section: "Mi trabajo hoy" },
+    {
+      // Módulo interno unificado: tareas académicas + bolsa de horas.
+      id: "bitacoraAcademica",
+      icon: "✅",
+      title: "Bitácora de Tareas Académicas",
+      subtitle: "Tareas y bolsa de horas",
+      section: "Mi trabajo hoy"
+    },
 
+    { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Gestión docente" },
+    { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Gestión docente" },
+    { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Gestión docente" },
+    { id: "horarioAnual", icon: "📅", title: "Horario", subtitle: "Tu semana fija", section: "Gestión docente" },
     {
       id: "observacion",
       icon: "👀",
@@ -159,24 +178,6 @@ const HUB = {
       subtitle: "Registro",
       section: "Gestión docente"
     },
-    {
-      id: "bitacoraClasesNueva",
-      icon: "✨",
-      title: "Bitácoras de clase",
-      subtitle: "Seguimiento",
-      section: "Gestión docente"
-    },
-    {
-      // Módulo interno unificado: tareas académicas + bolsa de horas.
-      id: "bitacoraAcademica",
-      icon: "✅",
-      title: "Bitácora de Tareas Académicas",
-      subtitle: "Tareas y bolsa de horas",
-      section: "Gestión docente"
-    },
-
-    { id: "studentMessages", icon: "💬", title: "Mensajes de estudiantes", subtitle: "Conversaciones privadas", section: "Gestión docente" },
-    { id: "bibliotecaRecursos", icon: "📚", title: "Biblioteca de Recursos", subtitle: "Materiales por área", section: "Recursos" },
     { id: "induccion", icon: "🎓", title: "Inducción Docentes Musicala", subtitle: "Onboarding", section: "Recursos" },
     { id: "protocolosMusica", icon: "🎵", title: "Protocolos clases de música", subtitle: "Guía", section: "Recursos" },
     { id: "muestras", icon: "🎭", title: "Info Muestras de proceso", subtitle: "Planeación", section: "Recursos" },
@@ -186,7 +187,6 @@ const HUB = {
     { id: "musigym", icon: "🏋️", title: "MusiGym Training Hub", subtitle: "Entrenamiento", section: "Recursos" },
     { id: "ensambles", icon: "🎶", title: "Ensambles", subtitle: "Agrupaciones", section: "Recursos" },
 
-    { id: "calendario", icon: "🗓️", title: "Calendario Académico", subtitle: "General", section: "Institucional", showWhenMissing: true },
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
     { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
     { id: "vacaciones", icon: "🌞", title: "Info Vacaciones artísticas", subtitle: "General", section: "Institucional" },
@@ -5600,7 +5600,8 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   APP_STATE.activeLinks = links || {};
   APP_STATE.activeProfile = profile || null;
 
-  const hiddenHomeButtons = new Set(["salones", "bitacoraClasesNueva"]);
+  // "bitacoraClasesNueva" ahora sí se muestra como tile en "Mi trabajo hoy".
+  const hiddenHomeButtons = new Set(["salones"]);
   const filteredButtons = buttons.filter((button) => {
     if (hiddenHomeButtons.has(button?.id)) return false;
     const state = getResolvedButtonState(button, APP_STATE.activeLinks);
