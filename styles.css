@@ -4413,3 +4413,72 @@ body{
   padding:7px 14px; border-radius:999px;
   box-shadow:0 4px 10px rgba(18,181,165,.28);
 }
+
+/* ==========================================================================
+   AJUSTE: accesos (tiles) más compactos y estilizados
+========================================================================== */
+:root{
+  --gridGap:10px;
+  --iconCardSize:38px;
+  --iconCardRadius:12px;
+  --tileRadius:16px;
+}
+
+.tile{
+  min-height:0 !important;
+  padding:12px !important;
+  border-radius:var(--tileRadius) !important;
+  grid-template-rows:auto auto !important;
+  gap:8px;
+}
+
+.tile::before,
+.tile::after{ display:none; }   /* sin brillos ni línea inferior: más limpio */
+
+.tile .ico{
+  width:var(--iconCardSize) !important;
+  height:var(--iconCardSize) !important;
+  border-radius:var(--iconCardRadius) !important;
+  font-size:17px !important;
+  box-shadow:none !important;
+}
+.tile .ico::after{ display:none; }
+
+.tile .tTitle{
+  font-size:12.5px !important;
+  font-weight:700 !important;
+  line-height:1.25 !important;
+}
+.tile .tSub{
+  font-size:10.5px !important;
+  margin-top:1px !important;
+}
+
+.tile .badge{
+  font-size:9.5px !important;
+  padding:3px 8px !important;
+}
+
+.tile:hover{ transform:translateY(-1px); box-shadow:var(--shadow) !important; }
+
+/* Tres columnas cuando el ancho lo permite (como la vista Académico del render) */
+@media (min-width:420px){
+  .grid{ grid-template-columns:repeat(3, minmax(0,1fr)); }
+  .grid > .hubHero,
+  .grid > .slotWrap,
+  .grid > .secBlock,
+  .grid > .hubSearch,
+  .grid > .hubSearchEmpty,
+  .grid > .teacherInstructions{ grid-column:1 / -1; }
+}
+
+/* Botones del hero un poco más contenidos */
+.heroPrimary, .heroSecondary{
+  padding:10px 16px !important;
+  font-size:13px !important;
+}
+
+/* En pantallas medianas/grandes, tantas columnas como quepan (tiles pequeños) */
+@media (min-width:640px){
+  .grid{ grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); }
+}
