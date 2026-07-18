@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.4";
+const BUILD = "2026-07-18.5";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5634,10 +5634,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         </div>
       </div>
 
-      <article class="heroShiftCard">
+      <article class="heroShiftCard heroPetite">
         <p>☀️ Jornada de hoy</p>
         <h2>Registro de jornada</h2>
-        <span>Registra ingreso y salida. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
         ${scheduleNudge}
         ${heroActions ? `<div class="heroShiftActions">${heroActions}</div>` : ""}
       </article>
@@ -5646,29 +5645,16 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
     <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
-    <div id="slot-acad" class="slotWrap" data-tab-scope="academico" style="grid-column: 1 / -1;">${renderAcadPanelHTML()}</div>
+    <div id="slot-acad" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderAcadPanelHTML()}</div>
+    <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
 
-    <details class="teacherInstructions">
-      <summary>¿Cómo usar esta app?</summary>
-      <div class="teacherInstructionsGrid">
-        <div class="teacherInstructionItem">Revisa tu información y accesos asignados al iniciar sesión.</div>
-        <div class="teacherInstructionItem">Para clases en sede, registra ingreso y salida escaneando el QR correspondiente.</div>
-        <div class="teacherInstructionItem">Para clases a hogar o virtuales, usa el registro manual disponible en la app.</div>
-        <div class="teacherInstructionItem">Al terminar tus clases, completa la bitácora para dejar evidencia del proceso.</div>
-        <div class="teacherInstructionItem">En “Mi trabajo hoy” encontrarás tus accesos, documentos y enlaces importantes.</div>
-        <div class="teacherInstructionItem">Puedes instalar la app en tu dispositivo para abrirla más fácil.</div>
-        <div class="teacherInstructionItem">Cuando termines en un equipo compartido, cierra sesión desde el menú.</div>
-        <div class="teacherInstructionItem">Si la cámara no funciona, revisa permisos del navegador, buena iluminación y cámara seleccionada.</div>
-      </div>
-    </details>
-
-    <div class="hubSearch" style="grid-column: 1 / -1;">
+    <div class="hubSearch" data-tab-scope="apps" style="grid-column: 1 / -1;">
       <span class="hubSearchIcon" aria-hidden="true">🔎</span>
       <input id="hubSearchInput" type="search" inputmode="search" autocomplete="off"
         placeholder="Buscar acceso… (ej: bitácora, biblioteca, QR, horarios)" aria-label="Buscar acceso en el HUB" />
       <button class="hubSearchClear" id="hubSearchClear" type="button" aria-label="Limpiar búsqueda" hidden>✕</button>
     </div>
-    <div class="hubSearchEmpty" id="hubSearchEmpty" hidden>
+    <div class="hubSearchEmpty" id="hubSearchEmpty" data-tab-scope="apps" hidden>
       <h2>Sin resultados</h2>
       <p>No encontramos accesos para esa búsqueda. Prueba con otra palabra.</p>
     </div>
@@ -5718,6 +5704,19 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   setupHubSearch(grid);
   ensureBottomNav();
   applyHubTab(APP_STATE.hubTab || "inicio");
+
+  if (!grid.dataset.boundSup) {
+    grid.dataset.boundSup = "true";
+    grid.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-sup]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-sup");
+      if (action === "support") openSupportModal();
+      else if (action === "favorites") openFavoritesModal();
+      else if (action === "switchHub") openHubSwitcherModal();
+      else if (action === "logout") $("#btn-logout")?.click();
+    });
+  }
 
   if (!grid.dataset.boundClick) {
     grid.dataset.boundClick = "true";
@@ -5812,7 +5811,7 @@ function renderPendingBannerHTML() {
   const count = d?.count ?? null;
   return `
     <button type="button" class="pendingBanner ${d ? "" : "slotEmpty"}" data-slot="pendingBitacoras"
-      onclick="document.querySelector('.hubNavBtn[data-tab=academico]')?.click()">
+      onclick="document.getElementById('slot-acad')?.scrollIntoView({behavior:'smooth'})">
       <span class="pendingDot">${escapeHtml(slotValue(count))}</span>
       <span class="pendingTxt">
         <strong>Tienes ${escapeHtml(slotValue(count))} bitácoras pendientes</strong>
@@ -5889,6 +5888,37 @@ function renderAcadPanelHTML() {
   `;
 }
 
+// Pantalla "Soporte" (pestaña ❓): cómo funciona la app, reporte y utilidades.
+function renderSoportePanelHTML() {
+  return `
+    <article class="supCard">
+      <h3><span aria-hidden="true">❓</span> ¿Cómo funciona esta app?</h3>
+      <div class="supSteps">
+        <div class="supStep">Revisa tu información y accesos asignados al iniciar sesión.</div>
+        <div class="supStep">Para clases en sede, registra ingreso y salida escaneando el QR.</div>
+        <div class="supStep">Para clases a hogar o virtuales, usa el registro manual.</div>
+        <div class="supStep">Al terminar tus clases, completa la bitácora para dejar evidencia.</div>
+        <div class="supStep">Puedes instalar la app en tu dispositivo para abrirla más fácil.</div>
+        <div class="supStep">En equipos compartidos, cierra sesión al terminar.</div>
+        <div class="supStep">Si la cámara falla: permisos del navegador, buena luz y cámara correcta.</div>
+      </div>
+    </article>
+
+    <article class="supCard">
+      <h3><span aria-hidden="true">🛟</span> Soporte</h3>
+      <p class="supTxt">¿Algo no funciona o tienes una idea? Cuéntanos y le hacemos seguimiento.</p>
+      <button class="supBtnMain" type="button" data-sup="support">Reportar un problema</button>
+    </article>
+
+    <article class="supCard supList">
+      <button class="supItem" type="button" data-sup="favorites"><span aria-hidden="true">⭐</span> Favoritos</button>
+      <button class="supItem" type="button" data-sup="switchHub"><span aria-hidden="true">🧭</span> Cambiar Hub</button>
+      <button class="supItem supDanger" type="button" data-sup="logout"><span aria-hidden="true">🚪</span> Cerrar sesión</button>
+      <p class="supVersion">Versión ${escapeHtml(BUILD)}</p>
+    </article>
+  `;
+}
+
 // Repinta solo los contenedores de datos (no todo el grid).
 function refreshHubDataUI() {
   const map = {
@@ -5907,8 +5937,8 @@ function refreshHubDataUI() {
 // Cada pestaña muestra un subconjunto de secciones del grid; "apps" muestra todo.
 const HUB_TAB_SECTIONS = {
   inicio: ["Mi trabajo hoy"],
-  academico: ["Gestión docente", "Recursos"],
-  apps: null
+  apps: null,
+  soporte: []
 };
 
 function ensureBottomNav() {
@@ -5924,11 +5954,11 @@ function ensureBottomNav() {
     <button class="hubNavBtn" type="button" data-tab="inicio" aria-label="Inicio">
       <span class="hubNavIco" aria-hidden="true">🏠</span><span class="hubNavTxt">Inicio</span>
     </button>
-    <button class="hubNavBtn" type="button" data-tab="academico" aria-label="Académico">
-      <span class="hubNavIco" aria-hidden="true">📖</span><span class="hubNavTxt">Académico</span>
-    </button>
     <button class="hubNavBtn" type="button" data-tab="apps" aria-label="Apps">
       <span class="hubNavIco" aria-hidden="true">🔲</span><span class="hubNavTxt">Apps</span>
+    </button>
+    <button class="hubNavBtn" type="button" data-tab="soporte" aria-label="Soporte">
+      <span class="hubNavIco" aria-hidden="true">❓</span><span class="hubNavTxt">Soporte</span>
     </button>
   `;
   app.appendChild(nav);
@@ -5965,8 +5995,6 @@ function applyHubTab(tab = "inicio") {
 
   const hero = $(".hubHero", grid);
   if (hero) hero.classList.toggle("tabHidden", tab !== "inicio");
-  const instructions = $(".teacherInstructions", grid);
-  if (instructions) instructions.classList.toggle("tabHidden", tab !== "inicio");
 
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
