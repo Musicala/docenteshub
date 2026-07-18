@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.7";
+const BUILD = "2026-07-18.8";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5976,6 +5976,8 @@ function applyHubTab(tab = "inicio") {
 
   const grid = $("#grid");
   if (!grid) return;
+
+  grid.dataset.tab = tab; // permite estilizar cada pestaña (ej: mini-iconos en Apps)
 
   $$(".hubNavBtn").forEach((btn) => {
     const active = btn.dataset.tab === tab;
