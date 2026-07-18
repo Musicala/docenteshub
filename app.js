@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.11";
+const BUILD = "2026-07-18.12";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5646,7 +5646,6 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
     <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
-    <div id="slot-acad" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderAcadPanelHTML()}</div>
     <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
     <div id="slot-perfil" class="slotWrap" data-tab-scope="perfil" style="grid-column: 1 / -1;">${renderPerfilPanelHTML()}</div>
 
@@ -5834,8 +5833,7 @@ function renderPendingBannerHTML() {
   const d = APP_STATE.hubData.pendingBitacoras;
   const count = d?.count ?? null;
   return `
-    <button type="button" class="pendingBanner ${d ? "" : "slotEmpty"}" data-slot="pendingBitacoras"
-      onclick="document.getElementById('slot-acad')?.scrollIntoView({behavior:'smooth'})">
+    <button type="button" class="pendingBanner ${d ? "" : "slotEmpty"}" data-slot="pendingBitacoras" data-id="bitacoraClasesNueva">
       <span class="pendingDot">${escapeHtml(slotValue(count))}</span>
       <span class="pendingTxt">
         <strong>Tienes ${escapeHtml(slotValue(count))} bitácoras pendientes</strong>
@@ -6072,7 +6070,6 @@ function refreshHubDataUI() {
     "slot-nextclass": renderNextClassCardHTML,
     "slot-pending": renderPendingBannerHTML,
     "slot-kpis": renderKpiRowHTML,
-    "slot-acad": renderAcadPanelHTML,
     "slot-favs": renderFavRowHTML,
     "slot-perfil": renderPerfilPanelHTML
   };
