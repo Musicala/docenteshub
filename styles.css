@@ -4054,3 +4054,362 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .messageBubble.own{margin-left:auto;background:#e8f0ff}.messageBubble p{margin:4px 0;white-space:pre-wrap}
 .messageComposer{display:flex;gap:8px;margin-top:10px}.messageComposer textarea{flex:1;border:1px solid #d7dce5;border-radius:13px;padding:11px;resize:none}.messageEmpty{margin:auto;text-align:center;color:#667085;display:grid;gap:6px;place-items:center}.messageEmpty>span{font-size:34px}.messageEmpty.small{padding:24px 8px}
 @media(max-width:700px){.messageHub{width:100vw;height:100dvh;max-height:none;border-radius:0;padding:16px}.messageHubHead h3{font-size:20px}.messageHubLayout{display:block;position:relative}.messageInbox,#messageConversation{position:absolute;inset:0;border:0}.messageInbox{padding:12px}#messageConversation{transform:translateX(105%);transition:transform .22s ease;z-index:2}.messageConversationOpen #messageConversation{transform:translateX(0)}.messageBack{display:grid;place-items:center;border:0;background:white;border-radius:10px;width:38px;height:38px;font-size:22px}.messageConversationHead{justify-content:flex-start}.messageConversationHead .messageDelete{margin-left:auto}.messageBubble{max-width:86%}.messageComposer .btnGoogle{padding:10px 13px}}
+
+/* ==========================================================================
+   REDISEÑO 2026 · "Docentes HUB" estilo render
+   Paleta: turquesa (acción) + rosa (acento) + naranja/violeta (categorías)
+   Fondo gris suave, tarjetas blancas, esquinas muy redondeadas, sombras leves,
+   navegación inferior Inicio / Académico / Apps.
+   Esta capa va al final para ganar la cascada sin tocar la base.
+========================================================================== */
+
+:root{
+  --bg:#f3f4f6;
+  --bg2:#eef0f3;
+  --card:#ffffff;
+  --card2:#ffffff;
+  --text:#1c2430;
+  --muted:#6b7280;
+  --line:#e7e9ee;
+
+  /* Acentos del render */
+  --a1:#12b5a5;   /* turquesa (primario) */
+  --a2:#f2508b;   /* rosa */
+  --a3:#f5a623;   /* naranja */
+  --a4:#7c5cff;   /* violeta */
+
+  --okBg:#e5f8f5;
+  --okLine:#bdece6;
+  --okText:#0c8d80;
+
+  --pendingBg:#f4f5f7;
+  --pendingLine:#e5e7ec;
+  --pendingText:#8a92a1;
+
+  --r:16px; --r2:20px; --r3:24px; --r4:28px;
+
+  --shadow:0 10px 30px rgba(28,36,48,.08);
+  --shadow2:0 6px 16px rgba(28,36,48,.06);
+  --shadow3:0 18px 44px rgba(28,36,48,.12);
+  --shadowSoft:0 8px 22px rgba(28,36,48,.07);
+
+  --glass:#ffffff; --glass2:#ffffff; --glass3:#ffffff;
+
+  --ring:0 0 0 4px rgba(18,181,165,.18);
+  --ring2:0 0 0 4px rgba(242,80,139,.15);
+  --ring3:0 0 0 4px rgba(245,166,35,.15);
+
+  --tileRadius:20px;
+  --iconCardSize:48px;
+  --iconCardRadius:14px;
+
+  --secTitleColor:#4b5563;
+
+  --drawerBg:#ffffff;
+  --drawerOverlay:rgba(28,36,48,.35);
+}
+
+body{
+  background:
+    radial-gradient(900px 480px at 100% 0%, rgba(242,80,139,.06), transparent 60%),
+    radial-gradient(800px 460px at 0% 100%, rgba(18,181,165,.06), transparent 60%),
+    linear-gradient(180deg, var(--bg), var(--bg2)) !important;
+}
+
+/* ===== Saludo (Hola, {nombre}) ===== */
+.hubHero{ display:grid; gap:14px; }
+
+.heroGreeting{
+  display:flex; align-items:center; gap:14px;
+  padding:6px 4px;
+}
+
+.heroAvatar{
+  width:56px; height:56px; flex:0 0 auto;
+  border-radius:50%;
+  display:grid; place-items:center;
+  font-size:24px; font-weight:800; color:#fff;
+  background:linear-gradient(135deg, var(--a1), #0ea5e9);
+  box-shadow:0 6px 16px rgba(18,181,165,.35);
+  border:3px solid #fff;
+}
+
+.heroGreeting .heroCopy h1{
+  margin:0; font-size:22px; font-weight:800; color:var(--text);
+}
+.heroGreeting .heroCopy span{
+  display:block; margin-top:2px; font-size:12.5px; color:var(--muted);
+}
+
+/* ===== Tarjeta de jornada ===== */
+.heroShiftCard{
+  background:var(--card) !important;
+  border:1px solid var(--line) !important;
+  border-radius:var(--r3) !important;
+  box-shadow:var(--shadow2) !important;
+  padding:18px !important;
+  color:var(--text) !important;
+}
+.heroShiftCard p{ color:var(--a3) !important; font-weight:700; letter-spacing:.2px; }
+.heroShiftCard h2{ color:var(--text) !important; }
+.heroShiftCard > span{ color:var(--muted) !important; }
+
+.heroPrimary{
+  background:var(--a1) !important;
+  color:#fff !important;
+  border:none !important;
+  border-radius:999px !important;
+  padding:12px 18px !important;
+  font-weight:700 !important;
+  box-shadow:0 8px 18px rgba(18,181,165,.32) !important;
+}
+.heroPrimary:hover{ filter:brightness(1.05); }
+
+.heroSecondary{
+  background:#fff !important;
+  color:var(--a1) !important;
+  border:1.5px solid var(--a1) !important;
+  border-radius:999px !important;
+  padding:12px 18px !important;
+  font-weight:700 !important;
+}
+
+/* ===== Header superior ===== */
+.top .brand{
+  background:transparent;
+  border:none;
+  box-shadow:none;
+}
+.appTitle{ font-weight:800; }
+
+/* ===== Tiles (accesos) ===== */
+.tile{
+  background:var(--card) !important;
+  border:1px solid var(--line) !important;
+  border-radius:var(--tileRadius) !important;
+  box-shadow:var(--shadow2) !important;
+}
+.tile:hover{ box-shadow:var(--shadow) !important; transform:translateY(-1px); }
+
+.tile .ico{
+  border-radius:var(--iconCardRadius) !important;
+  border:none !important;
+}
+
+/* Chips de icono coloreados por sección (como el render) */
+.tile[data-sec="Mi trabajo hoy"] .ico{ background:#e5f8f5 !important; }
+.tile[data-sec="Gestión docente"] .ico{ background:#fdeaf2 !important; }
+.tile[data-sec="Recursos"] .ico{ background:#fef3e0 !important; }
+.tile[data-sec="Institucional"] .ico{ background:#efeaff !important; }
+.tile[data-sec="Administración"] .ico{ background:#e8eefc !important; }
+
+.badge.ok{
+  background:var(--okBg) !important;
+  border-color:var(--okLine) !important;
+  color:var(--okText) !important;
+}
+
+.secTitle{
+  color:var(--secTitleColor) !important;
+  font-weight:800 !important;
+  text-transform:none !important;
+}
+
+/* ===== Buscador ===== */
+.hubSearch{
+  background:#fff !important;
+  border:1px solid var(--line) !important;
+  border-radius:999px !important;
+  box-shadow:var(--shadow2) !important;
+}
+
+/* ===== Navegación inferior ===== */
+.hubNav{
+  position:fixed;
+  left:50%; transform:translateX(-50%);
+  bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index:60;
+  display:flex; gap:6px;
+  padding:8px;
+  background:rgba(255,255,255,.96);
+  backdrop-filter:blur(14px);
+  border:1px solid var(--line);
+  border-radius:999px;
+  box-shadow:var(--shadow3);
+  width:min(420px, calc(100% - 24px));
+  justify-content:space-around;
+}
+
+.hubNavBtn{
+  appearance:none; border:none; background:transparent;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  padding:8px 18px;
+  border-radius:999px;
+  cursor:pointer;
+  color:#9aa2b1;
+  font-size:11.5px; font-weight:700;
+  transition:color .15s ease, background .15s ease;
+}
+.hubNavBtn .hubNavIco{ font-size:18px; line-height:1; filter:grayscale(1) opacity(.7); }
+.hubNavBtn.active{ color:var(--a1); background:#e5f8f5; }
+.hubNavBtn.active .hubNavIco{ filter:none; }
+
+/* Deja aire al final para que la nav no tape contenido */
+#view-app .grid{ padding-bottom:96px !important; }
+
+/* Ocultamiento por pestaña */
+.tabHidden{ display:none !important; }
+
+/* ===== Botones e inputs base con el nuevo acento ===== */
+.btnGoogle{
+  background:var(--a1) !important;
+  border-color:var(--a1) !important;
+  color:#fff !important;
+  border-radius:999px !important;
+  box-shadow:0 8px 18px rgba(18,181,165,.30) !important;
+}
+.loginCard{
+  background:#fff !important;
+  border-radius:var(--r4) !important;
+  box-shadow:var(--shadow) !important;
+  border:1px solid var(--line) !important;
+}
+
+/* ===== Drawer ===== */
+.drawer{ background:#fff !important; }
+.drawerItem:hover{ background:#f4fbfa !important; }
+
+/* ==========================================================================
+   SLOTS DE DATOS (render): próxima clase, pendientes, KPIs, progreso mensual
+========================================================================== */
+.slotWrap{ display:block; }
+
+/* Estado "sin fuente conectada" */
+.slotEmpty{ position:relative; }
+.slotTag{
+  display:inline-block; margin-left:6px;
+  font-size:10px; font-weight:800; letter-spacing:.3px;
+  color:#9aa2b1; background:#f1f2f6;
+  border:1px dashed #cfd4de; border-radius:999px;
+  padding:2px 8px; vertical-align:middle;
+}
+
+/* --- Próxima clase --- */
+.nextClassCard{
+  display:flex; align-items:center; gap:14px;
+  background:#fff; border:1px solid var(--line);
+  border-radius:var(--r2); box-shadow:var(--shadow2);
+  padding:14px 16px;
+}
+.nextClassIco{
+  width:48px; height:48px; flex:0 0 auto;
+  display:grid; place-items:center; font-size:22px;
+  background:#fdeaf2; border-radius:14px;
+}
+.nextClassTxt p{ margin:0; font-size:11.5px; font-weight:700; color:var(--muted); }
+.nextClassTxt h3{ margin:2px 0 0; font-size:15.5px; font-weight:800; color:var(--text); }
+.nextClassTxt span{ display:block; margin-top:1px; font-size:12.5px; color:var(--muted); }
+
+/* --- Banner bitácoras pendientes --- */
+.pendingBanner{
+  appearance:none; width:100%; cursor:pointer; text-align:left;
+  display:flex; align-items:center; gap:12px;
+  background:#fdeaf2; border:1px solid #f8cadd;
+  border-radius:var(--r2); padding:12px 16px;
+  box-shadow:none;
+}
+.pendingDot{
+  width:26px; height:26px; flex:0 0 auto;
+  display:grid; place-items:center;
+  background:var(--a2); color:#fff;
+  border-radius:50%; font-size:12px; font-weight:800;
+}
+.pendingTxt{ flex:1; display:block; }
+.pendingTxt strong{ display:block; font-size:13.5px; color:#b32d6e; }
+.pendingTxt em{ display:block; font-style:normal; font-size:11.5px; color:#c76a99; }
+.pendingBanner > span[aria-hidden]{ color:#b32d6e; font-size:20px; font-weight:700; }
+
+/* --- KPIs --- */
+.kpiRow{
+  display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;
+  position:relative;
+}
+.kpiChip{
+  background:#fff; border:1px solid var(--line);
+  border-radius:var(--r2); box-shadow:var(--shadow2);
+  padding:12px 10px; text-align:center;
+}
+.kpiLabel{ display:block; font-size:11px; font-weight:700; color:var(--muted); }
+.kpiValue{ display:block; margin-top:4px; font-size:19px; font-weight:800; }
+.kpiTeal .kpiValue{ color:var(--a1); }
+.kpiOrange .kpiValue{ color:var(--a3); }
+.kpiPink .kpiValue{ color:var(--a2); }
+.kpiConnectNote{ grid-column:1 / -1; text-align:center; margin-top:-2px; }
+
+/* --- Panel Académico --- */
+.acadBanner{
+  display:flex; align-items:center; gap:12px;
+  background:#e5f8f5; border:1px solid #bdece6;
+  border-radius:var(--r2); padding:12px 16px; margin-bottom:12px;
+}
+.acadBannerTxt{ flex:1; }
+.acadBannerTxt strong{ display:block; font-size:13.5px; color:#0c8d80; }
+.acadBannerTxt em{ display:block; font-style:normal; font-size:11.5px; color:#4aa79d; }
+.acadBannerCount{
+  width:30px; height:30px; display:grid; place-items:center;
+  background:var(--a1); color:#fff; border-radius:50%;
+  font-size:13px; font-weight:800;
+}
+
+.progressCard{
+  background:#fff; border:1px solid var(--line);
+  border-radius:var(--r2); box-shadow:var(--shadow2);
+  padding:16px; margin-bottom:12px;
+}
+.progressHead{ display:flex; align-items:center; justify-content:space-between; }
+.progressHead h3{ margin:0; font-size:14.5px; font-weight:800; color:var(--text); }
+.progressStats{
+  display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;
+  margin-top:12px;
+}
+.pStat span{ display:block; font-size:10.5px; font-weight:700; color:var(--muted); }
+.pStat strong{ display:block; margin-top:3px; font-size:16px; font-weight:800; color:var(--text); }
+.pStat strong em{ font-style:normal; font-size:12px; color:var(--muted); }
+.pStatOk{ color:var(--a1) !important; font-size:13.5px !important; }
+.progressBar{
+  margin-top:12px; height:8px; border-radius:999px;
+  background:#e5f8f5; overflow:hidden;
+}
+.progressBar span{
+  display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, var(--a1), #0ea5e9);
+  transition:width .4s ease;
+}
+.progressMeta{ margin:10px 0 0; font-size:11.5px; color:var(--muted); }
+
+.acadPendList{
+  background:#fff; border:1px solid var(--line);
+  border-radius:var(--r2); box-shadow:var(--shadow2);
+  padding:16px;
+}
+.acadPendList h3{ margin:0 0 10px; font-size:14.5px; font-weight:800; color:var(--text); }
+.acadPendEmpty{ margin:0; font-size:12.5px; color:var(--muted); }
+.acadPendItem{
+  display:flex; align-items:center; gap:12px;
+  padding:10px 0; border-top:1px solid var(--line);
+}
+.acadPendItem:first-of-type{ border-top:none; }
+.acadPendIco{
+  width:40px; height:40px; flex:0 0 auto;
+  display:grid; place-items:center; font-size:18px;
+  background:#fef3e0; border-radius:12px;
+}
+.acadPendTxt{ flex:1; }
+.acadPendTxt strong{ display:block; font-size:13px; color:var(--text); }
+.acadPendTxt em{ display:block; font-style:normal; font-size:11.5px; color:var(--muted); }
+.acadPendBtn{
+  background:var(--a1); color:#fff; text-decoration:none;
+  font-size:12px; font-weight:700;
+  padding:7px 14px; border-radius:999px;
+  box-shadow:0 4px 10px rgba(18,181,165,.28);
+}

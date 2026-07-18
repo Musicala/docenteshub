@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.1";
+const BUILD = "2026-07-18.2";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5620,22 +5620,32 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   const scheduleNudge = renderTeacherScheduleNudge();
 
   const sections = groupBySection(filteredButtons);
+  const teacherName = (profile?.label || prettyName(APP_STATE.activeUser) || "Docente").trim();
+  const firstName = teacherName.split(/\s+/)[0] || "Docente";
+  const avatarInitial = (firstName.charAt(0) || "M").toUpperCase();
   let html = `
     <section class="hubHero" aria-label="Inicio de hoy">
-      <div class="heroCopy">
-        <p>Inicio de hoy</p>
-        <h1>Docentes Musicala</h1>
-        <span>Inicia tu jornada, deja a mano la bitácora de clase y conserva tus recursos docentes en un solo lugar.</span>
+      <div class="heroGreeting">
+        <div class="heroAvatar" aria-hidden="true">${escapeHtml(avatarInitial)}</div>
+        <div class="heroCopy">
+          <h1>Hola, ${escapeHtml(firstName)}</h1>
+          <span>Docente Musicala · Tu espacio para enseñar, organizar y crecer cada día.</span>
+        </div>
       </div>
 
       <article class="heroShiftCard">
-        <p>Jornada</p>
+        <p>☀️ Jornada de hoy</p>
         <h2>Registro de jornada</h2>
         <span>Registra ingreso y salida. Sede requiere QR; hogar y virtual se confirman manualmente.</span>
         ${scheduleNudge}
         ${heroActions ? `<div class="heroShiftActions">${heroActions}</div>` : ""}
       </article>
     </section>
+
+    <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
+    <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
+    <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
+    <div id="slot-acad" class="slotWrap" data-tab-scope="academico" style="grid-column: 1 / -1;">${renderAcadPanelHTML()}</div>
 
     <details class="teacherInstructions">
       <summary>¿Cómo usar esta app?</summary>
@@ -5705,6 +5715,8 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   updateStudentMessagesBadge(APP_STATE.unreadStudentMessages);
   ensureMusiProfeBot();
   setupHubSearch(grid);
+  ensureBottomNav();
+  applyHubTab(APP_STATE.hubTab || "inicio");
 
   if (!grid.dataset.boundClick) {
     grid.dataset.boundClick = "true";
@@ -5720,6 +5732,242 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       { passive: true }
     );
   }
+}
+
+/* ============================================================================
+   DATOS CONECTABLES (SLOTS DEL RENDER)
+   ----------------------------------------------------------------------------
+   Cada tarjeta del diseño nuevo lee de APP_STATE.hubData. Mientras un slot
+   esté en null se dibuja igual pero marcado "Por conectar". Para conectar una
+   fuente (Firestore, Sheets, webhook, lo que sea) solo hay que llamar:
+
+     HubData.set("<slot>", <valor>)      // también expuesto en window.HubData
+
+   SLOTS Y FORMA ESPERADA:
+   - "nextClass"        → { title: "Ballet infantil", time: "10:00 a. m.", room: "Salón 3" }
+                          FUENTE prevista: horario docente (Firestore, colección de horarios).
+   - "pendingBitacoras" → { count: 3, items: [{ title, group, date, url }] }
+                          FUENTE prevista: sistema de bitácoras de clase.
+   - "kpis"             → { puntualidad: 94, bitacoras: 88, promedio: 4.7 }
+                          FUENTE prevista: puntualidad = marcaciones de jornada;
+                          bitacoras = % completadas; promedio = evaluaciones.
+   - "monthlyProgress"  → { subidas: 8, meta: 10, puntualidad: 93, seguimiento: "Muy bien" }
+                          FUENTE prevista: agregado mensual de bitácoras + jornada.
+   - "academicPending"  → { count: 5 }
+                          FUENTE prevista: bitácora de tareas académicas.
+
+   Ejemplo de conexión (cuando exista la fuente):
+     onSnapshot(doc(db, "indicadores", emailKey(user)), (snap) => {
+       const d = snap.data() || {};
+       HubData.set("kpis", { puntualidad: d.puntualidad, bitacoras: d.bitacoras, promedio: d.promedio });
+     });
+============================================================================ */
+const HUB_DATA_DEFAULTS = {
+  nextClass: null,
+  pendingBitacoras: null,
+  kpis: null,
+  monthlyProgress: null,
+  academicPending: null
+};
+
+APP_STATE.hubData = { ...HUB_DATA_DEFAULTS };
+
+function setHubData(slot, value) {
+  if (!(slot in HUB_DATA_DEFAULTS)) {
+    console.warn(`[HubData] Slot desconocido: "${slot}". Slots válidos:`, Object.keys(HUB_DATA_DEFAULTS));
+    return;
+  }
+  APP_STATE.hubData[slot] = value;
+  refreshHubDataUI();
+}
+
+window.HubData = {
+  set: setHubData,
+  get: (slot) => APP_STATE.hubData[slot],
+  reset: () => { APP_STATE.hubData = { ...HUB_DATA_DEFAULTS }; refreshHubDataUI(); },
+  slots: Object.keys(HUB_DATA_DEFAULTS)
+};
+
+// "—" mientras el dato no esté conectado.
+const slotValue = (v, suffix = "") => (v === null || v === undefined || v === "") ? "—" : `${v}${suffix}`;
+const slotTag = '<span class="slotTag">Por conectar</span>';
+
+function renderNextClassCardHTML() {
+  const d = APP_STATE.hubData.nextClass;
+  return `
+    <article class="nextClassCard ${d ? "" : "slotEmpty"}" data-slot="nextClass">
+      <div class="nextClassIco" aria-hidden="true">📅</div>
+      <div class="nextClassTxt">
+        <p>Próxima clase ${d ? "" : slotTag}</p>
+        <h3>${escapeHtml(slotValue(d?.title))}</h3>
+        <span>${escapeHtml(slotValue(d?.time))} · ${escapeHtml(slotValue(d?.room))}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderPendingBannerHTML() {
+  const d = APP_STATE.hubData.pendingBitacoras;
+  const count = d?.count ?? null;
+  return `
+    <button type="button" class="pendingBanner ${d ? "" : "slotEmpty"}" data-slot="pendingBitacoras"
+      onclick="document.querySelector('.hubNavBtn[data-tab=academico]')?.click()">
+      <span class="pendingDot">${escapeHtml(slotValue(count))}</span>
+      <span class="pendingTxt">
+        <strong>Tienes ${escapeHtml(slotValue(count))} bitácoras pendientes</strong>
+        <em>Completa tus registros para mantenerte al día. ${d ? "" : slotTag}</em>
+      </span>
+      <span aria-hidden="true">›</span>
+    </button>
+  `;
+}
+
+function renderKpiRowHTML() {
+  const d = APP_STATE.hubData.kpis;
+  const kpi = (label, value, cls) => `
+    <div class="kpiChip ${cls} ${d ? "" : "slotEmpty"}">
+      <span class="kpiLabel">${label}</span>
+      <strong class="kpiValue">${escapeHtml(value)}</strong>
+    </div>`;
+  return `
+    <div class="kpiRow" data-slot="kpis" aria-label="Indicadores del mes">
+      ${kpi("Puntualidad", slotValue(d?.puntualidad, " %"), "kpiTeal")}
+      ${kpi("Bitácoras", slotValue(d?.bitacoras, " %"), "kpiOrange")}
+      ${kpi("Promedio", d ? `★ ${slotValue(d?.promedio)}` : "—", "kpiPink")}
+      ${d ? "" : `<div class="kpiConnectNote">${slotTag}</div>`}
+    </div>
+  `;
+}
+
+function renderAcadPanelHTML() {
+  const prog = APP_STATE.hubData.monthlyProgress;
+  const pend = APP_STATE.hubData.pendingBitacoras;
+  const acad = APP_STATE.hubData.academicPending;
+
+  const pct = prog && prog.meta ? Math.min(100, Math.round((prog.subidas / prog.meta) * 100)) : 0;
+  const items = (pend?.items || []).map((item) => `
+    <div class="acadPendItem">
+      <span class="acadPendIco" aria-hidden="true">📝</span>
+      <span class="acadPendTxt">
+        <strong>${escapeHtml(item.title || "Clase")}</strong>
+        <em>${escapeHtml(item.group || "")}${item.group && item.date ? " · " : ""}${escapeHtml(item.date || "")}</em>
+      </span>
+      ${item.url ? `<a class="acadPendBtn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Completar</a>` : ""}
+    </div>
+  `).join("");
+
+  return `
+    <article class="acadBanner ${acad ? "" : "slotEmpty"}" data-slot="academicPending">
+      <span class="acadBannerTxt">
+        <strong>Pendientes académicos</strong>
+        <em>Tienes ${escapeHtml(slotValue(acad?.count))} pendientes por revisar ${acad ? "" : slotTag}</em>
+      </span>
+      <span class="acadBannerCount">${escapeHtml(slotValue(acad?.count))}</span>
+    </article>
+
+    <article class="progressCard ${prog ? "" : "slotEmpty"}" data-slot="monthlyProgress">
+      <div class="progressHead">
+        <h3>Mi progreso este mes</h3>
+        ${prog ? "" : slotTag}
+      </div>
+      <div class="progressStats">
+        <div class="pStat"><span>Bitácoras subidas</span><strong>${escapeHtml(slotValue(prog?.subidas))} <em>/ ${escapeHtml(slotValue(prog?.meta))}</em></strong></div>
+        <div class="pStat"><span>Puntualidad</span><strong>${escapeHtml(slotValue(prog?.puntualidad, " %"))}</strong></div>
+        <div class="pStat"><span>Seguimiento</span><strong class="pStatOk">${escapeHtml(slotValue(prog?.seguimiento))}</strong></div>
+      </div>
+      <div class="progressBar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+        <span style="width:${pct}%"></span>
+      </div>
+      ${prog && prog.meta ? `<p class="progressMeta">Meta sugerida: completa ${Math.max(0, prog.meta - prog.subidas)} bitácoras para quedar al día.</p>` : ""}
+    </article>
+
+    <article class="acadPendList ${pend?.items?.length ? "" : "slotEmpty"}" data-slot="pendingBitacoras-list">
+      <h3>Pendientes por completar ${pend?.items?.length ? "" : slotTag}</h3>
+      ${items || '<p class="acadPendEmpty">Aquí aparecerán tus bitácoras pendientes cuando se conecte la fuente.</p>'}
+    </article>
+  `;
+}
+
+// Repinta solo los contenedores de datos (no todo el grid).
+function refreshHubDataUI() {
+  const map = {
+    "slot-nextclass": renderNextClassCardHTML,
+    "slot-pending": renderPendingBannerHTML,
+    "slot-kpis": renderKpiRowHTML,
+    "slot-acad": renderAcadPanelHTML
+  };
+  for (const [id, fn] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = fn();
+  }
+}
+
+// Navegación inferior estilo app (Inicio / Académico / Apps).
+// Cada pestaña muestra un subconjunto de secciones del grid; "apps" muestra todo.
+const HUB_TAB_SECTIONS = {
+  inicio: ["Mi trabajo hoy"],
+  academico: ["Gestión docente", "Recursos"],
+  apps: null
+};
+
+function ensureBottomNav() {
+  if ($("#hubNav")) return;
+  const app = $("#view-app");
+  if (!app) return;
+
+  const nav = document.createElement("nav");
+  nav.id = "hubNav";
+  nav.className = "hubNav";
+  nav.setAttribute("aria-label", "Navegación principal");
+  nav.innerHTML = `
+    <button class="hubNavBtn" type="button" data-tab="inicio" aria-label="Inicio">
+      <span class="hubNavIco" aria-hidden="true">🏠</span><span class="hubNavTxt">Inicio</span>
+    </button>
+    <button class="hubNavBtn" type="button" data-tab="academico" aria-label="Académico">
+      <span class="hubNavIco" aria-hidden="true">📖</span><span class="hubNavTxt">Académico</span>
+    </button>
+    <button class="hubNavBtn" type="button" data-tab="apps" aria-label="Apps">
+      <span class="hubNavIco" aria-hidden="true">🔲</span><span class="hubNavTxt">Apps</span>
+    </button>
+  `;
+  app.appendChild(nav);
+
+  nav.addEventListener("click", (event) => {
+    const btn = event.target.closest(".hubNavBtn");
+    if (!btn) return;
+    applyHubTab(btn.dataset.tab || "inicio");
+  });
+}
+
+function applyHubTab(tab = "inicio") {
+  if (!HUB_TAB_SECTIONS.hasOwnProperty(tab)) tab = "inicio";
+  APP_STATE.hubTab = tab;
+
+  const grid = $("#grid");
+  if (!grid) return;
+
+  $$(".hubNavBtn").forEach((btn) => {
+    const active = btn.dataset.tab === tab;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-current", active ? "page" : "false");
+  });
+
+  const allowed = HUB_TAB_SECTIONS[tab];
+  $$(".secBlock, .tile", grid).forEach((el) => {
+    const sec = el.dataset.sec || "";
+    el.classList.toggle("tabHidden", Array.isArray(allowed) && !allowed.includes(sec));
+  });
+
+  $$("[data-tab-scope]", grid).forEach((el) => {
+    el.classList.toggle("tabHidden", el.dataset.tabScope !== tab);
+  });
+
+  const hero = $(".hubHero", grid);
+  if (hero) hero.classList.toggle("tabHidden", tab !== "inicio");
+  const instructions = $(".teacherInstructions", grid);
+  if (instructions) instructions.classList.toggle("tabHidden", tab !== "inicio");
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Buscador en vivo del HUB: filtra los accesos (tiles) por título/subtítulo/sección
