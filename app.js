@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.6";
+const BUILD = "2026-07-18.7";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5630,7 +5630,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <div class="heroAvatar" aria-hidden="true">${escapeHtml(avatarInitial)}</div>
         <div class="heroCopy">
           <h1>Hola, ${escapeHtml(firstName)}</h1>
-          <span>Docente Musicala · Tu espacio para enseñar, organizar y crecer cada día.</span>
+          <span>Docente Musicala</span>
         </div>
       </div>
 
