@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.10";
+const BUILD = "2026-07-18.11";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5624,10 +5624,11 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   const teacherName = (profile?.label || prettyName(APP_STATE.activeUser) || "Docente").trim();
   const firstName = teacherName.split(/\s+/)[0] || "Docente";
   const avatarInitial = (firstName.charAt(0) || "M").toUpperCase();
+  const avatarPhoto = String(APP_STATE.activeUser?.photoURL || "").trim();
   let html = `
     <section class="hubHero" aria-label="Inicio de hoy">
       <div class="heroGreeting">
-        <button class="heroAvatar" type="button" data-sup="perfil" aria-label="Ver mi perfil">${escapeHtml(avatarInitial)}</button>
+        <button class="heroAvatar" type="button" data-sup="perfil" aria-label="Ver mi perfil">${avatarPhoto ? `<img src="${escapeHtml(avatarPhoto)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ""}<span class="avatarInitial" aria-hidden="true">${escapeHtml(avatarInitial)}</span></button>
         <div class="heroCopy">
           <h1>Hola, ${escapeHtml(firstName)}</h1>
           <span>Docente Musicala</span>
@@ -5987,6 +5988,7 @@ function renderPerfilPanelHTML() {
   const name = (profile?.label || prettyName(user) || "Docente").trim();
   const email = emailKey(user) || "—";
   const initial = (name.charAt(0) || "M").toUpperCase();
+  const photo = String(user?.photoURL || "").trim();
   const kpiVal = (v, s = "") => (kpis && v !== undefined && v !== null) ? `${v}${s}` : "—";
 
   return `
@@ -5996,7 +5998,7 @@ function renderPerfilPanelHTML() {
     </div>
 
     <article class="perfilCard">
-      <div class="perfilAvatar" aria-hidden="true">${escapeHtml(initial)}</div>
+      <div class="perfilAvatar" aria-hidden="true">${photo ? `<img src="${escapeHtml(photo)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ""}<span class="avatarInitial">${escapeHtml(initial)}</span></div>
       <div class="perfilTxt">
         <h3>${escapeHtml(name)}</h3>
         <span>Docente Musicala · <em class="perfilActive">● Activa</em></span>

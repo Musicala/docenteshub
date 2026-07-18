@@ -4826,3 +4826,16 @@ body{
   overflow:visible !important;
   white-space:normal !important;
 }
+
+/* ==========================================================================
+   AJUSTE: avatar con foto de Google (fallback: inicial)
+========================================================================== */
+.heroAvatar, .perfilAvatar{ position:relative; overflow:hidden; }
+.heroAvatar img, .perfilAvatar img{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit:cover;
+  border-radius:50%;
+  z-index:1;
+}
+.avatarInitial{ position:relative; }
