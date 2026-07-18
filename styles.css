@@ -4839,3 +4839,38 @@ body{
   z-index:1;
 }
 .avatarInitial{ position:relative; }
+
+/* ==========================================================================
+   AJUSTE: cabecera de Inicio como el mockup (iconos ? y carnet),
+   jornada con un solo botón ancho, próxima clase clickeable
+========================================================================== */
+.heroGreeting{ align-items:center; }
+.heroIcons{
+  margin-left:auto;
+  display:flex; flex-direction:column; gap:6px;
+}
+.heroIconBtn{
+  appearance:none; cursor:pointer;
+  width:32px; height:32px;
+  display:grid; place-items:center;
+  background:#fff; border:1px solid var(--line); border-radius:10px;
+  font-size:14px; font-weight:800; color:var(--muted);
+  box-shadow:0 2px 8px rgba(28,36,48,.05);
+}
+.heroIconBtn:hover{ color:var(--a1); border-color:var(--a1); }
+
+/* Un solo botón de jornada: ancho completo como el mock */
+.heroShiftActions .heroPrimary{
+  flex:1 1 100% !important;
+  width:100% !important;
+  text-align:center;
+}
+
+/* Próxima clase ahora es botón (abre el calendario) */
+.nextClassCard{
+  appearance:none; cursor:pointer; width:100%; text-align:left;
+  font:inherit; color:inherit;
+}
+.nextClassGo{
+  margin-left:auto; color:var(--muted); font-size:20px; font-weight:700;
+}

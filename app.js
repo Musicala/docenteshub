@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.12";
+const BUILD = "2026-07-18.13";
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -5608,8 +5608,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     return state.visible;
   });
   const heroActions = [
-    { id: "jornada", className: "heroPrimary", label: "Registrar ingreso / salida" },
-    { id: "bitacoraClasesNueva", className: "heroSecondary", label: "Bitácoras de clase" }
+    { id: "jornada", className: "heroPrimary", label: "Registrar entrada  ⇥" }
   ]
     .filter((action) => {
       if (hiddenHomeButtons.has(action.id)) return false;
@@ -5632,6 +5631,10 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         <div class="heroCopy">
           <h1>Hola, ${escapeHtml(firstName)}</h1>
           <span>Docente Musicala</span>
+        </div>
+        <div class="heroIcons">
+          <button class="heroIconBtn" type="button" data-sup="ayuda" aria-label="Cómo funciona la app" title="Ayuda">?</button>
+          <button class="heroIconBtn" type="button" data-id="carnet" aria-label="Ver carnet" title="Carnet">🪪</button>
         </div>
       </div>
 
@@ -5718,6 +5721,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       else if (action === "switchHub") openHubSwitcherModal();
       else if (action === "logout") $("#btn-logout")?.click();
       else if (action === "perfil") applyHubTab("perfil");
+      else if (action === "ayuda") applyHubTab("soporte");
       else if (action === "back") applyHubTab("inicio");
       else if (action === "favEdit") { APP_STATE.favEdit = !APP_STATE.favEdit; refreshHubDataUI(); }
     });
@@ -5818,14 +5822,15 @@ const slotTag = '<span class="slotTag">Por conectar</span>';
 function renderNextClassCardHTML() {
   const d = APP_STATE.hubData.nextClass;
   return `
-    <article class="nextClassCard ${d ? "" : "slotEmpty"}" data-slot="nextClass">
+    <button type="button" class="nextClassCard ${d ? "" : "slotEmpty"}" data-slot="nextClass" data-id="calendario" aria-label="Abrir calendario">
       <div class="nextClassIco" aria-hidden="true">📅</div>
       <div class="nextClassTxt">
         <p>Próxima clase ${d ? "" : slotTag}</p>
         <h3>${escapeHtml(slotValue(d?.title))}</h3>
         <span>${escapeHtml(slotValue(d?.time))} · ${escapeHtml(slotValue(d?.room))}</span>
       </div>
-    </article>
+      <span class="nextClassGo" aria-hidden="true">›</span>
+    </button>
   `;
 }
 
