@@ -1384,6 +1384,7 @@ function rowsToCsv(headers, rows) {
 }
 
 function exportHoursCsv() {
+  if (!isAdminContext()) return;
   const headers = ['ID registro', 'ID tarea', 'Tarea', 'Responsable', 'Periodo', 'Ámbito', 'Inicio', 'Fin', 'Duración horas', 'Horas reconocidas', 'Tipo de trabajo', 'Estado', 'Avance', 'Falta', 'Mejora'];
   const rows = store.hourLogs.map(log => [
     log.id, log.taskId, log.taskTitle, log.person, log.period, logScopeLabel(logScopeOf(log)), log.start, log.end,
@@ -1490,6 +1491,8 @@ function applyRoleScope() {
   document.body.classList.toggle('is-admin-context', admin);
   const reportButton = $('#btnAcademicReport');
   if (reportButton) reportButton.hidden = !admin;
+  const exportHoursButton = $('#btnExportHours');
+  if (exportHoursButton) exportHoursButton.hidden = !admin;
   ['#btnNewObjective', '#budgetForm', '#estimateForm'].forEach(sel => {
     const el = $(sel);
     if (el) el.hidden = !admin;
