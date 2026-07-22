@@ -3926,11 +3926,34 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .docTable col.colDocente{ width:18%; }
 .docTable col.colCorreo{ width:24%; }
 .docTable col.colEstado{ width:13%; }
+.docTable col.colVinculacion{ width:16%; }
 .docTable col.colAreas{ width:20%; }
 .docTable col.colOrigen{ width:8%; }
 .docTable col.colAcciones{ width:17%; }
 .docTable td .mono{ word-break:break-all; }
 .docTable td.docAreasCell .puntBadge{ margin:0 4px 4px 0; }
+
+/* ===== Vinculación de Docentes de apoyo ===== */
+.supportContract{ display:grid; gap:16px; color:var(--text); }
+.supportContract section{ border:1px solid var(--line); border-radius:16px; padding:14px; background:#fff; }
+.supportContract h3{ margin:0 0 8px; font-size:15px; }
+.supportContract p{ margin:0; line-height:1.55; font-size:13px; }
+.supportIntro{ color:var(--muted); }
+.supportFields{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; }
+.supportFields label{ display:grid; gap:4px; font-weight:700; font-size:12px; color:var(--muted); }
+.supportFields input{ height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--text); }
+.supportContract details{ border-top:1px solid var(--line); padding:10px 0; }
+.supportContract details:first-of-type{ border-top:0; }
+.supportContract summary{ cursor:pointer; font-weight:800; font-size:13px; }
+.supportContract details p{ margin-top:8px; color:var(--muted); }
+.supportStatus{ justify-self:start; border-radius:999px; padding:6px 10px; font-weight:800; font-size:12px; background:#edf2f7; }
+.supportStatus-accepted{ background:#dff7ef; color:#08775b; }
+.supportStatus-incomplete{ background:#fff3cd; color:#7a5200; }
+.supportStatus-pending_acceptance{ background:#e7f0ff; color:#174ea6; }
+.supportAccepted{ background:#effbf6 !important; border-color:#a7ead2 !important; }
+.supportAcceptance{ display:grid; gap:12px; }
+.supportAcceptance .adminCheck{ align-items:flex-start; }
+@media (max-width:560px){ .supportFields{ grid-template-columns:1fr; } .docTable{ min-width:1050px; } }
 
 /* ===== Pestaña admin: Botones personalizados ===== */
 .customBtnList{ display:flex; flex-direction:column; gap:10px; margin:12px 0 18px; }

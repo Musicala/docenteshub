@@ -10,7 +10,13 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-18.14";
+const BUILD = "2026-07-22.1";
+
+// Versión única de las condiciones para Docentes de apoyo. El texto vive una
+// sola vez en este archivo; cada aceptación conserva esta versión y un resumen
+// verificable del contenido, sin reutilizar contratos particulares.
+const SUPPORT_CONTRACT_VERSION = "1.0";
+const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea"];
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -168,6 +174,7 @@ const HUB = {
     },
 
     { id: "carnet", icon: "🪪", title: "Carnet docente", subtitle: "Personal", section: "Gestión docente" },
+    { id: "supportContract", icon: "🤝", title: "Mi vinculación como Docente de apoyo", subtitle: "Datos, condiciones y aceptación", section: "Gestión docente", supportOnly: true },
     { id: "jornada", icon: "⏱️", title: "Registro de jornada", subtitle: "Diario", section: "Gestión docente" },
     { id: "salones", icon: "🏫", title: "Asignación de salones", subtitle: "Sede", section: "Gestión docente" },
     { id: "horarioAnual", icon: "📅", title: "Horario", subtitle: "Tu semana fija", section: "Gestión docente" },
@@ -2413,6 +2420,8 @@ const ADMIN_STATE = {
   scheduleMonth: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "numeric" }).format(new Date())) - 1,
   academic: { objectives: [], budgets: [], hourLogs: [] },
   supportReports: [],
+  supportProfiles: {},
+  supportAcceptances: {},
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   customButtons: [],   // botones personalizados creados desde el panel
   scheduleTeacher: "", // email del docente seleccionado en la pestaña Horarios
@@ -2674,6 +2683,7 @@ async function loadAdminData() {
       ADMIN_STATE.academic = await fetchAdminAcademic();
     } else if (ADMIN_STATE.tab === "docentes") {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
+      await loadSupportAdminData();
       refreshAdminTeacherFilterOptions();
     } else if (ADMIN_STATE.tab === "botones") {
       ADMIN_STATE.customButtons = await fetchCustomButtons();
@@ -4510,6 +4520,7 @@ function buildDocenteRows() {
       accessExpiresAt: (typeof md?.accessExpiresAt === "number" && md.accessExpiresAt > 0) ? md.accessExpiresAt : null,
       areas: Array.isArray(md?.areas) ? md.areas : [],
       especialidades: Array.isArray(md?.especialidades) ? md.especialidades : [],
+      employmentType: md?.employmentType === "support_contractor" ? "support_contractor" : "staff",
       visibleButtons: getVisibleButtonsForUserDoc(md)
     });
   }
@@ -4543,6 +4554,11 @@ function renderAdminDocentes(body) {
     }
     const origen = r.inBase ? "Código" : "Panel";
 
+    const supportProfile = ADMIN_STATE.supportProfiles?.[r.email] || {};
+    const supportAcceptance = ADMIN_STATE.supportAcceptances?.[supportAcceptanceId(r.email)] || null;
+    const supportState = r.employmentType === "support_contractor" ? supportStatus(supportProfile, supportAcceptance) : "not_applicable";
+    const supportDate = supportAcceptance?.acceptedAt?.toDate?.();
+    const supportCell = `<span class="puntBadge ${supportState === "accepted" ? "punt-ok" : supportState === "not_applicable" ? "punt-none" : "punt-excused"}">${r.employmentType === "support_contractor" ? "Docente de apoyo" : "Docente de planta"}</span><br><span class="adminNote">${escapeHtml(supportStatusLabel(supportState))}${supportAcceptance ? ` · v${escapeHtml(supportAcceptance.contractVersion || "")}${supportDate ? ` · ${escapeHtml(supportDate.toLocaleDateString("es-CO"))}` : ""}` : ""}</span>`;
     const areasLabel = r.isAdmin
       ? `<span class="adminNote">Todas (admin)</span>`
       : (r.areas.length
@@ -4555,6 +4571,7 @@ function renderAdminDocentes(body) {
     } else {
       const toggleLabel = r.enabled ? "Inhabilitar" : "Habilitar";
       let btns = `<button class="btnGhost docMini docEdit" type="button" data-email="${escapeHtml(r.email)}">Editar</button>`;
+      if (r.employmentType === "support_contractor") btns += `<button class="btnGhost docMini docSupport" type="button" data-email="${escapeHtml(r.email)}">Vinculación</button>`;
       btns += `<button class="btnGhost docMini docAreas" type="button" data-email="${escapeHtml(r.email)}">Áreas</button>`;
       btns += `<button class="btnGhost docMini docButtons" type="button" data-email="${escapeHtml(r.email)}">Botones</button>`;
       btns += `<button class="btnGhost docMini docAccess" type="button" data-email="${escapeHtml(r.email)}">Acceso</button>`;
@@ -4571,6 +4588,7 @@ function renderAdminDocentes(body) {
         <td>${escapeHtml(r.name)}</td>
         <td><span class="mono">${escapeHtml(r.email)}</span></td>
         <td>${estado}</td>
+        <td>${supportCell}</td>
         <td class="docAreasCell">${areasLabel}</td>
         <td>${origen}</td>
         <td class="docActionsCell">${actions}</td>
@@ -4597,10 +4615,10 @@ function renderAdminDocentes(body) {
     <div class="recordTableWrap">
       <table class="recordTable docTable">
         <colgroup>
-          <col class="colDocente" /><col class="colCorreo" /><col class="colEstado" />
+          <col class="colDocente" /><col class="colCorreo" /><col class="colEstado" /><col class="colVinculacion" />
           <col class="colAreas" /><col class="colOrigen" /><col class="colAcciones" />
         </colgroup>
-        <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Áreas</th><th>Origen</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Docente</th><th>Correo</th><th>Estado</th><th>Vinculación</th><th>Áreas</th><th>Origen</th><th>Acciones</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
     </div>
@@ -4648,6 +4666,10 @@ function renderAdminDocentes(body) {
     btn.addEventListener("click", () => openDocenteEditor(btn.dataset.email));
   });
 
+  body.querySelectorAll(".docSupport").forEach((btn) => {
+    btn.addEventListener("click", () => openAdminSupportDetail(btn.dataset.email));
+  });
+
   body.querySelectorAll(".docAreas").forEach((btn) => {
     btn.addEventListener("click", () => openDocenteAreasEditor(btn.dataset.email));
   });
@@ -4683,6 +4705,7 @@ function openDocenteEditor(email) {
   const md = ADMIN_STATE.hubUsers?.[email] || {};
   const base = HUB.USERS?.[email] || null;
   const name = md.label || md.name || base?.label || "";
+  const employmentType = md.employmentType === "support_contractor" ? "support_contractor" : "staff";
   // El correo de los docentes de "Código" está fijo en la base del código: solo se
   // puede cambiar el nombre; el correo se edita únicamente en docentes gestionados.
   const inBase = !!base;
@@ -4701,6 +4724,10 @@ function openDocenteEditor(email) {
         <div>
           <span class="docEditField">Correo de acceso</span>
           <input type="email" id="docEditEmail" placeholder="correo@gmail.com" value="${escapeHtml(email)}" ${inBase ? "disabled" : ""} />
+        </div>
+        <div>
+          <span class="docEditField">Tipo de vinculación</span>
+          <select id="docEmploymentType"><option value="staff" ${employmentType === "staff" ? "selected" : ""}>Docente de planta</option><option value="support_contractor" ${employmentType === "support_contractor" ? "selected" : ""}>Docente de apoyo</option></select>
         </div>
       </div>
       ${inBase
@@ -4732,7 +4759,8 @@ function openDocenteEditor(email) {
     const payload = {
       label: newName || newEmail,
       role: md.role || "docente",
-      enabled: md.enabled !== false
+      enabled: md.enabled !== false,
+      employmentType: $("#docEmploymentType", dialog)?.value || "staff"
     };
     if (typeof md.accessExpiresAt === "number" && md.accessExpiresAt > 0) payload.accessExpiresAt = md.accessExpiresAt;
     if (Array.isArray(md.areas)) payload.areas = md.areas;
@@ -5564,12 +5592,16 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "bitacoraAcademica" ||
     button?.id === "academicModule" ||
     button?.id === "studentMessages" ||
-    button?.id === "bibliotecaRecursos";
+    button?.id === "bibliotecaRecursos" ||
+    button?.id === "supportContract";
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
+  if (button?.supportOnly && APP_STATE.hubUserDoc?.employmentType !== "support_contractor") {
+    return { isSpecial: false, url: "", available: false, visible: false };
+  }
   const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
-  if (assignedButtons && !button?.adminOnly && button?.id !== "studentMessages" && !assignedButtons.includes(button?.id)) {
+  if (assignedButtons && !button?.adminOnly && !["studentMessages", "supportContract"].includes(button?.id) && !assignedButtons.includes(button?.id)) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.id === "horarioAnual") {
@@ -5578,7 +5610,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: true, url: "__SPECIAL__", available: visible, visible };
   }
   // Módulos internos disponibles para cualquier usuario con acceso al HUB.
-  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos") {
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos" || button?.id === "supportContract") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
@@ -6507,6 +6539,111 @@ function openStudentMessages() {
   if (APP_STATE.studentsAuth.currentUser) connect();
 }
 
+/* ============================================================================
+   VINCULACIÓN · DOCENTE DE APOYO
+============================================================================ */
+const SUPPORT_TERMS = [
+  ["Prestación del servicio", "Actúas de manera autónoma e independiente. Puedes recibir clases, talleres, reemplazos y actividades previamente acordadas; su asignación depende de la necesidad de Musicala y de tu disponibilidad. No se garantiza un mínimo de horas, clases ni estudiantes."],
+  ["Compromisos académicos", "Prepara y realiza las actividades aceptadas, registra asistencia y evidencias requeridas, entrega bitácoras o informes y aplica los principios pedagógicos y estándares de calidad de Musicala."],
+  ["Programación y comunicación", "Informa tu disponibilidad, revisa la programación asignada y gestiona los cambios por los canales institucionales. No modifiques directamente horarios con estudiantes o acudientes e informa a tiempo cualquier impedimento."],
+  ["Protección y buen trato", "Mantén una conducta respetuosa, protege la integridad física y emocional de estudiantes y cumple los protocolos de niños, niñas y adolescentes. Informa de inmediato situaciones de riesgo."],
+  ["Confidencialidad y datos personales", "Protege la información de estudiantes, familias y Musicala. No copies, divulgues ni uses datos para fines personales, ni contactes familias para ofrecer servicios externos con información obtenida por la institución."],
+  ["Pagos y seguridad social", "Los honorarios y condiciones de pago se informan según cada actividad asignada. Cuando corresponda, presentarás cuenta de cobro o factura y los documentos requeridos; conservas las obligaciones tributarias y de seguridad social que legalmente te correspondan."],
+  ["Terminación o suspensión", "Cualquiera de las partes puede decidir no aceptar nuevas actividades. Las ya aceptadas se gestionan según lo acordado. Musicala puede finalizar la vinculación ante incumplimientos graves, riesgos para estudiantes o violaciones de confidencialidad." ]
+];
+
+function supportProfileComplete(profile = {}) {
+  return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea"].every((key) => String(profile[key] || "").trim());
+}
+
+function openAdminSupportDetail(email) {
+  const profile = ADMIN_STATE.supportProfiles?.[email] || {};
+  const history = Object.values(ADMIN_STATE.supportAcceptances || {}).filter((item) => item.teacherEmail === email)
+    .sort((a, b) => (b.acceptedAt?.toMillis?.() || 0) - (a.acceptedAt?.toMillis?.() || 0));
+  const fields = SUPPORT_PROFILE_FIELDS.map((key) => `<div class="perfilInfoRow"><span>${escapeHtml(key)}</span><strong>${escapeHtml(profile[key] || "Sin registrar")}</strong></div>`).join("");
+  openDrawerActionModal("Detalle de vinculación", `<div class="supportContract"><section><h3>${escapeHtml(email)}</h3><div class="perfilInfo">${fields}</div></section><section><h3>Historial de aceptaciones</h3>${history.length ? history.map((item) => `<p><strong>Versión ${escapeHtml(item.contractVersion || "")}</strong> · ${escapeHtml(item.acceptedAt?.toDate?.().toLocaleString("es-CO") || "Registrando fecha")}</p>`).join("") : "<p class=\"adminNote\">Aún no hay aceptación registrada.</p>"}</section></div>`);
+}
+
+async function loadSupportAdminData() {
+  const [profiles, acceptances] = await Promise.all([
+    getDocs(collection(APP_STATE.db, "supportContractProfiles")),
+    getDocs(collection(APP_STATE.db, "supportContractAcceptances"))
+  ]);
+  ADMIN_STATE.supportProfiles = Object.fromEntries(profiles.docs.map((item) => [item.id, item.data() || {}]));
+  ADMIN_STATE.supportAcceptances = Object.fromEntries(acceptances.docs.map((item) => [item.id, item.data() || {}]));
+}
+function supportAcceptanceId(email = emailKey(APP_STATE.activeUser)) { return `${email}_${SUPPORT_CONTRACT_VERSION}`; }
+function supportStatus(profile, acceptance) {
+  if (!supportProfileComplete(profile)) return "incomplete";
+  return acceptance ? "accepted" : "pending_acceptance";
+}
+function supportStatusLabel(status) { return ({ incomplete: "Datos pendientes", pending_acceptance: "Pendiente de aceptación", accepted: "Aceptado", outdated: "Requiere nueva aceptación" })[status] || "No aplica"; }
+function supportTermsText() { return SUPPORT_TERMS.map(([title, text]) => `${title}\n${text}`).join("\n\n"); }
+
+async function openSupportContract() {
+  if (APP_STATE.hubUserDoc?.employmentType !== "support_contractor") { toast("Esta sección solo está disponible para Docentes de apoyo."); return; }
+  const email = emailKey(APP_STATE.activeUser);
+  const [profileSnap, acceptanceSnap] = await Promise.all([
+    getDoc(doc(APP_STATE.db, "supportContractProfiles", email)),
+    getDoc(doc(APP_STATE.db, "supportContractAcceptances", supportAcceptanceId(email)))
+  ]);
+  const profile = profileSnap.exists() ? profileSnap.data() : { fullName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "" };
+  const acceptance = acceptanceSnap.exists() ? acceptanceSnap.data() : null;
+  renderSupportContract(profile, acceptance);
+}
+
+function openSupportContractModal(title, body) { return openDrawerActionModal(title, `<div class="supportContract">${body}</div>`); }
+
+function renderSupportContract(profile, acceptance) {
+  const status = supportStatus(profile, acceptance);
+  const fields = [
+    ["fullName", "Nombre completo", "text"], ["documentType", "Tipo de documento", "text"], ["documentNumber", "Número de documento", "text"],
+    ["documentIssueCity", "Ciudad de expedición", "text"], ["phone", "Celular", "tel"], ["address", "Dirección", "text"],
+    ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"]
+  ];
+  const acceptedAt = acceptance?.acceptedAt?.toDate?.() || null;
+  const locked = !!acceptance;
+  const dataForm = fields.map(([key, label, type]) => `<label>${label}<input ${locked ? "disabled" : ""} type="${type}" data-support-field="${key}" maxlength="160" value="${escapeHtml(profile[key] || "")}" /></label>`).join("");
+  const modal = openSupportContractModal("Mi vinculación como Docente de apoyo", `
+    <div class="supportStatus supportStatus-${status}">${escapeHtml(supportStatusLabel(status))}</div>
+    <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
+    ${locked ? `<section class="supportAccepted"><h3>Condiciones aceptadas</h3><p>Tu aceptación fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p></section>` : `
+      <section><h3>Datos del docente</h3><p class="adminNote">Los campos marcados son necesarios antes de aceptar. El correo de la aceptación será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
+      <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
+      <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
+      <section><details id="supportFullTerms"><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>Estas condiciones regulan la aceptación electrónica inicial como prestador independiente de servicios artísticos y pedagógicos. No constituyen una firma digital certificada ni fijan valores, duración u horas particulares. ${escapeHtml(supportTermsText())}</p></details></section>
+      <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" id="supportAcceptTerms" disabled><span>Declaro que leí, comprendí y acepto las condiciones, el resumen de normas, los compromisos académicos, la confidencialidad y los lineamientos presentados.</span></label><label class="adminCheck"><input type="checkbox" id="supportConfirmData"><span>Confirmo que los datos registrados son correctos y corresponden a mi identidad.</span></label><button class="btnGoogle" id="supportAcceptBtn" type="button" disabled>Aceptar condiciones</button></section>`}
+  `);
+  if (locked) return;
+  const save = async () => {
+    const values = { email: emailKey(APP_STATE.activeUser), updatedAt: serverTimestamp() };
+    modal.querySelectorAll("[data-support-field]").forEach((input) => { values[input.dataset.supportField] = input.value.trim(); });
+    await setDoc(doc(APP_STATE.db, "supportContractProfiles", values.email), values, { merge: true });
+    toast("Datos guardados.");
+    return values;
+  };
+  $("#supportSaveProfile", modal)?.addEventListener("click", async () => { try { await save(); } catch (e) { console.error(e); toast("No se pudieron guardar los datos."); } });
+  const fullTerms = $("#supportFullTerms", modal), termsCheck = $("#supportAcceptTerms", modal), confirmCheck = $("#supportConfirmData", modal), acceptBtn = $("#supportAcceptBtn", modal);
+  fullTerms?.addEventListener("toggle", () => { if (fullTerms.open) { termsCheck.disabled = false; } });
+  const updateAccept = () => { acceptBtn.disabled = !(supportProfileComplete(Object.fromEntries(Array.from(modal.querySelectorAll("[data-support-field]")).map((el) => [el.dataset.supportField, el.value.trim()]))) && termsCheck.checked && confirmCheck.checked); };
+  modal.querySelectorAll("[data-support-field]").forEach((input) => input.addEventListener("input", updateAccept)); termsCheck?.addEventListener("change", updateAccept); confirmCheck?.addEventListener("change", updateAccept);
+  acceptBtn?.addEventListener("click", async () => {
+    let values;
+    try { values = await save(); } catch (_) { return; }
+    if (!supportProfileComplete(values)) { toast("Completa los datos obligatorios antes de aceptar."); return; }
+    if (!confirm("Al continuar quedará registrada tu aceptación electrónica junto con la fecha, la versión de las condiciones y los datos de tu cuenta.")) return;
+    acceptBtn.disabled = true; acceptBtn.textContent = "Registrando…";
+    try {
+      await setDoc(doc(APP_STATE.db, "supportContractAcceptances", supportAcceptanceId()), {
+        teacherEmail: values.email, userId: APP_STATE.activeUser.uid, contractVersion: SUPPORT_CONTRACT_VERSION, acceptedAt: serverTimestamp(),
+        acceptedByName: values.fullName, acceptedByDocumentType: values.documentType, acceptedByDocumentNumber: values.documentNumber,
+        acceptedEmail: values.email, termsSnapshot: supportTermsText(), status: "accepted"
+      });
+      modal.remove(); toast("Condiciones aceptadas y registradas correctamente."); openSupportContract();
+    } catch (e) { console.error(e); toast("No se pudo registrar la aceptación. Intenta nuevamente."); acceptBtn.disabled = false; acceptBtn.textContent = "Aceptar condiciones"; }
+  });
+}
+
 async function handleButtonAction(id, trigger = null) {
   if (!id) return;
 
@@ -6544,6 +6681,11 @@ async function handleButtonAction(id, trigger = null) {
 
   if (id === "studentMessages") {
     openStudentMessages();
+    return;
+  }
+
+  if (id === "supportContract") {
+    openSupportContract();
     return;
   }
 
