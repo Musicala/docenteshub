@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-22.1";
+const BUILD = "2026-07-22.2";
 
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
@@ -4558,7 +4558,7 @@ function renderAdminDocentes(body) {
     const supportAcceptance = ADMIN_STATE.supportAcceptances?.[supportAcceptanceId(r.email)] || null;
     const supportState = r.employmentType === "support_contractor" ? supportStatus(supportProfile, supportAcceptance) : "not_applicable";
     const supportDate = supportAcceptance?.acceptedAt?.toDate?.();
-    const supportCell = `<span class="puntBadge ${supportState === "accepted" ? "punt-ok" : supportState === "not_applicable" ? "punt-none" : "punt-excused"}">${r.employmentType === "support_contractor" ? "Docente de apoyo" : "Docente de planta"}</span><br><span class="adminNote">${escapeHtml(supportStatusLabel(supportState))}${supportAcceptance ? ` · v${escapeHtml(supportAcceptance.contractVersion || "")}${supportDate ? ` · ${escapeHtml(supportDate.toLocaleDateString("es-CO"))}` : ""}` : ""}</span>`;
+    const supportCell = `<span class="puntBadge ${supportState === "accepted" ? "punt-ok" : supportState === "not_applicable" ? "punt-none" : "punt-excused"}">${r.employmentType === "support_contractor" ? "Docente de apoyo" : "Docente de planta"}</span><br><span class="adminNote">${escapeHtml(supportContractStatusLabel(supportState))}${supportAcceptance ? ` · v${escapeHtml(supportAcceptance.contractVersion || "")}${supportDate ? ` · ${escapeHtml(supportDate.toLocaleDateString("es-CO"))}` : ""}` : ""}</span>`;
     const areasLabel = r.isAdmin
       ? `<span class="adminNote">Todas (admin)</span>`
       : (r.areas.length
@@ -6577,7 +6577,7 @@ function supportStatus(profile, acceptance) {
   if (!supportProfileComplete(profile)) return "incomplete";
   return acceptance ? "accepted" : "pending_acceptance";
 }
-function supportStatusLabel(status) { return ({ incomplete: "Datos pendientes", pending_acceptance: "Pendiente de aceptación", accepted: "Aceptado", outdated: "Requiere nueva aceptación" })[status] || "No aplica"; }
+function supportContractStatusLabel(status) { return ({ incomplete: "Datos pendientes", pending_acceptance: "Pendiente de aceptación", accepted: "Aceptado", outdated: "Requiere nueva aceptación" })[status] || "No aplica"; }
 function supportTermsText() { return SUPPORT_TERMS.map(([title, text]) => `${title}\n${text}`).join("\n\n"); }
 
 async function openSupportContract() {
@@ -6605,7 +6605,7 @@ function renderSupportContract(profile, acceptance) {
   const locked = !!acceptance;
   const dataForm = fields.map(([key, label, type]) => `<label>${label}<input ${locked ? "disabled" : ""} type="${type}" data-support-field="${key}" maxlength="160" value="${escapeHtml(profile[key] || "")}" /></label>`).join("");
   const modal = openSupportContractModal("Mi vinculación como Docente de apoyo", `
-    <div class="supportStatus supportStatus-${status}">${escapeHtml(supportStatusLabel(status))}</div>
+    <div class="supportStatus supportStatus-${status}">${escapeHtml(supportContractStatusLabel(status))}</div>
     <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
     ${locked ? `<section class="supportAccepted"><h3>Condiciones aceptadas</h3><p>Tu aceptación fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p></section>` : `
       <section><h3>Datos del docente</h3><p class="adminNote">Los campos marcados son necesarios antes de aceptar. El correo de la aceptación será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
