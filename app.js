@@ -10,7 +10,8 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-22.2";
+const BUILD = "2026-07-22.3";
+const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
@@ -81,7 +82,7 @@ const HUB = {
     edades: "https://musicala.github.io/musiedades/",
     reglamento: "https://drive.google.com/file/d/1Oda0c_FnHrsgME2GE8LCb7z5huH-YbBk/view",
     musicalaFest: "https://musicalaescuela.github.io/programamusicalafest2025/",
-    bitacoraClasesNueva: "https://musicalaescuela.github.io/bitacoradeclase/",
+    bitacoraClasesNueva: OFFICIAL_CLASS_LOG_URL,
     musigym: "https://musicalaescuela.github.io/musigymtraininghub/",
     ensambles: "https://musicalaescuela.github.io/ensambles/",
 
@@ -473,7 +474,8 @@ function applyCustomButtons(list = []) {
   }));
   HUB.BUTTONS.splice(insertAt, 0, ...mapped);
   for (const b of list) {
-    if (b.url) HUB.GENERAL_LINKS[b.id] = String(b.url);
+    const isClassLog = normalizeText(`${b.title || ""} ${b.subtitle || ""}`).includes("bitacoras de clase");
+    if (b.url || isClassLog) HUB.GENERAL_LINKS[b.id] = isClassLog ? OFFICIAL_CLASS_LOG_URL : String(b.url);
   }
 }
 
@@ -5632,8 +5634,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   APP_STATE.activeLinks = links || {};
   APP_STATE.activeProfile = profile || null;
 
-  // "bitacoraClasesNueva" ahora sí se muestra como tile en "Mi trabajo hoy".
-  const hiddenHomeButtons = new Set(["salones"]);
+  // El acceso de estudiantes se retiró: Bitácoras de clase es el único acceso
+  // oficial para el registro pedagógico.
+  const hiddenHomeButtons = new Set(["salones", "bitacoraClasesNueva"]);
   const filteredButtons = buttons.filter((button) => {
     if (hiddenHomeButtons.has(button?.id)) return false;
     const state = getResolvedButtonState(button, APP_STATE.activeLinks);

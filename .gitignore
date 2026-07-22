@@ -12,3 +12,6 @@ Thumbs.db
 # Temporales
 *.log
 *~
+
+# Metadatos generados por Firebase Hosting al desplegar
+.firebase/
