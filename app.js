@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-22.3";
+const BUILD = "2026-07-22.4";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
@@ -4600,8 +4600,9 @@ function renderAdminDocentes(body) {
 
   body.innerHTML = `
     <div class="docAddCard">
-      <h3>Agregar docente</h3>
+      <div class="docAddHead"><div><h3>Agregar docente</h3>
       <p class="adminNote">Con esto le das acceso al HUB sin tocar el código. El correo debe ser el de su cuenta de Google.</p>
+      </div><button class="btnGhost docPreviewSupport" id="docPreviewSupport" type="button">Vista previa · Docente de apoyo</button></div>
       <div class="docAddForm">
         <input type="text" id="docNewName" placeholder="Nombre (ej: Laura Sánchez)" />
         <input type="email" id="docNewEmail" placeholder="correo@gmail.com" />
@@ -4667,6 +4668,8 @@ function renderAdminDocentes(body) {
   body.querySelectorAll(".docEdit").forEach((btn) => {
     btn.addEventListener("click", () => openDocenteEditor(btn.dataset.email));
   });
+
+  $("#docPreviewSupport", body)?.addEventListener("click", openSupportContractPreview);
 
   body.querySelectorAll(".docSupport").forEach((btn) => {
     btn.addEventListener("click", () => openAdminSupportDetail(btn.dataset.email));
@@ -6565,6 +6568,22 @@ function openAdminSupportDetail(email) {
     .sort((a, b) => (b.acceptedAt?.toMillis?.() || 0) - (a.acceptedAt?.toMillis?.() || 0));
   const fields = SUPPORT_PROFILE_FIELDS.map((key) => `<div class="perfilInfoRow"><span>${escapeHtml(key)}</span><strong>${escapeHtml(profile[key] || "Sin registrar")}</strong></div>`).join("");
   openDrawerActionModal("Detalle de vinculación", `<div class="supportContract"><section><h3>${escapeHtml(email)}</h3><div class="perfilInfo">${fields}</div></section><section><h3>Historial de aceptaciones</h3>${history.length ? history.map((item) => `<p><strong>Versión ${escapeHtml(item.contractVersion || "")}</strong> · ${escapeHtml(item.acceptedAt?.toDate?.().toLocaleString("es-CO") || "Registrando fecha")}</p>`).join("") : "<p class=\"adminNote\">Aún no hay aceptación registrada.</p>"}</section></div>`);
+}
+
+function openSupportContractPreview() {
+  const fields = [
+    ["Nombre completo", "Mariana Torres"], ["Tipo de documento", "Cédula de ciudadanía"], ["Número de documento", "•••• 1234"],
+    ["Celular", "300 000 0000"], ["Ciudad de residencia", "Bogotá"], ["Área artística o especialidad", "Música"]
+  ];
+  openDrawerActionModal("Vista previa · Docente de apoyo", `<div class="supportContract supportPreview">
+    <div class="supportStatus supportStatus-pending_acceptance">Pendiente de aceptación</div>
+    <p class="supportIntro">Así verá esta sección una docente clasificada como Docente de apoyo.</p>
+    <section><h3>Datos del docente</h3><div class="perfilInfo">${fields.map(([label, value]) => `<div class="perfilInfoRow"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></section>
+    <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades.</p></section>
+    <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
+    <section><details open><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>${escapeHtml(supportTermsText())}</p></details></section>
+    <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" disabled><span>Declaro que leí y acepto las condiciones presentadas.</span></label><label class="adminCheck"><input type="checkbox" disabled><span>Confirmo que los datos registrados corresponden a mi identidad.</span></label><button class="btnGoogle" type="button" disabled>Aceptar condiciones</button><p class="adminNote">Vista previa: los controles están deshabilitados para no crear una aceptación de prueba.</p></section>
+  </div>`);
 }
 
 async function loadSupportAdminData() {

@@ -3867,6 +3867,8 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   margin-bottom:14px;
 }
 .docAddCard h3{ margin:0 0 4px; font-size:16px; }
+.docAddHead{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.docPreviewSupport{ white-space:normal; flex:0 0 auto; }
 .docAddForm{
   display:flex;
   flex-wrap:wrap;
@@ -3954,6 +3956,7 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .supportAcceptance{ display:grid; gap:12px; }
 .supportAcceptance .adminCheck{ align-items:flex-start; }
 @media (max-width:560px){ .supportFields{ grid-template-columns:1fr; } .docTable{ min-width:1050px; } }
+@media (max-width:560px){ .docAddHead{ flex-direction:column; } .docPreviewSupport{ width:100%; } }
 
 /* ===== Pestaña admin: Botones personalizados ===== */
 .customBtnList{ display:flex; flex-direction:column; gap:10px; margin:12px 0 18px; }
