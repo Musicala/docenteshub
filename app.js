@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.2";
+const BUILD = "2026-07-23.3";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -5889,7 +5889,7 @@ function renderCalendarUpdatesHTML() {
     : count
       ? "Toca para revisar los cambios en Wix Bookings."
       : "Abrir Wix Bookings";
-  const latest = (updates.items || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const latest = (updates?.items || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   return `
     <button type="button" class="calendarUpdatesBanner" data-slot="calendarUpdates" data-wix-bookings>
       <span class="calendarUpdatesIcon" aria-hidden="true">🔔</span>
