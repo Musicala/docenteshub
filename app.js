@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.1";
+const BUILD = "2026-07-23.2";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -5878,14 +5878,24 @@ function renderNextClassCardHTML() {
 
 function renderCalendarUpdatesHTML() {
   const updates = APP_STATE.hubData.calendarUpdates;
-  if (!updates?.count) return "";
+  const count = Number(updates?.count || 0);
+  const title = updates?.error
+    ? "No pudimos verificar las novedades de agenda"
+    : count
+      ? `Tienes ${count} novedad${count === 1 ? "" : "es"} en tu agenda`
+      : "No tienes novedades en tu agenda";
+  const detail = updates?.error
+    ? "Actualiza la página en unos minutos."
+    : count
+      ? "Toca para revisar los cambios en Wix Bookings."
+      : "Abrir Wix Bookings";
   const latest = (updates.items || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   return `
     <button type="button" class="calendarUpdatesBanner" data-slot="calendarUpdates" data-wix-bookings>
       <span class="calendarUpdatesIcon" aria-hidden="true">🔔</span>
       <span class="calendarUpdatesText">
-        <strong>Tienes ${updates.count} novedad${updates.count === 1 ? "" : "es"} en tu agenda</strong>
-        ${latest ? `<em><ul>${latest}</ul></em>` : ""}
+        <strong>${title}</strong>
+        <em>${latest ? `<ul>${latest}</ul>` : escapeHtml(detail)}</em>
       </span>
       <span class="calendarUpdatesGo" aria-hidden="true">Revisar ›</span>
     </button>`;
@@ -6168,32 +6178,37 @@ async function loadCalendarUpdatesForActiveUser() {
   try {
     const seen = await getDoc(doc(APP_STATE.db, "calendarLastSeen", email));
     const lastSeen = seen.exists() ? seen.data()?.lastSeenAt?.toDate?.() : null;
-    if (!lastSeen) return setHubData("calendarUpdates", null);
+    if (!lastSeen) return setHubData("calendarUpdates", { count: 0 });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const horizon = new Date(today);
     horizon.setDate(horizon.getDate() + 45);
-    const snapshot = await getDocs(query(
-      collection(APP_STATE.db, "calendarioWix"),
-      where("staffEmail", "==", email),
-      where("startDate", ">=", Timestamp.fromDate(today)),
-      where("startDate", "<", Timestamp.fromDate(horizon)),
-      orderBy("startDate", "asc")
-    ));
+    const bookings = collection(APP_STATE.db, "calendarioWix");
+    const snapshot = await getDocs(isAdminUser()
+      ? query(
+          bookings,
+          where("startDate", ">=", Timestamp.fromDate(today)),
+          where("startDate", "<", Timestamp.fromDate(horizon)),
+          orderBy("startDate", "asc")
+        )
+      : query(
+          bookings,
+          where("staffEmail", "==", email),
+          where("startDate", ">=", Timestamp.fromDate(today)),
+          where("startDate", "<", Timestamp.fromDate(horizon)),
+          orderBy("startDate", "asc")
+        ));
     const changes = snapshot.docs.map((item) => item.data() || {})
       .filter((booking) => {
         const changedAt = wixBookingChangedAt(booking);
         return changedAt && changedAt > lastSeen;
       })
       .sort((a, b) => wixBookingChangedAt(b) - wixBookingChangedAt(a));
-    setHubData("calendarUpdates", changes.length ? {
-      count: changes.length,
-      items: changes.map(wixUpdateSummary)
-    } : null);
+    setHubData("calendarUpdates", { count: changes.length, items: changes.map(wixUpdateSummary) });
   } catch (error) {
     console.warn("No se pudieron cargar las novedades de Wix Bookings", error);
-    setHubData("calendarUpdates", null);
+    setHubData("calendarUpdates", { count: 0, error: true });
   }
 }
 
