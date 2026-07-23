@@ -361,6 +361,12 @@ service cloud.firestore {
       allow read, write: if isAdminReader();
     }
 
+    match /calendarLastSeen/{userEmail} {
+      allow read: if isAdminReader() || (signedIn() && userEmail == request.auth.token.email);
+      allow create, update: if signedIn() && userEmail == request.auth.token.email;
+      allow delete: if false;
+    }
+
 
     /* ====================================================================
        ASIGNACIÓN DE SALONES / ESPACIOS

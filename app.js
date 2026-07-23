@@ -10,8 +10,9 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-22.4";
+const BUILD = "2026-07-23.1";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
+const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
@@ -222,6 +223,7 @@ import {
   getFirestore,
   collection,
   doc,
+  Timestamp,
   serverTimestamp,
   query,
   where,
@@ -5685,6 +5687,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     </section>
 
     <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
+    <div id="slot-calendar-updates" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderCalendarUpdatesHTML()}</div>
     <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
     <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
@@ -5829,6 +5832,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
 ============================================================================ */
 const HUB_DATA_DEFAULTS = {
   nextClass: null,
+  calendarUpdates: null,
   pendingBitacoras: null,
   kpis: null,
   monthlyProgress: null,
@@ -5870,6 +5874,21 @@ function renderNextClassCardHTML() {
       <span class="nextClassGo" aria-hidden="true">›</span>
     </button>
   `;
+}
+
+function renderCalendarUpdatesHTML() {
+  const updates = APP_STATE.hubData.calendarUpdates;
+  if (!updates?.count) return "";
+  const latest = (updates.items || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  return `
+    <button type="button" class="calendarUpdatesBanner" data-slot="calendarUpdates" data-wix-bookings>
+      <span class="calendarUpdatesIcon" aria-hidden="true">🔔</span>
+      <span class="calendarUpdatesText">
+        <strong>Tienes ${updates.count} novedad${updates.count === 1 ? "" : "es"} en tu agenda</strong>
+        ${latest ? `<em><ul>${latest}</ul></em>` : ""}
+      </span>
+      <span class="calendarUpdatesGo" aria-hidden="true">Revisar ›</span>
+    </button>`;
 }
 
 function renderPendingBannerHTML() {
@@ -6111,6 +6130,7 @@ function renderSoportePanelHTML() {
 function refreshHubDataUI() {
   const map = {
     "slot-nextclass": renderNextClassCardHTML,
+    "slot-calendar-updates": renderCalendarUpdatesHTML,
     "slot-pending": renderPendingBannerHTML,
     "slot-kpis": renderKpiRowHTML,
     "slot-favs": renderFavRowHTML,
@@ -6119,6 +6139,61 @@ function refreshHubDataUI() {
   for (const [id, fn] of Object.entries(map)) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = fn();
+  }
+  document.querySelectorAll("[data-wix-bookings]").forEach((button) => {
+    button.addEventListener("click", () => { window.location.href = WIX_BOOKINGS_URL; });
+  });
+}
+
+function wixBookingChangedAt(booking) {
+  const dates = [booking.cancellationReceivedAt, booking.updateReceivedAt,
+    booking.rescheduleReceivedAt, booking.updatedAt, booking.createdAt]
+    .map((value) => value?.toDate?.() || (value ? new Date(value) : null))
+    .filter((value) => value && !Number.isNaN(value.getTime()));
+  return dates.length ? new Date(Math.max(...dates.map((value) => value.getTime()))) : null;
+}
+
+function wixUpdateSummary(booking) {
+  const student = booking.customerName || "Estudiante";
+  const service = booking.serviceName || "clase";
+  const status = String(booking.status || "").toLowerCase();
+  if (status.includes("cancel")) return `${student}: clase cancelada.`;
+  if (status.includes("resched") || status.includes("reagend")) return `${student}: clase reprogramada.`;
+  return `${student}: novedad en ${service}.`;
+}
+
+async function loadCalendarUpdatesForActiveUser() {
+  const email = emailKey(APP_STATE.activeUser);
+  if (!APP_STATE.db || !email) return;
+  try {
+    const seen = await getDoc(doc(APP_STATE.db, "calendarLastSeen", email));
+    const lastSeen = seen.exists() ? seen.data()?.lastSeenAt?.toDate?.() : null;
+    if (!lastSeen) return setHubData("calendarUpdates", null);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const horizon = new Date(today);
+    horizon.setDate(horizon.getDate() + 45);
+    const snapshot = await getDocs(query(
+      collection(APP_STATE.db, "calendarioWix"),
+      where("staffEmail", "==", email),
+      where("startDate", ">=", Timestamp.fromDate(today)),
+      where("startDate", "<", Timestamp.fromDate(horizon)),
+      orderBy("startDate", "asc")
+    ));
+    const changes = snapshot.docs.map((item) => item.data() || {})
+      .filter((booking) => {
+        const changedAt = wixBookingChangedAt(booking);
+        return changedAt && changedAt > lastSeen;
+      })
+      .sort((a, b) => wixBookingChangedAt(b) - wixBookingChangedAt(a));
+    setHubData("calendarUpdates", changes.length ? {
+      count: changes.length,
+      items: changes.map(wixUpdateSummary)
+    } : null);
+  } catch (error) {
+    console.warn("No se pudieron cargar las novedades de Wix Bookings", error);
+    setHubData("calendarUpdates", null);
   }
 }
 
@@ -7462,6 +7537,7 @@ async function handleAuthorizedUser(user, managed = null) {
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
   startStudentMessagesBadge();
+  await loadCalendarUpdatesForActiveUser();
   await refreshTeacherJornadaStatus();
 }
 
