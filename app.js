@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.6";
+const BUILD = "2026-07-23.7";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -5862,25 +5862,22 @@ const slotTag = '<span class="slotTag">Por conectar</span>';
 
 function renderNextClassCardHTML() {
   const agenda = APP_STATE.hubData.calendarUpdates;
-  const classCount = Number(agenda?.upcomingCount || 0);
+  const classCount = Number(agenda?.todayCount || 0);
   const changes = Number(agenda?.count || 0);
   const title = agenda?.error
     ? "No pudimos cargar tus clases"
     : agenda
-      ? `Tienes ${classCount} clase${classCount === 1 ? "" : "s"} programada${classCount === 1 ? "" : "s"}`
+      ? `Tienes ${classCount} clase${classCount === 1 ? "" : "s"} programada${classCount === 1 ? "" : "s"} hoy`
       : "Cargando tus clases…";
-  const subtitle = agenda?.error
-    ? "Intenta actualizar la página."
-    : changes
-      ? `${changes} novedad${changes === 1 ? "" : "es"} por revisar en tu agenda.`
-      : "Abre Wix Bookings para ver tu agenda.";
+  const notifications = (agenda?.items || []).slice(0, 3)
+    .map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   return `
     <button type="button" class="nextClassCard" data-slot="calendarUpdates" data-wix-bookings aria-label="Abrir Wix Bookings">
       <div class="nextClassIco" aria-hidden="true">📅</div>
       <div class="nextClassTxt">
         <p>Mi agenda</p>
         <h3>${escapeHtml(title)}</h3>
-        <span>${escapeHtml(subtitle)}</span>
+        ${agenda?.error ? "<span>Intenta actualizar la página.</span>" : notifications ? `<span>${notifications}</span>` : ""}
       </div>
       <span class="nextClassGo" aria-hidden="true">›</span>
     </button>
@@ -6177,9 +6174,9 @@ function wixUpdateSummary(booking) {
   const student = booking.customerName || "Estudiante";
   const service = booking.serviceName || "clase";
   const status = String(booking.status || "").toLowerCase();
-  if (status.includes("cancel")) return `${student}: clase cancelada.`;
-  if (status.includes("resched") || status.includes("reagend")) return `${student}: clase reprogramada.`;
-  return `${student}: novedad en ${service}.`;
+  if (status.includes("cancel")) return `${student} canceló ${service}.`;
+  if (status.includes("resched") || status.includes("reagend")) return `${student} reprogramó ${service}.`;
+  return `${student} actualizó ${service}.`;
 }
 
 async function loadCalendarUpdatesForActiveUser() {
@@ -6206,15 +6203,21 @@ async function loadCalendarUpdatesForActiveUser() {
         return lastSeen && changedAt && changedAt > lastSeen;
       })
       .sort((a, b) => wixBookingChangedAt(b) - wixBookingChangedAt(a));
-    const upcomingCount = bookings.filter((booking) => !String(booking.status || "").toLowerCase().includes("cancel")).length;
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayCount = bookings.filter((booking) => {
+      const start = booking.startDate?.toDate?.() || new Date(booking.startDate || 0);
+      return start >= today && start < tomorrow
+        && !String(booking.status || "").toLowerCase().includes("cancel");
+    }).length;
     setHubData("calendarUpdates", {
       count: changes.length,
-      upcomingCount,
+      todayCount,
       items: changes.map(wixUpdateSummary)
     });
   } catch (error) {
     console.warn("No se pudieron cargar las novedades de Wix Bookings", error);
-    setHubData("calendarUpdates", { count: 0, upcomingCount: 0, error: true });
+    setHubData("calendarUpdates", { count: 0, todayCount: 0, error: true });
   }
 }
 
