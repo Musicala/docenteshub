@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.4";
+const BUILD = "2026-07-23.5";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -6184,21 +6184,13 @@ async function loadCalendarUpdatesForActiveUser() {
     today.setHours(0, 0, 0, 0);
     const horizon = new Date(today);
     horizon.setDate(horizon.getDate() + 45);
-    const bookings = collection(APP_STATE.db, "calendarioWix");
-    const snapshot = await getDocs(isAdminUser()
-      ? query(
-          bookings,
-          where("startDate", ">=", Timestamp.fromDate(today)),
-          where("startDate", "<", Timestamp.fromDate(horizon)),
-          orderBy("startDate", "asc")
-        )
-      : query(
-          bookings,
-          where("staffEmail", "==", email),
-          where("startDate", ">=", Timestamp.fromDate(today)),
-          where("startDate", "<", Timestamp.fromDate(horizon)),
-          orderBy("startDate", "asc")
-        ));
+    const snapshot = await getDocs(query(
+      collection(APP_STATE.db, "calendarioWix"),
+      where("staffEmail", "==", email),
+      where("startDate", ">=", Timestamp.fromDate(today)),
+      where("startDate", "<", Timestamp.fromDate(horizon)),
+      orderBy("startDate", "asc")
+    ));
     const changes = snapshot.docs.map((item) => item.data() || {})
       .filter((booking) => {
         const changedAt = wixBookingChangedAt(booking);
