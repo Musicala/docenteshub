@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.3";
+const BUILD = "2026-07-23.4";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
