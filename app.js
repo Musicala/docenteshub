@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.7";
+const BUILD = "2026-07-23.8";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -7555,14 +7555,23 @@ async function handleAuthorizedUser(user, managed = null) {
   setUserLine(profile, user);
   setDrawerProfile(profile, user);
 
-  await autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true });
-  await loadTeacherScheduleForActiveUser();
-
+  /* Pintamos el Hub antes de las lecturas auxiliares. Así una red inestable,
+     una regla recién actualizada o una sesión restaurada no puede dejarlo en
+     blanco al volver a abrir la app. */
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
   startStudentMessagesBadge();
-  await loadCalendarUpdatesForActiveUser();
-  await refreshTeacherJornadaStatus();
+  const backgroundLoads = [
+    autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true }),
+    loadTeacherScheduleForActiveUser(),
+    loadCalendarUpdatesForActiveUser(),
+    refreshTeacherJornadaStatus()
+  ];
+  Promise.allSettled(backgroundLoads).then((results) => {
+    results.filter((result) => result.status === "rejected").forEach((result) =>
+      console.warn("No se pudo completar una carga auxiliar del Hub:", result.reason)
+    );
+  });
 }
 
 async function handleUnauthorizedUser(auth, reason = "") {
@@ -7619,14 +7628,20 @@ async function mount() {
       return;
     }
 
-    const access = await resolveHubAccess(user);
-    if (!access.allowed) {
-      await handleUnauthorizedUser(auth, access.expired ? "expired" : "");
-      return;
-    }
+    try {
+      const access = await resolveHubAccess(user);
+      if (!access.allowed) {
+        await handleUnauthorizedUser(auth, access.expired ? "expired" : "");
+        return;
+      }
 
-    await handleAuthorizedUser(user, access.managed);
-    flushPendingShifts();
+      await handleAuthorizedUser(user, access.managed);
+      flushPendingShifts();
+    } catch (error) {
+      console.error("No se pudo restaurar el Hub:", error);
+      show("login");
+      toast("No pudimos restaurar la sesión. Intenta entrar de nuevo.");
+    }
   });
 }
 
