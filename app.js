@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.5";
+const BUILD = "2026-07-23.6";
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -5687,7 +5687,6 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     </section>
 
     <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
-    <div id="slot-calendar-updates" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderCalendarUpdatesHTML()}</div>
     <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
     <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
@@ -5862,14 +5861,26 @@ const slotValue = (v, suffix = "") => (v === null || v === undefined || v === ""
 const slotTag = '<span class="slotTag">Por conectar</span>';
 
 function renderNextClassCardHTML() {
-  const d = APP_STATE.hubData.nextClass;
+  const agenda = APP_STATE.hubData.calendarUpdates;
+  const classCount = Number(agenda?.upcomingCount || 0);
+  const changes = Number(agenda?.count || 0);
+  const title = agenda?.error
+    ? "No pudimos cargar tus clases"
+    : agenda
+      ? `Tienes ${classCount} clase${classCount === 1 ? "" : "s"} programada${classCount === 1 ? "" : "s"}`
+      : "Cargando tus clases…";
+  const subtitle = agenda?.error
+    ? "Intenta actualizar la página."
+    : changes
+      ? `${changes} novedad${changes === 1 ? "" : "es"} por revisar en tu agenda.`
+      : "Abre Wix Bookings para ver tu agenda.";
   return `
-    <button type="button" class="nextClassCard ${d ? "" : "slotEmpty"}" data-slot="nextClass" data-id="calendario" aria-label="Abrir calendario">
+    <button type="button" class="nextClassCard" data-slot="calendarUpdates" data-wix-bookings aria-label="Abrir Wix Bookings">
       <div class="nextClassIco" aria-hidden="true">📅</div>
       <div class="nextClassTxt">
-        <p>Próxima clase ${d ? "" : slotTag}</p>
-        <h3>${escapeHtml(slotValue(d?.title))}</h3>
-        <span>${escapeHtml(slotValue(d?.time))} · ${escapeHtml(slotValue(d?.room))}</span>
+        <p>Mi agenda</p>
+        <h3>${escapeHtml(title)}</h3>
+        <span>${escapeHtml(subtitle)}</span>
       </div>
       <span class="nextClassGo" aria-hidden="true">›</span>
     </button>
@@ -6140,7 +6151,6 @@ function renderSoportePanelHTML() {
 function refreshHubDataUI() {
   const map = {
     "slot-nextclass": renderNextClassCardHTML,
-    "slot-calendar-updates": renderCalendarUpdatesHTML,
     "slot-pending": renderPendingBannerHTML,
     "slot-kpis": renderKpiRowHTML,
     "slot-favs": renderFavRowHTML,
@@ -6178,8 +6188,6 @@ async function loadCalendarUpdatesForActiveUser() {
   try {
     const seen = await getDoc(doc(APP_STATE.db, "calendarLastSeen", email));
     const lastSeen = seen.exists() ? seen.data()?.lastSeenAt?.toDate?.() : null;
-    if (!lastSeen) return setHubData("calendarUpdates", { count: 0 });
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const horizon = new Date(today);
@@ -6191,16 +6199,22 @@ async function loadCalendarUpdatesForActiveUser() {
       where("startDate", "<", Timestamp.fromDate(horizon)),
       orderBy("startDate", "asc")
     ));
-    const changes = snapshot.docs.map((item) => item.data() || {})
+    const bookings = snapshot.docs.map((item) => item.data() || {});
+    const changes = bookings
       .filter((booking) => {
         const changedAt = wixBookingChangedAt(booking);
-        return changedAt && changedAt > lastSeen;
+        return lastSeen && changedAt && changedAt > lastSeen;
       })
       .sort((a, b) => wixBookingChangedAt(b) - wixBookingChangedAt(a));
-    setHubData("calendarUpdates", { count: changes.length, items: changes.map(wixUpdateSummary) });
+    const upcomingCount = bookings.filter((booking) => !String(booking.status || "").toLowerCase().includes("cancel")).length;
+    setHubData("calendarUpdates", {
+      count: changes.length,
+      upcomingCount,
+      items: changes.map(wixUpdateSummary)
+    });
   } catch (error) {
     console.warn("No se pudieron cargar las novedades de Wix Bookings", error);
-    setHubData("calendarUpdates", { count: 0, error: true });
+    setHubData("calendarUpdates", { count: 0, upcomingCount: 0, error: true });
   }
 }
 
