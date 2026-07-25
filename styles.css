@@ -4253,7 +4253,9 @@ body{
 .hubNav{
   position:fixed;
   left:50%; transform:translateX(-50%);
-  bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+  /* En Safari normal (sin instalar la PWA), la barra del navegador puede
+     cubrir elementos fixed. Esta variable se actualiza desde VisualViewport. */
+  bottom:calc(10px + env(safe-area-inset-bottom, 0px) + var(--browser-ui-offset, 0px));
   z-index:60;
   display:flex; gap:6px;
   padding:8px;
@@ -4281,7 +4283,9 @@ body{
 .hubNavBtn.active .hubNavIco{ filter:none; }
 
 /* Deja aire al final para que la nav no tape contenido */
-#view-app .grid{ padding-bottom:96px !important; }
+#view-app .grid{
+  padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px) + var(--browser-ui-offset, 0px)) !important;
+}
 
 /* Ocultamiento por pestaña */
 .tabHidden{ display:none !important; }

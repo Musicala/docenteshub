@@ -10,7 +10,29 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-23.8";
+const BUILD = "2026-07-25.1";
+
+/* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
+   VisualViewport entrega el área realmente visible; conservamos la diferencia
+   como una variable CSS para elevar la navegación inferior mientras la barra
+   esté presente. En una PWA o en navegadores sin esa superposición vale 0. */
+function syncBrowserUiOffset() {
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+
+  const coveredBottom = Math.max(
+    0,
+    Math.round(window.innerHeight - viewport.height - viewport.offsetTop)
+  );
+  document.documentElement.style.setProperty("--browser-ui-offset", `${coveredBottom}px`);
+}
+
+function setupBrowserUiOffset() {
+  syncBrowserUiOffset();
+  window.addEventListener("resize", syncBrowserUiOffset, { passive: true });
+  window.visualViewport?.addEventListener("resize", syncBrowserUiOffset, { passive: true });
+  window.visualViewport?.addEventListener("scroll", syncBrowserUiOffset, { passive: true });
+}
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
 const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
 
@@ -7650,6 +7672,7 @@ async function mount() {
 ============================================================================ */
 document.addEventListener("DOMContentLoaded", () => {
   console.log("BUILD", BUILD);
+  setupBrowserUiOffset();
   registerServiceWorker();
   setupInstallPrompt();
   wireUpdateBanner();
