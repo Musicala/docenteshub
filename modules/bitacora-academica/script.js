@@ -508,7 +508,9 @@ function getAllTasks() {
     category: task.category || '',
     criteria: task.criteria || task.description || '',
     description: task.description || '',
-    createdAt: task.createdAt || ''
+    createdAt: task.createdAt || '',
+    updatedAt: task.updatedAt || '',
+    updatedBy: task.updatedBy || ''
   }));
 }
 
@@ -592,6 +594,12 @@ function filteredTaskRows() {
     if (selUrgency && task.urgency !== selUrgency) return false;
     if (queryStr && !norm(`${task.id} ${task.title} ${task.person} ${task.state} ${task.urgency} ${task.dueDate} ${task.description}`).includes(queryStr)) return false;
     return true;
+  })
+  // Lo que se movió hace poco queda arriba: así se ve dónde están agregando.
+  .sort((a, b) => {
+    const ma = Number.isFinite(lastActivity(a).millis) ? lastActivity(a).millis : 0;
+    const mb = Number.isFinite(lastActivity(b).millis) ? lastActivity(b).millis : 0;
+    return mb - ma;
   });
 }
 
@@ -600,11 +608,11 @@ function renderMainTable() {
   const tbody = $('#tbl tbody');
   if (!thead || !tbody) return;
 
-  thead.innerHTML = '<tr><th>Tarea agregada</th><th>Tarea</th><th>Responsable</th><th>Periodo</th><th>Estado</th><th>Horas</th><th>Acciones</th></tr>';
+  thead.innerHTML = '<tr><th>Tarea agregada</th><th>Última actualización</th><th>Tarea</th><th>Responsable</th><th>Periodo</th><th>Estado</th><th>Horas</th><th>Acciones</th></tr>';
   const rows = filteredTaskRows();
 
   if (!rows.length) {
-    tbody.innerHTML = emptyRow(7, dataReady
+    tbody.innerHTML = emptyRow(8, dataReady
       ? 'No hay tareas con esos filtros. Crea una con “＋ Asignar tarea”.'
       : 'Cargando…');
     return;
@@ -618,6 +626,7 @@ function renderMainTable() {
     return `
       <tr data-id="${esc(task.id)}">
         <td data-th="Tarea agregada"><span class="mono">${esc(formatCreatedAt(task))}</span></td>
+        <td data-th="Última actualización">${lastActivityCell(task)}</td>
         <td data-th="Tarea" class="wrap"><strong>${esc(task.title)}</strong><small>${esc(task.description || task.criteria || '')}</small></td>
         <td data-th="Responsable">${esc(task.person || '—')}</td>
         <td data-th="Periodo">${esc(task.period || '—')}</td>
@@ -828,18 +837,84 @@ function renderHourLogs() {
   }).join('');
 }
 
+/* Convierte a milisegundos cualquier formato de fecha usado en la bitácora:
+   Timestamp de Firestore, Date, número o texto ISO. */
+function toMillis(value) {
+  if (!value) return NaN;
+  if (typeof value === 'object') {
+    if (typeof value.toDate === 'function') return value.toDate().getTime();
+    if (Number.isFinite(value.seconds)) return value.seconds * 1000;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? NaN : date.getTime();
+}
+
 function formatDateTime(value) {
   if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
+  const millis = toMillis(value);
+  if (!Number.isFinite(millis)) return typeof value === 'string' ? value : '—';
+  return new Date(millis).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
+}
+
+function createdAtMillis(record) {
+  const direct = toMillis(record?.createdAt);
+  if (Number.isFinite(direct)) return direct;
+  const encodedTime = String(record?.id || '').split('-')[1];
+  const timestamp = encodedTime ? parseInt(encodedTime, 36) : NaN;
+  return Number.isFinite(timestamp) ? timestamp : NaN;
 }
 
 function formatCreatedAt(record) {
-  if (record?.createdAt) return formatDateTime(record.createdAt);
-  const encodedTime = String(record?.id || '').split('-')[1];
-  const timestamp = encodedTime ? parseInt(encodedTime, 36) : NaN;
-  return Number.isFinite(timestamp) ? formatDateTime(timestamp) : '—';
+  const millis = createdAtMillis(record);
+  return Number.isFinite(millis) ? formatDateTime(millis) : '—';
+}
+
+function relativeTime(millis) {
+  if (!Number.isFinite(millis)) return '';
+  const diff = Date.now() - millis;
+  if (diff < 0) return 'ahora';
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'hace un momento';
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'ayer';
+  if (days < 30) return `hace ${days} días`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `hace ${months} mes${months === 1 ? '' : 'es'}` : `hace ${Math.floor(months / 12)} año${months < 24 ? '' : 's'}`;
+}
+
+/* Última señal de movimiento de una tarea: la edición más reciente de la tarea
+   o el avance de bitácora más reciente cargado a ella. */
+function lastActivity(task) {
+  let millis = toMillis(task?.updatedAt);
+  let source = Number.isFinite(millis) ? 'edición' : '';
+  const created = createdAtMillis(task);
+  if (!Number.isFinite(millis) && Number.isFinite(created)) {
+    millis = created;
+    source = 'creación';
+  }
+  store.hourLogs
+    .filter(log => String(log.taskId) === String(task?.id))
+    .forEach(log => {
+      const logMillis = Math.max(
+        Number.isFinite(toMillis(log.createdAt)) ? toMillis(log.createdAt) : -Infinity,
+        Number.isFinite(toMillis(log.start)) ? toMillis(log.start) : -Infinity
+      );
+      if (Number.isFinite(logMillis) && (!Number.isFinite(millis) || logMillis > millis)) {
+        millis = logMillis;
+        source = 'avance';
+      }
+    });
+  return { millis, source };
+}
+
+function lastActivityCell(task) {
+  const { millis, source } = lastActivity(task);
+  if (!Number.isFinite(millis)) return '<span class="mono">—</span>';
+  const fresh = Date.now() - millis < 3 * 24 * 60 * 60 * 1000;
+  return `<div class="hours-cell"><strong>${esc(relativeTime(millis))}${fresh ? ' 🟢' : ''}</strong><small>${esc(formatDateTime(millis))}${source ? ` · ${esc(source)}` : ''}</small></div>`;
 }
 
 function renderAll() {
