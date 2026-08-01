@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-07-25.1";
+const BUILD = "2026-08-01.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -296,27 +296,34 @@ function updateStudentMessagesBadge(count = 0) {
   APP_STATE.unreadStudentMessages = Math.max(0, Number(count) || 0);
   const tile = document.querySelector('button[data-id="studentMessages"]');
   if (!tile) return;
-  const actionBadge = $(".badge", tile);
+  const icon = $(".ico", tile);
   let badge = $(".messageTileBadge", tile);
   if (!badge) {
     badge = document.createElement("span");
     badge.className = "messageTileBadge";
     badge.setAttribute("aria-hidden", "true");
-    if (actionBadge) {
-      actionBadge.classList.add("badgeWithNotify");
-      actionBadge.appendChild(badge);
+    if (icon) {
+      icon.classList.add("iconWithNotify");
+      icon.appendChild(badge);
     } else {
       tile.appendChild(badge);
     }
-  } else if (actionBadge && badge.parentElement !== actionBadge) {
-    actionBadge.classList.add("badgeWithNotify");
-    actionBadge.appendChild(badge);
+  } else if (icon && badge.parentElement !== icon) {
+    icon.classList.add("iconWithNotify");
+    icon.appendChild(badge);
   }
   badge.textContent = APP_STATE.unreadStudentMessages > 99 ? "99+" : String(APP_STATE.unreadStudentMessages);
   badge.hidden = APP_STATE.unreadStudentMessages === 0;
   tile.setAttribute("aria-label", APP_STATE.unreadStudentMessages
     ? `Mensajes de estudiantes, ${APP_STATE.unreadStudentMessages} sin leer`
     : "Mensajes de estudiantes");
+}
+
+function messageSentAt(message = {}) {
+  const value = message.createdAt || message.sentAt || message.createdAtClient || message.updatedAt;
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  if (!date || Number.isNaN(date.getTime())) return "Enviando…";
+  return date.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
 }
 
 function startStudentMessagesBadge() {
@@ -6621,7 +6628,7 @@ function openStudentMessages() {
     conversationUnsubscribe = onSnapshot(query(ref, orderBy("createdAt", "asc"), limit(150)), async (snap) => {
       const messages = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
       panel.innerHTML = `<div class="messageConversationHead"><button class="messageBack" type="button" aria-label="Volver a conversaciones">←</button><div><strong>${escapeHtml(thread.studentName || studentId)}</strong><span>Con ${escapeHtml(thread.teacherName || thread.teacherEmail || "docente")}</span></div>${isAdminUser(APP_STATE.activeUser) ? '<button class="messageDelete" type="button">Eliminar</button>' : ""}</div>
-        <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${message.senderRole === "teacher" ? "own" : ""}"><strong>${escapeHtml(message.senderName || message.senderRole)}</strong><p>${escapeHtml(message.text || "")}</p></article>`).join("") || `<p class="adminNote">Aún no hay mensajes.</p>`}</div>
+        <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${message.senderRole === "teacher" ? "own" : ""}"><strong>${escapeHtml(message.senderName || message.senderRole)}</strong><p>${escapeHtml(message.text || "")}</p><time class="messageSentAt">${escapeHtml(messageSentAt(message))}</time></article>`).join("") || `<p class="adminNote">Aún no hay mensajes.</p>`}</div>
         <form class="messageComposer"><textarea rows="2" maxlength="800" placeholder="Escribe una respuesta…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
       $(".messageBack", panel)?.addEventListener("click", () => overlay.classList.remove("messageConversationOpen"));
       $(".messageDelete", panel)?.addEventListener("click", () => deleteConversation(studentId, thread));
@@ -6636,7 +6643,7 @@ function openStudentMessages() {
         event.preventDefault();
         const input = $("textarea", event.currentTarget);
         const text = input.value.trim(); if (!text) return;
-        await addDoc(ref, { studentId, teacherEmail: thread.teacherEmail, text, senderRole: "teacher", senderName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente", senderEmail: emailKey(APP_STATE.activeUser), read: false, createdAt: serverTimestamp() });
+        await addDoc(ref, { studentId, teacherEmail: thread.teacherEmail, text, senderRole: "teacher", senderName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente", senderEmail: emailKey(APP_STATE.activeUser), read: false, createdAt: serverTimestamp(), createdAtClient: Date.now() });
         await setDoc(doc(APP_STATE.studentsDb, "student_messages", studentId), { lastMessage: text.slice(0, 160), lastSenderRole: "teacher", studentUnread: true, updatedAt: serverTimestamp() }, { merge: true });
         input.value = "";
       });
