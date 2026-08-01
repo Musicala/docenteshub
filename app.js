@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-08-01.2";
+const BUILD = "2026-08-01.3";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -325,6 +325,8 @@ function messageSentAt(message = {}) {
   if (!date || Number.isNaN(date.getTime())) return "Enviando…";
   return date.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
 }
+
+const CHAT_QUICK_EMOJIS = ["👍", "👏", "😊", "🎉", "💪", "✨", "🎵", "❤️", "🙌", "👋", "🤔", "✅", "📌", "🙏", "😄"];
 
 function startStudentMessagesBadge() {
   APP_STATE.unreadMessagesUnsubscribe?.();
@@ -6632,6 +6634,44 @@ function openStudentMessages() {
         <form class="messageComposer"><textarea rows="2" maxlength="800" placeholder="Escribe una respuesta…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
       $(".messageBack", panel)?.addEventListener("click", () => overlay.classList.remove("messageConversationOpen"));
       $(".messageDelete", panel)?.addEventListener("click", () => deleteConversation(studentId, thread));
+      const composer = $(".messageComposer", panel);
+      if (composer) {
+        const emojiWrap = document.createElement("div");
+        emojiWrap.className = "messageEmojiWrap";
+        const emojiToggle = document.createElement("button");
+        emojiToggle.className = "messageEmojiToggle";
+        emojiToggle.type = "button";
+        emojiToggle.textContent = "😊";
+        emojiToggle.setAttribute("aria-label", "Agregar emoji");
+        emojiToggle.setAttribute("aria-expanded", "false");
+        const emojiPicker = document.createElement("div");
+        emojiPicker.className = "messageEmojiPicker";
+        emojiPicker.hidden = true;
+        CHAT_QUICK_EMOJIS.forEach((emoji) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = emoji;
+          button.setAttribute("aria-label", "Agregar " + emoji);
+          button.addEventListener("click", () => {
+            const input = $("textarea", composer);
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+            input.focus();
+            input.setSelectionRange(start + emoji.length, start + emoji.length);
+            emojiPicker.hidden = true;
+            emojiToggle.setAttribute("aria-expanded", "false");
+          });
+          emojiPicker.appendChild(button);
+        });
+        emojiToggle.addEventListener("click", () => {
+          const willOpen = emojiPicker.hidden;
+          emojiPicker.hidden = !willOpen;
+          emojiToggle.setAttribute("aria-expanded", String(willOpen));
+        });
+        emojiWrap.append(emojiToggle, emojiPicker);
+        composer.prepend(emojiWrap);
+      }
       const unread = messages.filter((message) => message.senderRole === "student" && message.read !== true);
       if (unread.length) {
         const batch = writeBatch(APP_STATE.studentsDb);
