@@ -217,7 +217,7 @@ service cloud.firestore {
       allow read: if isAdminReader() || academicReadOwn();
       allow create: if isAdminReader() || academicCreateOwn();
       allow update: if isAdminReader() || academicUpdateOwn();
-      allow delete: if isAdminReader() || academicDeleteOwn();
+      allow delete: if isAdminReader();
     }
 
     match /academicTaskBudgets/{docId} {

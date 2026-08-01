@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bitácora Académica · Musicala</title>
   <meta name="description" content="Bitácora de tareas académicas, seguimiento de avances y bolsa de horas por objetivos para Musicala." />
-  <link rel="stylesheet" href="styles.css?v=2026-07-18.2" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-01.1" />
 </head>
 <body>
   <header class="hero" role="banner">
@@ -312,11 +312,25 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Acuerdo previo</p>
-                <h4>Estimación de la tarea</h4>
+                <h4>Gestión de la tarea</h4>
               </div>
             </div>
             <form id="estimateForm" class="mini-form mini-form--one" novalidate>
               <input type="hidden" id="estimateTaskId" />
+              <label>
+                <span>Tarea</span>
+                <input id="estimateTitle" type="text" required />
+              </label>
+              <label>
+                <span>Estado</span>
+                <select id="estimateState">
+                  <option>Pendiente</option>
+                  <option>En curso</option>
+                  <option>Cumplido</option>
+                  <option>Pausado</option>
+                  <option>Cancelado</option>
+                </select>
+              </label>
               <label>
                 <span>Periodo</span>
                 <input id="estimatePeriod" type="month" />
@@ -341,7 +355,17 @@
                 <span>Criterio de cierre</span>
                 <textarea id="estimateCriteria" rows="3" placeholder="Ej.: Documento final revisado, cargado y socializado."></textarea>
               </label>
-              <button class="btn btn-dark" type="submit">Guardar estimación</button>
+              <label>
+                <span>Descripción / entregable</span>
+                <textarea id="estimateDescription" rows="3" placeholder="Qué debe quedar hecho para considerar cumplida la tarea."></textarea>
+              </label>
+              <label>
+                <span>Nota administrativa (opcional)</span>
+                <textarea id="estimateAdminNote" rows="2" placeholder="Ej.: Se pausa hasta nueva fecha de coordinación."></textarea>
+              </label>
+              <p id="estimateAdminHistory" class="helper-text"></p>
+              <button class="btn btn-dark" type="submit">Guardar cambios</button>
+              <button id="btnDeleteObjective" class="btn btn-danger" type="button">Eliminar tarea y registros</button>
             </form>
           </section>
 
@@ -511,6 +535,8 @@
             <option>Pendiente</option>
             <option>En curso</option>
             <option>Cumplido</option>
+            <option>Pausado</option>
+            <option>Cancelado</option>
           </select>
         </label>
         <label class="full">
@@ -533,6 +559,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-07-18.2"></script>
+  <script type="module" src="script.js?v=2026-08-01.1"></script>
 </body>
 </html>

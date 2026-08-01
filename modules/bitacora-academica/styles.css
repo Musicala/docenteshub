@@ -166,6 +166,7 @@ h4{font-size:16px}
 .btn-dark{background:linear-gradient(135deg,#211635,#4b2fd7);color:#fff;border-color:transparent}
 .btn-light{background:rgba(255,255,255,.96);color:#2b1c61;border-color:rgba(255,255,255,.5)}
 .btn-soft{background:#f7f3ff;color:#4b2fd7;border-color:#ded3ff}
+.btn-danger{background:#fff0f2;color:#b42318;border-color:#fecdd3}
 .btn-icon{width:38px;padding:0;border-radius:50%}
 .btn[disabled]{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
 

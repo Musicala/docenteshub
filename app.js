@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-08-01.1";
+const BUILD = "2026-08-01.2";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -6869,7 +6869,8 @@ function buildAcademicModuleUrl() {
     email,
     name,
     role,
-    embedded: "1"
+    embedded: "1",
+    v: BUILD
   });
   return `./modules/bitacora-academica/index.html?${params.toString()}`;
 }

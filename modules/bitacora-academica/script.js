@@ -28,6 +28,7 @@ import {
   where,
   setDoc,
   deleteDoc,
+  writeBatch,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
@@ -471,6 +472,8 @@ async function dbSaveHourLog(log) {
 function normalizeState(value) {
   const s = norm(value);
   if (!s) return 'Pendiente';
+  if (s.includes('cancel') || s.includes('anulad') || s.includes('descart')) return 'Cancelado';
+  if (s.includes('paus')) return 'Pausado';
   if (s.startsWith('cumpl') || s.includes('termin') || s.includes('hecha') || s.includes('finaliz') || s.includes('aprob')) return 'Cumplido';
   if (s.includes('curso') || s.includes('progreso') || s.includes('desarrollo')) return 'En curso';
   return 'Pendiente';
@@ -478,6 +481,8 @@ function normalizeState(value) {
 
 function stateClass(value) {
   const state = normalizeState(value);
+  if (state === 'Cancelado') return 'pill pill--danger';
+  if (state === 'Pausado') return 'pill pill--neutral';
   if (state === 'Cumplido') return 'pill pill--ok';
   if (state === 'En curso') return 'pill pill--warn';
   return 'pill pill--neutral';
@@ -510,7 +515,8 @@ function getAllTasks() {
     description: task.description || '',
     createdAt: task.createdAt || '',
     updatedAt: task.updatedAt || '',
-    updatedBy: task.updatedBy || ''
+    updatedBy: task.updatedBy || '',
+    adminManagementNote: task.adminManagementNote || ''
   }));
 }
 
@@ -664,7 +670,7 @@ function renderInsights() {
   const tasks = getAllTasks();
   const withoutEstimate = tasks.filter(task => toNumber(task.estimatedHours) <= 0);
   const overBudgetTasks = tasks.filter(task => toNumber(task.estimatedHours) > 0 && usedHoursForTask(task.id) > toNumber(task.estimatedHours));
-  const pending = tasks.filter(task => normalizeState(task.state) !== 'Cumplido');
+  const pending = tasks.filter(task => !['Cumplido', 'Pausado', 'Cancelado'].includes(normalizeState(task.state)));
   const used = store.hourLogs.reduce((sum, log) => sum + toNumber(log.recognizedHours || log.durationHours), 0);
   const estimated = tasks.reduce((sum, task) => sum + toNumber(task.estimatedHours), 0);
 
@@ -961,10 +967,18 @@ function openDetailById(id) {
   $('#logEntryPanel').hidden = admin;
   $('#logHistoryTitle').textContent = admin ? 'Avances reportados por la docente' : 'Registros existentes';
   $('#estimateTaskId').value = task.id;
+  $('#estimateTitle').value = task.title || '';
+  $('#estimateState').value = normalizeState(task.state);
   $('#estimatePeriod').value = task.period || todayMonth();
   $('#estimateHours').value = task.estimatedHours ? round2(task.estimatedHours) : '';
   $('#estimateCategory').value = task.category || '';
   $('#estimateCriteria').value = task.criteria || task.description || '';
+  $('#estimateDescription').value = task.description || '';
+  $('#estimateAdminNote').value = '';
+  const lastAdminChange = task.adminManagementNote
+    ? `Último ajuste administrativo: ${task.adminManagementNote}`
+    : 'Los cambios de esta sección solo los puede hacer coordinación.';
+  $('#estimateAdminHistory').textContent = lastAdminChange;
   $('#logEstado').value = normalizeState(task.state);
   if ($('#logScope')) {
     $('#logScope').value = task.workScope === 'bolsa' ? 'bolsa' : 'jornada';
@@ -1241,13 +1255,25 @@ async function saveEstimate(event) {
   const id = $('#estimateTaskId').value.trim();
   if (!id) return;
 
+  const task = getTaskById(id) || currentTask;
+  const state = $('#estimateState').value;
+  const stateChanged = task && normalizeState(task.state) !== normalizeState(state);
+  const note = $('#estimateAdminNote').value.trim();
   const patch = {
     id,
+    title: $('#estimateTitle').value.trim(),
+    state,
     period: $('#estimatePeriod').value || todayMonth(),
     estimatedHours: $('#estimateHours').value ? toNumber($('#estimateHours').value) : 0,
     category: $('#estimateCategory').value || '',
-    criteria: $('#estimateCriteria').value.trim()
+    criteria: $('#estimateCriteria').value.trim(),
+    description: $('#estimateDescription').value.trim(),
+    adminManagementNote: note,
+    adminManagementUpdatedAt: new Date().toISOString(),
+    adminManagementUpdatedBy: ME,
+    ...(stateChanged ? { stateChangedAt: new Date().toISOString(), stateChangedBy: ME } : {})
   };
+  if (!patch.title) return showFormMessage('La tarea necesita un título.', true);
 
   try {
     await dbSaveObjective(patch);
@@ -1255,10 +1281,38 @@ async function saveEstimate(event) {
     if (localTask) Object.assign(localTask, patch);
     currentTask = getTaskById(id);
     renderAll();
+    $('#logTaskName').textContent = patch.title;
+    $('#logTaskState').textContent = normalizeState(patch.state);
     showFormMessage('Estimación guardada ✔');
   } catch (err) {
     console.error(err);
     showFormMessage(`No se pudo guardar: ${err.message}`, true);
+  }
+}
+
+async function deleteObjectiveWithLogs(id) {
+  if (!isAdminContext()) return;
+  const task = getTaskById(id) || currentTask;
+  if (!task) return;
+  const logs = store.hourLogs.filter(log => String(log.taskId) === String(id));
+  const text = `¿Eliminar definitivamente "${task.title}"? Se eliminarán también ${logs.length} registro(s) de avance. Esta acción no se puede deshacer.`;
+  if (!confirm(text)) return;
+  try {
+    const refs = [doc(DB, COL.objectives, id), ...logs.map(log => doc(DB, COL.hourLogs, log.id))];
+    for (let index = 0; index < refs.length; index += 400) {
+      const batch = writeBatch(DB);
+      refs.slice(index, index + 400).forEach(item => batch.delete(item));
+      await batch.commit();
+    }
+    store.objectives = store.objectives.filter(item => String(item.id) !== String(id));
+    store.hourLogs = store.hourLogs.filter(log => String(log.taskId) !== String(id));
+    currentTask = null;
+    hideModal('#modalLog');
+    renderAll();
+    setStatus('Tarea y sus registros eliminados.');
+  } catch (err) {
+    console.error(err);
+    showFormMessage(`No se pudo eliminar: ${err.message}`, true);
   }
 }
 
@@ -1629,6 +1683,8 @@ function attachEvents() {
     if (editBudgetButton?.dataset?.budgetId) editBudget(editBudgetButton.dataset.budgetId);
     const toggleDoneButton = event.target.closest('.btn-toggle-budget-done');
     if (toggleDoneButton?.dataset?.budgetId) toggleBudgetDone(toggleDoneButton.dataset.budgetId, toggleDoneButton.dataset.done === '1');
+    const deleteTaskButton = event.target.closest('#btnDeleteObjective');
+    if (deleteTaskButton && currentTask?.id) deleteObjectiveWithLogs(currentTask.id);
     if (event.target.dataset.close) hideModal(event.target.closest('.modal') ? `#${event.target.closest('.modal').id}` : null);
   });
 
