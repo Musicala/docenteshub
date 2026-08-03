@@ -1237,6 +1237,14 @@ function showFormMessage(message, isError = false) {
   el.className = isError ? 'status status--error' : 'status';
 }
 
+function showEstimateSaveStatus(message = '', kind = 'success') {
+  const status = $('#estimateSaveStatus');
+  if (!status) return;
+  status.hidden = !message;
+  status.textContent = message;
+  status.className = `save-feedback${kind === 'saving' ? ' save-feedback--saving' : kind === 'error' ? ' save-feedback--error' : ''}`;
+}
+
 function clearLogFormKeepTask() {
   ['#logInicio', '#logFin', '#logHorasReconocidas', '#logAvanzo', '#logFalta', '#logMejorar', '#logEvidenceLinks', '#logEvidenceFiles'].forEach(sel => {
     if ($(sel)) $(sel).value = '';
@@ -1273,7 +1281,17 @@ async function saveEstimate(event) {
     adminManagementUpdatedBy: ME,
     ...(stateChanged ? { stateChangedAt: new Date().toISOString(), stateChangedBy: ME } : {})
   };
-  if (!patch.title) return showFormMessage('La tarea necesita un título.', true);
+  if (!patch.title) {
+    showEstimateSaveStatus('La tarea necesita un título.', 'error');
+    return;
+  }
+
+  const submitButton = $('#estimateSubmit');
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = 'Guardando…';
+  }
+  showEstimateSaveStatus('Guardando cambios…', 'saving');
 
   try {
     await dbSaveObjective(patch);
@@ -1283,10 +1301,15 @@ async function saveEstimate(event) {
     renderAll();
     $('#logTaskName').textContent = patch.title;
     $('#logTaskState').textContent = normalizeState(patch.state);
-    showFormMessage('Estimación guardada ✔');
+    showEstimateSaveStatus('Cambios guardados correctamente ✓');
   } catch (err) {
     console.error(err);
-    showFormMessage(`No se pudo guardar: ${err.message}`, true);
+    showEstimateSaveStatus(`No se pudieron guardar los cambios: ${err.message}`, 'error');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Guardar cambios';
+    }
   }
 }
 
@@ -1692,6 +1715,7 @@ function attachEvents() {
 
   $('#logForm')?.addEventListener('submit', submitLog);
   $('#estimateForm')?.addEventListener('submit', saveEstimate);
+  $('#estimateForm')?.addEventListener('input', () => showEstimateSaveStatus());
   $('#objectiveForm')?.addEventListener('submit', createObjective);
   $('#budgetForm')?.addEventListener('submit', saveBudget);
   $('#btnExportHours')?.addEventListener('click', exportHoursCsv);
