@@ -52,7 +52,9 @@ const COL = {
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
-  "catalina.medina.leal@gmail.com"
+  "catalina.medina.leal@gmail.com",
+  "musicalaasesor@gmail.com",
+  "adminmusicala@gmail.com"
 ];
 
 // Base local para que el módulo funcione aunque todavía no existan docs en hubUsers.

@@ -34,7 +34,7 @@ function setupBrowserUiOffset() {
   window.visualViewport?.addEventListener("scroll", syncBrowserUiOffset, { passive: true });
 }
 const OFFICIAL_CLASS_LOG_URL = "https://bitacoras-de-clase.web.app/#search";
-const WIX_BOOKINGS_URL = "https://musicala.github.io/WixbookingDocenteshub/";
+const WIX_BOOKINGS_URL = "https://wixbookingsmusicala.web.app/";
 
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
@@ -44,7 +44,9 @@ const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "d
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
-  "catalina.medina.leal@gmail.com"
+  "catalina.medina.leal@gmail.com",
+  "musicalaasesor@gmail.com",
+  "adminmusicala@gmail.com"
 ];
 
 /* ============================================================================
