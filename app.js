@@ -1491,8 +1491,9 @@ async function getExpectedScheduleForAutoClose(email, date) {
     const schedSnap = await getDoc(doc(APP_STATE.db, "teacherSchedules", email));
     if (schedSnap.exists()) {
       const sched = schedSnap.data() || {};
-      if (sched.type === "fijo" && sched.weekly) {
-        const day = sched.weekly[weekdayKeyFromDate(date)] || {};
+      const version = scheduleVersionForDate(sched, date);
+      if (version?.type === "fijo" && version.weekly) {
+        const day = version.weekly[weekdayKeyFromDate(date)] || {};
         return { start: day.start || "", end: day.end || "", source: "weekly" };
       }
     }
@@ -2899,6 +2900,54 @@ function weekdayKeyFromDate(dateStr) {
   return WEEKDAY_MAP[short] || "dom";
 }
 
+// Un horario semanal puede cambiar con el tiempo. Los documentos antiguos no
+// tenían historial, así que su configuración se interpreta como vigente desde
+// siempre. Esto evita que una modificación de hoy altere estadísticas pasadas.
+function scheduleVersions(schedule = {}) {
+  const saved = Array.isArray(schedule.weeklyVersions) ? schedule.weeklyVersions : [];
+  const versions = saved
+    .filter((version) => version && /^\d{4}-\d{2}-\d{2}$/.test(String(version.effectiveFrom || "")))
+    .map((version) => ({
+      effectiveFrom: String(version.effectiveFrom),
+      type: version.type || schedule.type || "flexible",
+      graceMinutes: Number.isFinite(Number(version.graceMinutes))
+        ? Number(version.graceMinutes)
+        : schedule.graceMinutes,
+      weekly: version.weekly || {}
+    }));
+  if (!versions.length) {
+    versions.push({
+      effectiveFrom: "0000-01-01",
+      type: schedule.type || "flexible",
+      graceMinutes: schedule.graceMinutes,
+      weekly: schedule.weekly || {}
+    });
+  }
+  return versions.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+}
+
+function scheduleVersionForDate(schedule, date) {
+  const target = String(date || "9999-12-31");
+  const versions = scheduleVersions(schedule);
+  return versions.filter((version) => version.effectiveFrom <= target).pop() || versions[0] || null;
+}
+
+function scheduleDataWithVersionHistory(previous = {}, data = {}, effectiveFrom = "") {
+  const { date: today } = bogotaParts();
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(String(effectiveFrom || "")) ? effectiveFrom : today;
+  const history = scheduleVersions(previous)
+    .filter((version) => version.effectiveFrom !== start)
+    .map((version) => ({
+      effectiveFrom: version.effectiveFrom,
+      type: version.type,
+      graceMinutes: version.graceMinutes,
+      weekly: version.weekly
+    }));
+  history.push({ effectiveFrom: start, type: data.type, graceMinutes: data.graceMinutes, weekly: data.weekly });
+  history.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return { ...data, weeklyVersions: history };
+}
+
 function timeToMinutes(hhmm) {
   const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -2977,7 +3026,8 @@ async function loadTeacherScheduleForActiveUser() {
 
 function getTeacherScheduleForDate(date) {
   const schedule = APP_STATE.teacherSchedule?.schedule;
-  if (!schedule || schedule.type !== "fijo") return null;
+  const version = scheduleVersionForDate(schedule, date);
+  if (!schedule || version?.type !== "fijo") return null;
   const ov = APP_STATE.teacherSchedule?.overrides?.[date];
   if (ov) {
     const enabled = ov.enabled !== false && ov.works !== false && !ov.dayOff;
@@ -2990,7 +3040,7 @@ function getTeacherScheduleForDate(date) {
       source: "override"
     };
   }
-  const day = schedule.weekly?.[weekdayKeyFromDate(date)];
+  const day = version.weekly?.[weekdayKeyFromDate(date)];
   if (!day?.start) return null;
   return { start: day.start, end: day.end || "", excused: false, note: "", source: "weekly" };
 }
@@ -3021,9 +3071,9 @@ function scheduleCalendarDisplayItem(item) {
 
 function renderTeacherScheduleNudge() {
   const schedule = APP_STATE.teacherSchedule?.schedule;
-  if (!schedule || schedule.type !== "fijo") return "";
-
   const { date: today } = bogotaParts();
+  if (!schedule || scheduleVersionForDate(schedule, today)?.type !== "fijo") return "";
+
   const tomorrow = addDaysToDateStr(today, 1);
   const items = [
     { label: "Hoy", date: today, item: getTeacherScheduleForDate(today) },
@@ -3049,19 +3099,20 @@ function renderTeacherScheduleNudge() {
 
 function openTeacherScheduleView() {
   const schedule = APP_STATE.teacherSchedule?.schedule;
-  if (!schedule || schedule.type !== "fijo") {
+  const { date: today } = bogotaParts();
+  const currentVersion = scheduleVersionForDate(schedule, today);
+  if (!schedule || currentVersion?.type !== "fijo") {
     toast("Tu horario es flexible; coordinación lo ajusta por día.");
     return;
   }
 
-  const { date: today } = bogotaParts();
   const currentYear = Number(today.slice(0, 4));
   const tomorrow = addDaysToDateStr(today, 1);
   const todayItem = getTeacherScheduleForDate(today);
   const tomorrowItem = getTeacherScheduleForDate(tomorrow);
   const days = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"];
   const weeklyRows = days.map((wd) => {
-    const day = schedule.weekly?.[wd] || {};
+    const day = currentVersion.weekly?.[wd] || {};
     return `
       <div class="teacherScheduleRow ${day.start ? "" : "isOff"}">
         <strong>${escapeHtml(PUNCTUALITY.WEEKDAY_LABELS[wd])}</strong>
@@ -3198,8 +3249,9 @@ function getExpectedSchedule(email, date) {
     };
   }
   const sched = ADMIN_STATE.schedules[email];
-  if (sched && sched.type === "fijo" && sched.weekly) {
-    const day = sched.weekly[weekdayKeyFromDate(date)];
+  const version = scheduleVersionForDate(sched, date);
+  if (sched && version?.type === "fijo" && version.weekly) {
+    const day = version.weekly[weekdayKeyFromDate(date)];
     if (day && day.start) {
       return {
         start: day.start,
@@ -3216,9 +3268,9 @@ function getExpectedSchedule(email, date) {
   return null; // sin horario esperado configurado
 }
 
-function getGraceMinutes(email) {
+function getGraceMinutes(email, date = "") {
   const sched = ADMIN_STATE.schedules[email];
-  const g = Number(sched?.graceMinutes);
+  const g = Number(scheduleVersionForDate(sched, date)?.graceMinutes ?? sched?.graceMinutes);
   return Number.isFinite(g) ? g : PUNCTUALITY.DEFAULT_GRACE;
 }
 
@@ -3226,7 +3278,7 @@ function getGraceMinutes(email) {
 function evaluatePunctuality(email, date, firstInTime, lastOutTime) {
   const expected = getExpectedSchedule(email, date);
   const overrideGrace = Number(expected?.graceMinutes);
-  const grace = Number.isFinite(overrideGrace) ? overrideGrace : getGraceMinutes(email);
+  const grace = Number.isFinite(overrideGrace) ? overrideGrace : getGraceMinutes(email, date);
 
   if (!expected || !expected.start) {
     if (expected?.dayOff || expected?.excused) {
@@ -5367,9 +5419,11 @@ function openScheduleEditor(email) {
   const teacher = getAdminTeacherOptions().find((t) => t.email === email);
   const name = teacher?.label || email;
   const sched = ADMIN_STATE.schedules[email] || {};
-  const type = sched.type || "flexible";
-  const grace = Number.isFinite(Number(sched.graceMinutes)) ? Number(sched.graceMinutes) : PUNCTUALITY.DEFAULT_GRACE;
-  const weekly = sched.weekly || {};
+  const { date: today } = bogotaParts();
+  const activeVersion = scheduleVersionForDate(sched, today) || {};
+  const type = activeVersion.type || sched.type || "flexible";
+  const grace = Number.isFinite(Number(activeVersion.graceMinutes)) ? Number(activeVersion.graceMinutes) : PUNCTUALITY.DEFAULT_GRACE;
+  const weekly = activeVersion.weekly || sched.weekly || {};
 
   const weekdayRows = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"].map((wd) => {
     const day = weekly[wd] || {};
@@ -5396,6 +5450,9 @@ function openScheduleEditor(email) {
       </label>
       <label>Minutos de gracia
         <input type="number" id="schedGrace" min="0" max="60" value="${grace}" />
+      </label>
+      <label>Este cambio aplica desde
+        <input type="date" id="schedEffectiveFrom" value="${escapeHtml(today)}" />
       </label>
       <div id="schedWeekly" class="schedWeekly" ${type === "fijo" ? "" : "hidden"}>
         <p class="schedWeeklyHint">Horario semanal (deja vacío un día si no trabaja).</p>
@@ -5435,11 +5492,20 @@ function openScheduleEditor(email) {
       if (!newWeekly[wd].start) delete newWeekly[wd];
     });
 
-    const data = { type: newType, graceMinutes: newGrace, weekly: newWeekly };
+    const effectiveFrom = $("#schedEffectiveFrom", dialog).value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+      toast("Elige desde qué fecha aplica el horario.");
+      return;
+    }
+    const data = scheduleDataWithVersionHistory(sched, {
+      type: newType,
+      graceMinutes: newGrace,
+      weekly: newWeekly
+    }, effectiveFrom);
     try {
       await saveTeacherSchedule(email, data);
       ADMIN_STATE.schedules[email] = { email, ...data };
-      toast("Horario guardado ✅");
+      toast(`Horario guardado desde ${effectiveFrom} ✅`);
       close();
       renderAdminBody();
     } catch (err) {
