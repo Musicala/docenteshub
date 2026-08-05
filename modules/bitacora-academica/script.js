@@ -474,6 +474,7 @@ async function dbSaveHourLog(log) {
 function normalizeState(value) {
   const s = norm(value);
   if (!s) return 'Pendiente';
+  if (s.includes('pendiente de aprob') || s.includes('revision de coordin')) return 'Pendiente de aprobación';
   if (s.includes('cancel') || s.includes('anulad') || s.includes('descart')) return 'Cancelado';
   if (s.includes('paus')) return 'Pausado';
   if (s.startsWith('cumpl') || s.includes('termin') || s.includes('hecha') || s.includes('finaliz') || s.includes('aprob')) return 'Cumplido';
@@ -486,6 +487,7 @@ function stateClass(value) {
   if (state === 'Cancelado') return 'pill pill--danger';
   if (state === 'Pausado') return 'pill pill--neutral';
   if (state === 'Cumplido') return 'pill pill--ok';
+  if (state === 'Pendiente de aprobación') return 'pill pill--warn';
   if (state === 'En curso') return 'pill pill--warn';
   return 'pill pill--neutral';
 }
@@ -1161,7 +1163,12 @@ async function submitLog(event) {
   const end = $('#logFin').value;
   const calculated = durationHours(start, end);
   const recognized = $('#logHorasReconocidas').value ? toNumber($('#logHorasReconocidas').value) : calculated;
-  const state = $('#logEstado').value;
+  const requestedState = $('#logEstado').value;
+  // La docente puede reportar que terminó y enviarlo a revisión, pero no
+  // certificarlo como cumplido: esa decisión corresponde a coordinación.
+  const state = normalizeState(requestedState) === 'Cumplido'
+    ? 'Pendiente de aprobación'
+    : normalizeState(requestedState);
   const advanced = $('#logAvanzo').value.trim();
   const missing = $('#logFalta').value.trim();
   const improve = $('#logMejorar').value.trim();
@@ -1215,7 +1222,8 @@ async function submitLog(event) {
     log.evidence = [...uploaded, ...links.map(url => ({ kind: 'link', url }))];
     await dbSaveHourLog(log);
     store.hourLogs.push(log);
-    // Actualiza el estado de la tarea según el último cierre.
+    // El avance queda visible para coordinación como pendiente de aprobación;
+    // solo una administradora puede cambiarlo después a "Cumplido".
     await dbSaveObjective({ id, state });
     const localTask = store.objectives.find(item => String(item.id) === String(id));
     if (localTask) localTask.state = state;

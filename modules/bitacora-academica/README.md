@@ -31,7 +31,7 @@ Cada documento académico lleva `teacherEmail` y `teacherName`. Las reglas de Fi
 > Importante: las reglas de `firestore.rules` deben publicarse aparte en Firebase Console → Firestore → Rules → Publicar. Si no se publican, Firebase hará su encantador numerito de “no tengo permisos” y nada se guardará.
 
 ## Roles
-- **Docente** (`role=docente`): ve solo sus tareas, su bolsa y sus seguimientos. Puede registrar avances y cambiar estado.
+- **Docente** (`role=docente`): ve solo sus tareas, su bolsa y sus seguimientos. Puede registrar avances y enviarlos como pendiente de aprobación; solo coordinación puede marcar una tarea como cumplida.
 - **Coordinación** (`role=admin`): ve todas las docentes, puede asignar tareas a una docente específica y configurar bolsas de horas.
 
 ## Gestión de docentes desde el HUB

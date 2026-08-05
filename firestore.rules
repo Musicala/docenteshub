@@ -217,10 +217,20 @@ service cloud.firestore {
         && resource.data.teacherEmail == request.auth.token.email;
     }
 
+    function teacherCanSetAcademicTaskState() {
+      return request.resource.data.state in [
+        'Pendiente', 'En curso', 'Pendiente de aprobación'
+      ];
+    }
+
     match /academicObjectives/{docId} {
       allow read: if isAdminReader() || academicReadOwn();
-      allow create: if isAdminReader() || academicCreateOwn();
-      allow update: if isAdminReader() || academicUpdateOwn();
+      allow create: if isAdminReader() || (academicCreateOwn() && teacherCanSetAcademicTaskState());
+      allow update: if isAdminReader() || (
+        academicUpdateOwn()
+        && resource.data.state != 'Cumplido'
+        && teacherCanSetAcademicTaskState()
+      );
       allow delete: if isAdminReader();
     }
 
@@ -233,8 +243,8 @@ service cloud.firestore {
 
     match /academicTaskHourLogs/{docId} {
       allow read: if isAdminReader() || academicReadOwn();
-      allow create: if isAdminReader() || academicCreateOwn();
-      allow update: if isAdminReader() || academicUpdateOwn();
+      allow create: if isAdminReader() || (academicCreateOwn() && teacherCanSetAcademicTaskState());
+      allow update: if isAdminReader() || (academicUpdateOwn() && teacherCanSetAcademicTaskState());
       allow delete: if isAdminReader() || academicDeleteOwn();
     }
 
