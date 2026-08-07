@@ -525,6 +525,7 @@ async function loadCustomButtons() {
 
 async function saveCustomButton(button) {
   const ref = doc(APP_STATE.db, "hubButtons", button.id);
+  const previous = await getDoc(ref);
   const payload = {
     icon: button.icon || "🔗",
     title: button.title || "Acceso",
@@ -535,7 +536,37 @@ async function saveCustomButton(button) {
     updatedAt: serverTimestamp()
   };
   await setDoc(ref, payload, { merge: true });
+  // Las docentes que ya tienen una selección explícita no heredan botones
+  // nuevos por omisión. Al crear uno, se lo añadimos sin cambiar ninguna de
+  // sus otras elecciones. Quien no tenga selección explícita ya ve el
+  // catálogo completo por el comportamiento normal del HUB.
+  if (!previous.exists()) await assignNewButtonToAllTeachers(button.id);
   return { id: button.id, ...payload };
+}
+
+async function assignNewButtonToAllTeachers(buttonId) {
+  const cleanId = String(buttonId || "").trim();
+  if (!cleanId) return;
+  const snap = await getDocs(collection(APP_STATE.db, "hubUsers"));
+  const updates = snap.docs.filter((entry) => {
+    const visible = getVisibleButtonsForUserDoc(entry.data());
+    return visible && !visible.includes(cleanId);
+  });
+
+  // Firestore admite hasta 500 operaciones por lote. Separamos por si la
+  // lista de docentes crece, y así no se pierde la asignación para nadie.
+  for (let start = 0; start < updates.length; start += 500) {
+    const batch = writeBatch(APP_STATE.db);
+    updates.slice(start, start + 500).forEach((entry) => {
+      const visible = getVisibleButtonsForUserDoc(entry.data()) || [];
+      batch.update(entry.ref, {
+        visibleButtons: [...visible, cleanId],
+        updatedBy: emailKey(APP_STATE.activeUser),
+        updatedAt: serverTimestamp()
+      });
+    });
+    await batch.commit();
+  }
 }
 
 async function deleteCustomButton(id) {
