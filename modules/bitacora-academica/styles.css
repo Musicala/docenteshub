@@ -327,6 +327,12 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
 }
 .task-summary span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
 .task-summary strong{display:block;line-height:1.35}
+.coordination-comments{padding:14px;border:1px solid #d9cbff;border-radius:18px;background:linear-gradient(180deg,#faf8ff,#f4efff)}
+.coordination-comments .section-head{margin-bottom:8px}
+.coordination-comments__list{display:grid;gap:10px}
+.coordination-comment{padding:11px 12px;border-radius:12px;background:#fff;border:1px solid #e6ddff}
+.coordination-comment__meta{display:block;color:var(--muted);font-size:11px;font-weight:800;margin-bottom:5px}
+.coordination-comment p{margin:0;white-space:pre-wrap;line-height:1.45}
 .modal-grid{display:grid;grid-template-columns:.72fr 1.28fr;gap:14px;align-items:start}
 .subpanel--wide{padding:16px}
 .admin-log-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}

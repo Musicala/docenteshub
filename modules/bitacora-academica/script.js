@@ -520,7 +520,10 @@ function getAllTasks() {
     createdAt: task.createdAt || '',
     updatedAt: task.updatedAt || '',
     updatedBy: task.updatedBy || '',
-    adminManagementNote: task.adminManagementNote || ''
+    adminManagementNote: task.adminManagementNote || '',
+    adminManagementUpdatedAt: task.adminManagementUpdatedAt || '',
+    adminManagementUpdatedBy: task.adminManagementUpdatedBy || '',
+    adminComments: Array.isArray(task.adminComments) ? task.adminComments : []
   }));
 }
 
@@ -879,6 +882,32 @@ function formatCreatedAt(record) {
   return Number.isFinite(millis) ? formatDateTime(millis) : '—';
 }
 
+function adminCommentsFor(task) {
+  const comments = Array.isArray(task?.adminComments) ? task.adminComments.filter(comment => String(comment?.text || '').trim()) : [];
+  // Compatibilidad: muestra la última nota guardada antes de que existiera el historial.
+  if (!comments.length && task?.adminManagementNote) {
+    comments.push({
+      text: task.adminManagementNote,
+      createdAt: task.adminManagementUpdatedAt || task.updatedAt || '',
+      author: task.adminManagementUpdatedBy || task.updatedBy || ''
+    });
+  }
+  return comments;
+}
+
+function renderTeacherAdminComments(task) {
+  const panel = $('#teacherAdminComments');
+  const list = $('#teacherAdminCommentsList');
+  if (!panel || !list) return;
+  const comments = adminCommentsFor(task);
+  panel.hidden = !comments.length;
+  list.innerHTML = comments.map(comment => {
+    const when = formatDateTime(comment.createdAt);
+    const author = String(comment.author || '').trim();
+    return `<article class="coordination-comment"><small class="coordination-comment__meta">${esc(when)}${author ? ` · ${esc(author)}` : ''}</small><p>${esc(comment.text)}</p></article>`;
+  }).join('');
+}
+
 function relativeTime(millis) {
   if (!Number.isFinite(millis)) return '';
   const diff = Date.now() - millis;
@@ -965,6 +994,7 @@ function openDetailById(id) {
   $('#logTaskName').textContent = task.title || '—';
   $('#logTaskPerson').textContent = task.person || '—';
   $('#logTaskState').textContent = normalizeState(task.state);
+  renderTeacherAdminComments(task);
   const admin = isAdminContext();
   $('#modalLog')?.classList.toggle('modal--admin-view', admin);
   $('#adminLogOverview').hidden = !admin;
@@ -979,8 +1009,8 @@ function openDetailById(id) {
   $('#estimateCriteria').value = task.criteria || task.description || '';
   $('#estimateDescription').value = task.description || '';
   $('#estimateAdminNote').value = '';
-  const lastAdminChange = task.adminManagementNote
-    ? `Último ajuste administrativo: ${task.adminManagementNote}`
+  const lastAdminChange = adminCommentsFor(task).length
+    ? 'Los comentarios de coordinación quedan visibles para la docente al abrir esta tarea.'
     : 'Los cambios de esta sección solo los puede hacer coordinación.';
   $('#estimateAdminHistory').textContent = lastAdminChange;
   $('#logEstado').value = normalizeState(task.state);
@@ -1277,6 +1307,12 @@ async function saveEstimate(event) {
   const state = $('#estimateState').value;
   const stateChanged = task && normalizeState(task.state) !== normalizeState(state);
   const note = $('#estimateAdminNote').value.trim();
+  const priorComments = adminCommentsFor(task);
+  const newComment = note ? {
+    text: note,
+    createdAt: new Date().toISOString(),
+    author: ME
+  } : null;
   const patch = {
     id,
     title: $('#estimateTitle').value.trim(),
@@ -1286,9 +1322,12 @@ async function saveEstimate(event) {
     category: $('#estimateCategory').value || '',
     criteria: $('#estimateCriteria').value.trim(),
     description: $('#estimateDescription').value.trim(),
-    adminManagementNote: note,
-    adminManagementUpdatedAt: new Date().toISOString(),
-    adminManagementUpdatedBy: ME,
+    // Un comentario nuevo se añade al historial; guardar otros cambios no borra
+    // las observaciones que coordinación ya dejó para la docente.
+    adminManagementNote: note || task?.adminManagementNote || '',
+    adminManagementUpdatedAt: newComment?.createdAt || task?.adminManagementUpdatedAt || '',
+    adminManagementUpdatedBy: newComment?.author || task?.adminManagementUpdatedBy || '',
+    adminComments: newComment ? [...priorComments, newComment] : priorComments,
     ...(stateChanged ? { stateChangedAt: new Date().toISOString(), stateChangedBy: ME } : {})
   };
   if (!patch.title) {
