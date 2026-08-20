@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-08-03.1";
+const BUILD = "2026-08-20.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -6782,9 +6782,20 @@ function openStudentMessages() {
         event.preventDefault();
         const input = $("textarea", event.currentTarget);
         const text = input.value.trim(); if (!text) return;
-        await addDoc(ref, { studentId, teacherEmail: thread.teacherEmail, text, senderRole: "teacher", senderName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente", senderEmail: emailKey(APP_STATE.activeUser), read: false, createdAt: serverTimestamp(), createdAtClient: Date.now() });
-        await setDoc(doc(APP_STATE.studentsDb, "student_messages", studentId), { lastMessage: text.slice(0, 160), lastSenderRole: "teacher", studentUnread: true, updatedAt: serverTimestamp() }, { merge: true });
-        input.value = "";
+        try {
+          // Las reglas de Estudiantes HUB validan el mensaje con hasOnly():
+          // studentId, text, senderRole, senderName, senderEmail, teacherEmail,
+          // read y createdAt. Cualquier campo extra (antes createdAtClient)
+          // hace que Firestore rechace el envío con permission-denied.
+          await addDoc(ref, { studentId, teacherEmail: thread.teacherEmail, text, senderRole: "teacher", senderName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente", senderEmail: emailKey(APP_STATE.activeUser), read: false, createdAt: serverTimestamp() });
+          await setDoc(doc(APP_STATE.studentsDb, "student_messages", studentId), { lastMessage: text.slice(0, 160), lastSenderRole: "teacher", studentUnread: true, updatedAt: serverTimestamp() }, { merge: true });
+          input.value = "";
+        } catch (error) {
+          console.error("No se pudo enviar el mensaje", error);
+          toast(error?.code === "permission-denied"
+            ? "No se pudo enviar: tu cuenta no aparece como docente de esta conversación."
+            : "No se pudo enviar el mensaje. Intenta de nuevo.");
+        }
       });
     });
   };
