@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-08-20.1";
+const BUILD = "2026-08-24.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -246,6 +246,7 @@ import {
 import {
   getFirestore,
   collection,
+  collectionGroup,
   doc,
   Timestamp,
   serverTimestamp,
@@ -282,6 +283,7 @@ const APP_STATE = {
   studentsAuthWired: false,
   unreadStudentMessages: 0,
   unreadMessagesUnsubscribe: null,
+  unreadMessageReceiptsUnsubscribe: null,
   bibliotecaCache: { recursos: null, areasConfig: null },
   teacherSchedule: {
     loading: false,
@@ -333,20 +335,58 @@ const CHAT_QUICK_EMOJIS = ["👍", "👏", "😊", "🎉", "💪", "✨", "🎵"
 function startStudentMessagesBadge() {
   APP_STATE.unreadMessagesUnsubscribe?.();
   APP_STATE.unreadMessagesUnsubscribe = null;
+  APP_STATE.unreadMessageReceiptsUnsubscribe?.();
+  APP_STATE.unreadMessageReceiptsUnsubscribe = null;
   ensureStudentsServices();
   if (emailKey(APP_STATE.studentsAuth.currentUser) !== emailKey(APP_STATE.activeUser)) {
     updateStudentMessagesBadge(0);
     return;
   }
+  const unreadThreadIds = new Set();
+  const unreadMessageThreadIds = new Set();
+  const refreshBadge = () => {
+    updateStudentMessagesBadge(new Set([...unreadThreadIds, ...unreadMessageThreadIds]).size);
+  };
   const base = collection(APP_STATE.studentsDb, "student_messages");
   const inboxQuery = isAdminUser(APP_STATE.activeUser)
     ? query(base, limit(100))
     : query(base, where("teacherEmail", "==", emailKey(APP_STATE.activeUser)), limit(100));
   APP_STATE.unreadMessagesUnsubscribe = onSnapshot(inboxQuery, (snap) => {
-    updateStudentMessagesBadge(snap.docs.filter((item) => item.data()?.teacherUnread === true).length);
+    unreadThreadIds.clear();
+    snap.docs.forEach((item) => {
+      if (item.data()?.teacherUnread === true) unreadThreadIds.add(item.id);
+    });
+    refreshBadge();
   }, (error) => {
     console.warn("No se pudo actualizar el contador de mensajes", error);
-    updateStudentMessagesBadge(0);
+    unreadThreadIds.clear();
+    refreshBadge();
+  });
+
+  // Algunos hilos creados antes del indicador no conservan teacherUnread.
+  // También escuchamos los recibos sin leer y unimos ambos resultados, para
+  // que un mensaje entrante nunca dependa únicamente de ese campo resumido.
+  const receiptsQuery = query(
+    collectionGroup(APP_STATE.studentsDb, "messages"),
+    where("teacherEmail", "==", emailKey(APP_STATE.activeUser)),
+    limit(300)
+  );
+  APP_STATE.unreadMessageReceiptsUnsubscribe = onSnapshot(receiptsQuery, (snap) => {
+    unreadMessageThreadIds.clear();
+    snap.docs.forEach((item) => {
+      const message = item.data();
+      const threadId = item.ref.parent.parent?.id;
+      if (threadId && message?.senderRole === "student" && message?.read !== true) {
+        unreadMessageThreadIds.add(threadId);
+      }
+    });
+    refreshBadge();
+  }, (error) => {
+    // El contador histórico sigue funcionando incluso si el proyecto aún no
+    // permite consultas de grupo de colección para algún perfil.
+    console.warn("No se pudo verificar los recibos de mensajes", error);
+    unreadMessageThreadIds.clear();
+    refreshBadge();
   });
 }
 
