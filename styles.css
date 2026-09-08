@@ -3943,7 +3943,8 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 .supportIntro{ color:var(--muted); }
 .supportFields{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; }
 .supportFields label{ display:grid; gap:4px; font-weight:700; font-size:12px; color:var(--muted); }
-.supportFields input{ height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--text); }
+.supportFields input,
+.supportFields select{ height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--text); background:#fff; }
 .supportContract details{ border-top:1px solid var(--line); padding:10px 0; }
 .supportContract details:first-of-type{ border-top:0; }
 .supportContract summary{ cursor:pointer; font-weight:800; font-size:13px; }

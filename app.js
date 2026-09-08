@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-08.1";
+const BUILD = "2026-09-08.2";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -6949,13 +6949,21 @@ function openSupportContractModal(title, body) { return openDrawerActionModal(ti
 function renderSupportContract(profile, acceptance) {
   const status = supportStatus(profile, acceptance);
   const fields = [
-    ["fullName", "Nombre completo", "text"], ["documentType", "Tipo de documento", "text"], ["documentNumber", "Número de documento", "text"],
+    ["fullName", "Nombre completo", "text"], ["documentType", "Tipo de documento", "select"], ["documentNumber", "Número de documento", "text"],
     ["documentIssueCity", "Ciudad de expedición", "text"], ["phone", "Celular", "tel"], ["address", "Dirección", "text"],
     ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"]
   ];
   const acceptedAt = acceptance?.acceptedAt?.toDate?.() || null;
   const locked = !!acceptance;
-  const dataForm = fields.map(([key, label, type]) => `<label>${label}<input ${locked ? "disabled" : ""} type="${type}" data-support-field="${key}" maxlength="160" value="${escapeHtml(profile[key] || "")}" /></label>`).join("");
+  const documentTypes = ["Cédula de ciudadanía", "Cédula de extranjería", "Pasaporte", "Permiso por Protección Temporal", "Tarjeta de identidad"];
+  const dataForm = fields.map(([key, label, type]) => {
+    const value = String(profile[key] || "");
+    if (type === "select") {
+      const options = documentTypes.includes(value) ? documentTypes : (value ? [...documentTypes, value] : documentTypes);
+      return `<label>${label}<select ${locked ? "disabled" : ""} data-support-field="${key}"><option value="">Selecciona una opción</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+    }
+    return `<label>${label}<input ${locked ? "disabled" : ""} type="${type}" data-support-field="${key}" maxlength="160" value="${escapeHtml(value)}" /></label>`;
+  }).join("");
   const modal = openSupportContractModal("Mi vinculación como Docente de apoyo", `
     <div class="supportStatus supportStatus-${status}">${escapeHtml(supportContractStatusLabel(status))}</div>
     <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
@@ -6978,7 +6986,7 @@ function renderSupportContract(profile, acceptance) {
   const fullTerms = $("#supportFullTerms", modal), termsCheck = $("#supportAcceptTerms", modal), confirmCheck = $("#supportConfirmData", modal), acceptBtn = $("#supportAcceptBtn", modal);
   fullTerms?.addEventListener("toggle", () => { if (fullTerms.open) { termsCheck.disabled = false; } });
   const updateAccept = () => { acceptBtn.disabled = !(supportProfileComplete(Object.fromEntries(Array.from(modal.querySelectorAll("[data-support-field]")).map((el) => [el.dataset.supportField, el.value.trim()]))) && termsCheck.checked && confirmCheck.checked); };
-  modal.querySelectorAll("[data-support-field]").forEach((input) => input.addEventListener("input", updateAccept)); termsCheck?.addEventListener("change", updateAccept); confirmCheck?.addEventListener("change", updateAccept);
+  modal.querySelectorAll("[data-support-field]").forEach((input) => { input.addEventListener("input", updateAccept); input.addEventListener("change", updateAccept); }); termsCheck?.addEventListener("change", updateAccept); confirmCheck?.addEventListener("change", updateAccept);
   acceptBtn?.addEventListener("click", async () => {
     let values;
     try { values = await save(); } catch (_) { return; }
