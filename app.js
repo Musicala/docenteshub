@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-08-24.1";
+const BUILD = "2026-09-08.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -6923,13 +6923,25 @@ function supportTermsText() { return SUPPORT_TERMS.map(([title, text]) => `${tit
 async function openSupportContract() {
   if (APP_STATE.hubUserDoc?.employmentType !== "support_contractor") { toast("Esta sección solo está disponible para Docentes de apoyo."); return; }
   const email = emailKey(APP_STATE.activeUser);
-  const [profileSnap, acceptanceSnap] = await Promise.all([
-    getDoc(doc(APP_STATE.db, "supportContractProfiles", email)),
-    getDoc(doc(APP_STATE.db, "supportContractAcceptances", supportAcceptanceId(email)))
-  ]);
-  const profile = profileSnap.exists() ? profileSnap.data() : { fullName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "" };
-  const acceptance = acceptanceSnap.exists() ? acceptanceSnap.data() : null;
-  renderSupportContract(profile, acceptance);
+  if (!APP_STATE.db || !email) { toast("No pude preparar tu vinculación. Recarga el HUB e inténtalo de nuevo."); return; }
+  try {
+    const [profileResult, acceptanceResult] = await Promise.allSettled([
+      getDoc(doc(APP_STATE.db, "supportContractProfiles", email)),
+      getDoc(doc(APP_STATE.db, "supportContractAcceptances", supportAcceptanceId(email)))
+    ]);
+    const profileSnap = profileResult.status === "fulfilled" ? profileResult.value : null;
+    const acceptanceSnap = acceptanceResult.status === "fulfilled" ? acceptanceResult.value : null;
+    const profile = profileSnap?.exists() ? profileSnap.data() : { fullName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "" };
+    const acceptance = acceptanceSnap?.exists() ? acceptanceSnap.data() : null;
+    renderSupportContract(profile, acceptance);
+    if (profileResult.status === "rejected" || acceptanceResult.status === "rejected") {
+      console.warn("La vinculación abrió sin parte del historial de Firestore.", { profileResult, acceptanceResult });
+      toast("Abrimos tu vinculación. Si ves datos pendientes, intenta guardar para completar la información.");
+    }
+  } catch (error) {
+    console.error("No se pudo abrir la vinculación de Docente de apoyo.", error);
+    toast("No pude abrir tu vinculación. Intenta recargar el HUB.");
+  }
 }
 
 function openSupportContractModal(title, body) { return openDrawerActionModal(title, `<div class="supportContract">${body}</div>`); }
