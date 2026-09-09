@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-08.2";
+const BUILD = "2026-09-08.3";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -6896,10 +6896,10 @@ function openSupportContractPreview() {
   openDrawerActionModal("Vista previa · Docente de apoyo", `<div class="supportContract supportPreview">
     <div class="supportStatus supportStatus-pending_acceptance">Pendiente de aceptación</div>
     <p class="supportIntro">Así verá esta sección una docente clasificada como Docente de apoyo.</p>
-    <section><h3>Datos del docente</h3><div class="perfilInfo">${fields.map(([label, value]) => `<div class="perfilInfoRow"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></section>
     <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades.</p></section>
     <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
     <section><details open><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>${escapeHtml(supportTermsText())}</p></details></section>
+    <section><h3>Tus datos para la firma</h3><p>Después de leer las condiciones completas, aquí confirmarás los datos que identificarán tu aceptación.</p><div class="perfilInfo">${fields.map(([label, value]) => `<div class="perfilInfoRow"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></section>
     <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" disabled><span>Declaro que leí y acepto las condiciones presentadas.</span></label><label class="adminCheck"><input type="checkbox" disabled><span>Confirmo que los datos registrados corresponden a mi identidad.</span></label><button class="btnGoogle" type="button" disabled>Aceptar condiciones</button><p class="adminNote">Vista previa: los controles están deshabilitados para no crear una aceptación de prueba.</p></section>
   </div>`);
 }
@@ -6968,10 +6968,10 @@ function renderSupportContract(profile, acceptance) {
     <div class="supportStatus supportStatus-${status}">${escapeHtml(supportContractStatusLabel(status))}</div>
     <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
     ${locked ? `<section class="supportAccepted"><h3>Condiciones aceptadas</h3><p>Tu aceptación fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p></section>` : `
-      <section><h3>Datos del docente</h3><p class="adminNote">Los campos marcados son necesarios antes de aceptar. El correo de la aceptación será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
       <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
       <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
       <section><details id="supportFullTerms"><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>Estas condiciones regulan la aceptación electrónica inicial como prestador independiente de servicios artísticos y pedagógicos. No constituyen una firma digital certificada ni fijan valores, duración u horas particulares. ${escapeHtml(supportTermsText())}</p></details></section>
+      <section><h3>Tus datos para la firma</h3><p class="adminNote">Ahora confirma los datos que identificarán tu aceptación. El correo será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
       <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" id="supportAcceptTerms" disabled><span>Declaro que leí, comprendí y acepto las condiciones, el resumen de normas, los compromisos académicos, la confidencialidad y los lineamientos presentados.</span></label><label class="adminCheck"><input type="checkbox" id="supportConfirmData"><span>Confirmo que los datos registrados son correctos y corresponden a mi identidad.</span></label><button class="btnGoogle" id="supportAcceptBtn" type="button" disabled>Aceptar condiciones</button></section>`}
   `);
   if (locked) return;
