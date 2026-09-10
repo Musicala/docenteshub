@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.8";
+const BUILD = "2026-09-10.9";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -99,10 +99,21 @@ function contractRateRows(raw = {}) {
   if (raw.modalidades || raw.valorSesion || raw.valorLetras) return [{ modalidad: raw.modalidades || "", valor: raw.valorSesion || "", letras: raw.valorLetras || "" }];
   return [{ modalidad: "", valor: "", letras: "" }];
 }
+function amountToSpanishPesos(value) {
+  const n = Number(String(value || "").replace(/[^\d]/g, ""));
+  if (!Number.isSafeInteger(n) || n < 0) return "";
+  const units = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
+  const teens = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
+  const tens = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+  const under100 = (x) => x < 10 ? units[x] : x < 20 ? teens[x - 10] : x === 20 ? "veinte" : x < 30 ? `veinti${units[x - 20]}` : x % 10 ? `${tens[Math.floor(x / 10)]} y ${units[x % 10]}` : tens[Math.floor(x / 10)];
+  const under1000 = (x) => x < 100 ? under100(x) : x === 100 ? "cien" : `${["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"][Math.floor(x / 100)]}${x % 100 ? ` ${under100(x % 100)}` : ""}`;
+  const words = n === 0 ? "cero" : n < 1000 ? under1000(n) : n < 1000000 ? `${Math.floor(n / 1000) === 1 ? "mil" : `${under1000(Math.floor(n / 1000))} mil`}${n % 1000 ? ` ${under1000(n % 1000)}` : ""}` : `${Math.floor(n / 1000000) === 1 ? "un millón" : `${under1000(Math.floor(n / 1000000))} millones`}${n % 1000000 ? ` ${amountToSpanishPesos(n % 1000000).replace(/ pesos colombianos$/, "")}` : ""}`;
+  return `${words} ${n === 1 ? "peso colombiano" : "pesos colombianos"}`;
+}
 function renderContractRateRow(rate = {}) {
-  const modalidad = String(rate.modalidad || ""), valor = String(rate.valor || ""), letras = String(rate.letras || "");
+  const modalidad = String(rate.modalidad || ""), valor = String(rate.valor || ""), letras = amountToSpanishPesos(valor) || String(rate.letras || "");
   const options = Array.from(new Set([...CONTRACT_MODALITY_OPTIONS, ...(modalidad && !CONTRACT_MODALITY_OPTIONS.includes(modalidad) ? [modalidad] : [])]));
-  return `<div class="supportFields contractRateRow"><label>Modalidad<select data-contract-rate="modalidad"><option value="">Selecciona</option>${options.map((item) => `<option value="${escapeHtml(item)}" ${item === modalidad ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><label>Valor por sesión (cifras)<input data-contract-rate="valor" inputmode="numeric" value="${escapeHtml(valor)}" /></label><label>Valor por sesión (letras)<input data-contract-rate="letras" value="${escapeHtml(letras)}" /></label><button class="btnGhost" type="button" data-contract-rate-remove>Quitar</button></div>`;
+  return `<div class="supportFields contractRateRow"><label>Modalidad<select data-contract-rate="modalidad"><option value="">Selecciona</option>${options.map((item) => `<option value="${escapeHtml(item)}" ${item === modalidad ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><label>Valor por sesión (cifras)<input data-contract-rate="valor" inputmode="numeric" value="${escapeHtml(valor)}" /></label><label>Valor por sesión (letras)<input data-contract-rate="letras" readonly value="${escapeHtml(letras)}" /></label><button class="btnGhost" type="button" data-contract-rate-remove>Quitar</button></div>`;
 }
 
 const TEACHER_CONTRACT_DEFAULT = {
@@ -8340,6 +8351,7 @@ function renderAdminContratoTerms(body, email) {
   const rateList = body.querySelector("[data-contract-rate-list]");
   $("#contractRateAdd", body)?.addEventListener("click", () => { rateList?.insertAdjacentHTML("beforeend", renderContractRateRow()); });
   rateList?.addEventListener("click", (event) => { const remove = event.target.closest("[data-contract-rate-remove]"); if (remove) remove.closest(".contractRateRow")?.remove(); });
+  rateList?.addEventListener("input", (event) => { if (event.target.matches('[data-contract-rate="valor"]')) { const row = event.target.closest(".contractRateRow"); const letters = row?.querySelector('[data-contract-rate="letras"]'); if (letters) letters.value = amountToSpanishPesos(event.target.value); } });
 
   $("#contractTermsBack", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.termsEmail = "";
