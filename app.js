@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.1";
+const BUILD = "2026-09-10.2";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -39,7 +39,7 @@ const WIX_BOOKINGS_URL = "https://wixbookingsmusicala.web.app/";
 // Versión única de las condiciones para Docentes de apoyo. El texto vive una
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
 // verificable del contenido, sin reutilizar contratos particulares.
-const SUPPORT_CONTRACT_VERSION = "1.0";
+const SUPPORT_CONTRACT_VERSION = "2.0";
 const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea"];
 
 /* ============================================================================
@@ -7272,6 +7272,34 @@ const SUPPORT_TERMS = [
   ["Terminación o suspensión", "Cualquiera de las partes puede decidir no aceptar nuevas actividades. Las ya aceptadas se gestionan según lo acordado. Musicala puede finalizar la vinculación ante incumplimientos graves, riesgos para estudiantes o violaciones de confidencialidad." ]
 ];
 
+// La vinculación de apoyo es el acceso correcto para este documento. El
+// contrato amplio se presenta como marco general: no inventa valores, fechas
+// ni asignaciones individuales, que solo pueden acordarse por escrito después.
+function buildSupportFullContractDocument() {
+  const neutralValue = "se definirá por escrito para cada actividad acordada";
+  const values = {};
+  Object.keys(TEACHER_CONTRACT_DEFAULT.defaults || {}).forEach((key) => { values[key] = neutralValue; });
+  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => { values[teacherContractVariableName(field.name)] = neutralValue; });
+  return {
+    title: TEACHER_CONTRACT_DEFAULT.title,
+    intro: "Este es el contrato marco de prestación de servicios para Docentes de apoyo. No asigna por sí mismo clases, estudiantes, horario, plazo ni honorarios: esos aspectos solo tienen efecto cuando se acuerdan expresamente por escrito.",
+    sections: [
+      { title: TEACHER_CONTRACT_DEFAULT.title, body: resolveTeacherContractText(TEACHER_CONTRACT_DEFAULT.body, values) },
+      ...TEACHER_CONTRACT_DEFAULT.annexes.map((annex) => ({ title: annex.title, body: resolveTeacherContractText(annex.body, values) }))
+    ]
+  };
+}
+
+function supportTermsText() {
+  const document = buildSupportFullContractDocument();
+  return [document.title, document.intro, ...document.sections.map((section) => `${section.title}\n${section.body}`)].join("\n\n");
+}
+
+function renderSupportFullContract() {
+  const document = buildSupportFullContractDocument();
+  return `<details id="supportFullTerms" open><summary>Contrato marco completo de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p class="adminNote">${escapeHtml(document.intro)}</p>${document.sections.map((section, index) => `<details class="contractSection"${index === 0 ? " open" : ""}><summary class="contractSectionHead">${escapeHtml(section.title)}</summary><div class="contractSectionBody">${renderTeacherContractBody(section.body)}</div></details>`).join("")}</details>`;
+}
+
 function supportProfileComplete(profile = {}) {
   return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea"].every((key) => String(profile[key] || "").trim());
 }
@@ -7293,8 +7321,8 @@ function openSupportContractPreview() {
     <div class="supportStatus supportStatus-pending_acceptance">Pendiente de aceptación</div>
     <p class="supportIntro">Así verá esta sección una docente clasificada como Docente de apoyo.</p>
     <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades.</p></section>
-    <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
-    <section><details open><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>${escapeHtml(supportTermsText())}</p></details></section>
+    <section><h3>Contrato marco completo</h3>${renderSupportFullContract()}</section>
+    <section><h3>Resumen de temas principales</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
     <section><h3>Tus datos para la firma</h3><p>Después de leer las condiciones completas, aquí confirmarás los datos que identificarán tu aceptación.</p><div class="perfilInfo">${fields.map(([label, value]) => `<div class="perfilInfoRow"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></section>
     <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" disabled><span>Declaro que leí y acepto las condiciones presentadas.</span></label><label class="adminCheck"><input type="checkbox" disabled><span>Confirmo que los datos registrados corresponden a mi identidad.</span></label><button class="btnGoogle" type="button" disabled>Aceptar condiciones</button><p class="adminNote">Vista previa: los controles están deshabilitados para no crear una aceptación de prueba.</p></section>
   </div>`);
@@ -7311,10 +7339,10 @@ async function loadSupportAdminData() {
 function supportAcceptanceId(email = emailKey(APP_STATE.activeUser)) { return `${email}_${SUPPORT_CONTRACT_VERSION}`; }
 function supportStatus(profile, acceptance) {
   if (!supportProfileComplete(profile)) return "incomplete";
-  return acceptance ? "accepted" : "pending_acceptance";
+  if (!acceptance) return "pending_acceptance";
+  return String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION ? "accepted" : "outdated";
 }
 function supportContractStatusLabel(status) { return ({ incomplete: "Datos pendientes", pending_acceptance: "Pendiente de aceptación", accepted: "Aceptado", outdated: "Requiere nueva aceptación" })[status] || "No aplica"; }
-function supportTermsText() { return SUPPORT_TERMS.map(([title, text]) => `${title}\n${text}`).join("\n\n"); }
 
 async function openSupportContract() {
   if (APP_STATE.hubUserDoc?.employmentType !== "support_contractor") { toast("Esta sección solo está disponible para Docentes de apoyo."); return; }
@@ -7350,7 +7378,7 @@ function renderSupportContract(profile, acceptance) {
     ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"]
   ];
   const acceptedAt = acceptance?.acceptedAt?.toDate?.() || null;
-  const locked = !!acceptance;
+  const locked = !!acceptance && String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION;
   const documentTypes = ["Cédula de ciudadanía", "Cédula de extranjería", "Pasaporte", "Permiso por Protección Temporal", "Tarjeta de identidad"];
   const dataForm = fields.map(([key, label, type]) => {
     const value = String(profile[key] || "");
@@ -7365,8 +7393,8 @@ function renderSupportContract(profile, acceptance) {
     <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
     ${locked ? `<section class="supportAccepted"><h3>Condiciones aceptadas</h3><p>Tu aceptación fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p></section>` : `
       <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
-      <section><h3>Condiciones y documentos</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
-      <section><details id="supportFullTerms"><summary>Condiciones completas de vinculación · versión ${SUPPORT_CONTRACT_VERSION}</summary><p>Estas condiciones regulan la aceptación electrónica inicial como prestador independiente de servicios artísticos y pedagógicos. No constituyen una firma digital certificada ni fijan valores, duración u horas particulares. ${escapeHtml(supportTermsText())}</p></details></section>
+      <section><h3>Contrato marco completo</h3>${renderSupportFullContract()}</section>
+      <section><h3>Resumen de temas principales</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
       <section><h3>Tus datos para la firma</h3><p class="adminNote">Ahora confirma los datos que identificarán tu aceptación. El correo será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
       <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" id="supportAcceptTerms" disabled><span>Declaro que leí, comprendí y acepto las condiciones, el resumen de normas, los compromisos académicos, la confidencialidad y los lineamientos presentados.</span></label><label class="adminCheck"><input type="checkbox" id="supportConfirmData"><span>Confirmo que los datos registrados son correctos y corresponden a mi identidad.</span></label><button class="btnGoogle" id="supportAcceptBtn" type="button" disabled>Aceptar condiciones</button></section>`}
   `);
