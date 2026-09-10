@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.12";
+const BUILD = "2026-09-10.13";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -8223,6 +8223,8 @@ function renderAdminContrato(body) {
         const term = terms[email];
         const submission = submissions[email];
         const supportProfile = supportProfiles[email];
+        const managedTeacher = Object.entries(ADMIN_STATE.hubUsers || {}).find(([key]) => String(key).toLowerCase() === email)?.[1] || {};
+        const isSupportTeacher = managedTeacher.employmentType === "support_contractor";
         const source = submission || supportProfile;
         const completos = term ? TEACHER_CONTRACT_TERM_FIELDS.filter((field) => String(term[field.name] || "").trim()).length : 0;
         const datosVinculacion = source ? (submission
@@ -8235,6 +8237,8 @@ function renderAdminContrato(body) {
             ? "Aprobado para firma · pendiente de firmar"
               : source
               ? "Datos de vinculación disponibles · falta revisión administrativa"
+              : isSupportTeacher
+                ? "Docente de apoyo · consulta sus datos registrados para cargarlos"
               : "La docente aún no envía datos para su contrato individual";
         return `
           <div class="customBtnRow">
@@ -8246,7 +8250,7 @@ function renderAdminContrato(body) {
               <small>${escapeHtml(estado)}</small>
             </div>
             <div class="customBtnActions">
-              ${source ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">Usar datos de vinculación</button>` : ""}
+              ${source || isSupportTeacher ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">${source ? "Usar datos de vinculación" : "Consultar y usar datos"}</button>` : ""}
               <button class="btnGhost" type="button" data-contract-terms="${escapeHtml(item.email)}">${term ? "Editar" : "Diligenciar"}</button>
             </div>
           </div>`;
@@ -8297,11 +8301,23 @@ function renderAdminContrato(body) {
   }));
   body.querySelectorAll("[data-contract-use]").forEach((button) => button.addEventListener("click", async () => {
     const email = String(button.dataset.contractUse || "").toLowerCase();
-    const submitted = ADMIN_STATE.contract.data?.[email];
-    const supportProfile = ADMIN_STATE.contract.supportProfiles?.[email];
-    const source = submitted || supportProfile;
-    if (!source) return;
     try {
+      let submitted = ADMIN_STATE.contract.data?.[email];
+      let supportProfile = ADMIN_STATE.contract.supportProfiles?.[email];
+      if (!submitted && !supportProfile) {
+        button.disabled = true;
+        button.textContent = "Consultando…";
+        const profileSnap = await getDocFromServer(doc(APP_STATE.db, "supportContractProfiles", email));
+        if (profileSnap.exists()) {
+          supportProfile = { id: profileSnap.id, ...profileSnap.data() };
+          ADMIN_STATE.contract.supportProfiles[email] = supportProfile;
+        }
+      }
+      const source = submitted || supportProfile;
+      if (!source) {
+        toast("Esta docente aún no tiene datos de vinculación guardados.");
+        return;
+      }
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
         email,
         contratistaNombre: source.fullName || "",
@@ -8325,7 +8341,9 @@ function renderAdminContrato(body) {
       renderAdminBody();
     } catch (error) {
       console.error("No se pudieron cargar los datos enviados", error);
-      toast("No pude cargar los datos enviados.");
+      toast("No pude consultar o cargar los datos. Intenta nuevamente.");
+    } finally {
+      button.disabled = false;
     }
   }));
 }
