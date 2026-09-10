@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.3";
+const BUILD = "2026-09-10.4";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -665,7 +665,8 @@ const APP_STATE = {
     data: null,
     dataLoaded: false,
     signature: null,
-    signatureLoaded: false
+    signatureLoaded: false,
+    supportProfile: null
   }
 };
 
@@ -7391,13 +7392,16 @@ function renderSupportContract(profile, acceptance) {
   const modal = openSupportContractModal("Mi vinculación como Docente de apoyo", `
     <div class="supportStatus supportStatus-${status}">${escapeHtml(supportContractStatusLabel(status))}</div>
     <p class="supportIntro">Consulta tus datos, las condiciones de prestación del servicio y el estado de tu aceptación electrónica.</p>
-    ${locked ? `<section class="supportAccepted"><h3>Condiciones aceptadas</h3><p>Tu aceptación fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p></section>` : `
-      <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
-      <section><h3>Contrato marco completo</h3>${renderSupportFullContract()}</section>
+    ${acceptance ? `<section class="supportAccepted"><h3>Aceptación marco registrada</h3><p>Tu aceptación de lectura fue registrada correctamente.</p><p><strong>${escapeHtml(acceptance.acceptedByName || "")}</strong> · ${escapeHtml(String(acceptance.acceptedByDocumentNumber || "").replace(/.(?=.{4})/g, "•"))}<br>Versión ${escapeHtml(acceptance.contractVersion)} · ${acceptedAt ? acceptedAt.toLocaleString("es-CO") : "Registrando fecha"}</p><p class="adminNote">Esta constancia no reemplaza la firma del contrato individual con condiciones particulares.</p></section>` : ""}
+    <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
+    <section><h3>Contrato marco completo</h3>${renderSupportFullContract()}</section>
+    <section class="contractPanel contractSignPanel"><h3>Tu contrato individual</h3><p>La docente envía sus datos de identificación y pago. Administración verifica esos datos, completa las condiciones particulares —servicio, fechas, modalidad, grupos, honorarios y cuenta— y solo entonces habilita la firma. Puedes volver a leer este contrato completo en cualquier momento.</p><div class="contractActions"><button class="btnGoogle" type="button" id="supportOpenIndividualContract">Abrir mi contrato individual</button></div></section>
+    ${locked ? "" : `
       <section><h3>Resumen de temas principales</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
       <section><h3>Tus datos para la firma</h3><p class="adminNote">Ahora confirma los datos que identificarán tu aceptación. El correo será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><div class="contractActions"><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button><p class="adminNote" id="supportSaveFeedback" role="status" aria-live="polite">Revisa los datos y guárdalos antes de continuar.</p></div></section>
       <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" id="supportAcceptTerms" disabled><span>Declaro que leí, comprendí y acepto las condiciones, el resumen de normas, los compromisos académicos, la confidencialidad y los lineamientos presentados.</span></label><label class="adminCheck"><input type="checkbox" id="supportConfirmData"><span>Confirmo que los datos registrados son correctos y corresponden a mi identidad.</span></label><button class="btnGoogle" id="supportAcceptBtn" type="button" disabled>Aceptar condiciones</button></section>`}
   `);
+  $("#supportOpenIndividualContract", modal)?.addEventListener("click", () => { modal.remove(); openTeacherContract(); });
   if (locked) return;
   const save = async () => {
     const values = { email: emailKey(APP_STATE.activeUser), updatedAt: serverTimestamp() };
@@ -7492,7 +7496,12 @@ async function loadTeacherContractAccess(force = false) {
 
 function canSeeTeacherContract(email = emailKey(APP_STATE.activeUser)) {
   const allowed = APP_STATE.contract.access?.allowedEmails || [];
-  return allowed.includes(String(email || "").trim().toLowerCase());
+  const normalized = String(email || "").trim().toLowerCase();
+  // Una Docente de apoyo siempre conserva lectura del contrato individual
+  // desde su vinculación; la lista manual aplica a las demás docentes.
+  return allowed.includes(normalized)
+    || (normalized === emailKey(APP_STATE.activeUser)
+      && APP_STATE.hubUserDoc?.employmentType === "support_contractor");
 }
 
 /* ---- Plantilla del contrato ---- */
@@ -7759,7 +7768,12 @@ async function openTeacherContract() {
     await Promise.all([
       loadTeacherContract(true),
       loadMyTeacherContractTerms(true),
-      loadMyTeacherContractData(true)
+      loadMyTeacherContractData(true),
+      (APP_STATE.hubUserDoc?.employmentType === "support_contractor"
+        ? getDoc(doc(APP_STATE.db, "supportContractProfiles", emailKey(APP_STATE.activeUser))).then((snap) => {
+          APP_STATE.contract.supportProfile = snap.exists() ? snap.data() : null;
+        }).catch(() => { APP_STATE.contract.supportProfile = null; })
+        : Promise.resolve())
     ]);
     // La firma depende de la versión vigente, por eso se lee después.
     await loadMyTeacherContractSignature(true);
@@ -7847,22 +7861,25 @@ function renderTeacherContractView(overlay) {
 }
 
 function renderTeacherContractDataForm() {
-  const name = APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
+  const supportProfile = APP_STATE.contract.supportProfile || {};
+  const name = supportProfile.fullName || APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
+  const documentId = [supportProfile.documentType, supportProfile.documentNumber].filter(Boolean).join(": ");
   return `
     <section class="contractPanel">
-      <h3>Datos para emitir tu contrato</h3>
-      <p>Completa estos datos una vez. Esto no es una firma ni te obliga todavía: coordinación revisa la información y solo después habilita la versión final para firma.</p>
+      <h3>1. Datos que envías tú</h3>
+      <p>Estos datos sirven para que administración prepare tu contrato individual. Enviarlos no es una firma ni te obliga todavía. Si ya registraste datos en tu vinculación, los usamos solo como sugerencia: revisa y confirma lo que envías aquí.</p>
       <div class="supportFields">
         <label>Nombre completo<input type="text" data-contract-data="fullName" maxlength="90" value="${escapeHtml(name)}" /></label>
-        <label>Número de documento<input type="text" data-contract-data="documentId" maxlength="30" /></label>
-        <label>Teléfono<input type="tel" data-contract-data="telefono" maxlength="40" /></label>
-        <label>Dirección (solo si aplica)<input type="text" data-contract-data="direccion" maxlength="160" /></label>
+        <label>Documento de identidad (tipo y número)<input type="text" data-contract-data="documentId" maxlength="80" value="${escapeHtml(documentId)}" /></label>
+        <label>Teléfono<input type="tel" data-contract-data="telefono" maxlength="40" value="${escapeHtml(supportProfile.phone || "")}" /></label>
+        <label>Dirección (solo si aplica)<input type="text" data-contract-data="direccion" maxlength="160" value="${escapeHtml(supportProfile.address || "")}" /></label>
         <label>Cuenta bancaria para pago<input type="text" data-contract-data="cuenta" maxlength="180" /></label>
-        <label>Área o especialidad<input type="text" data-contract-data="areas" maxlength="120" /></label>
+        <label>Área o especialidad<input type="text" data-contract-data="areas" maxlength="120" value="${escapeHtml(supportProfile.artisticArea || "")}" /></label>
       </div>
       <div class="contractActions">
         <button class="btnGoogle" type="button" id="contractDataSubmit">Enviar datos para revisión</button>
       </div>
+      <p class="adminNote">2. Administración revisa y completa las condiciones particulares. 3. Recibes la versión final para leerla completa y firmarla.</p>
     </section>`;
 }
 
@@ -8077,15 +8094,15 @@ function renderAdminContrato(body) {
   const vistaPrevia = buildTeacherContractDocument(contract, null);
 
   body.innerHTML = `
-    <p class="adminMeta">Contrato directo Musicala · versión <strong>${escapeHtml(contract.version)}</strong> · ${signatures.length} firma(s) de esta versión. El botón del HUB solo lo ven las docentes marcadas abajo: hoy son <strong>${allowed.size}</strong>.</p>
+    <p class="adminMeta">Contrato individual Musicala · versión <strong>${escapeHtml(contract.version)}</strong> · ${signatures.length} firma(s) de esta versión. La aceptación marco de “Docente de apoyo” es una constancia distinta y no cuenta como firma de este contrato individual.</p>
     ${vistaPrevia.pendingCount ? `<p class="adminNote">⚠️ La plantilla tiene ${vistaPrevia.pendingCount} dato(s) institucionales sin definir. Complétalos en “Editar texto y valores” antes de aprobar firmas.</p>` : ""}
     <div class="adminSubActions">
       <span></span>
       <div><button class="btnGhost" id="contractEditText" type="button">Editar texto y valores</button></div>
     </div>
 
-    <h3 class="contractAdminTitle">Quién puede ver el contrato</h3>
-    <p class="adminNote">Marca solo a quien ya deba verlo. Si no marcas a nadie, el acceso no le aparece a ninguna docente.</p>
+    <h3 class="contractAdminTitle">Acceso adicional al contrato</h3>
+    <p class="adminNote">Las Docentes de apoyo siempre pueden leer su contrato individual desde “Mi vinculación como Docente de apoyo”. Esta lista solo da el mismo acceso a otras docentes; no cambia la firma ni diligencia datos.</p>
     <div class="buttonAssignGrid contractAccessGrid">
       ${teachers.map((item) => `
         <label class="adminCheck buttonAssignItem">
@@ -8102,8 +8119,8 @@ function renderAdminContrato(body) {
       </div>
     </div>
 
-    <h3 class="contractAdminTitle">Condiciones particulares por persona</h3>
-    <p class="adminNote">Cada contrato se arma con estos datos. Sin ellos el documento muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debería firmarse.</p>
+    <h3 class="contractAdminTitle">2. Condiciones particulares que completa administración</h3>
+    <p class="adminNote">La docente primero envía identidad, teléfono, cuenta y área. Aquí puedes usar esos datos como base y completar lo que solo define Musicala: modalidad, grupos o estudiantes, franjas, fechas, valor, sesiones e inventario. Sin estos datos el contrato individual muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debe aprobarse ni firmarse.</p>
     <div class="customBtnList">
       ${teachers.map((item) => {
         const term = terms[item.email];
@@ -8114,9 +8131,9 @@ function renderAdminContrato(body) {
           ? "Firmó la versión vigente"
           : term?.approvedForSignature && String(term.approvedVersion || "") === String(contract.version)
             ? "Aprobado para firma · pendiente de firmar"
-            : submission
-              ? "Datos enviados · pendiente de revisión"
-              : "Aún no envía sus datos";
+              : submission
+              ? "Datos enviados por la docente · falta revisión administrativa"
+              : "La docente aún no envía datos para su contrato individual";
         return `
           <div class="customBtnRow">
             <span class="customBtnIcon">${firmo ? "✅" : allowed.has(item.email) ? "✍️" : "🔒"}</span>
