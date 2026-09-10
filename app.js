@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.10";
+const BUILD = "2026-09-10.11";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -81,11 +81,9 @@ const TEACHER_CONTRACT_TERM_FIELDS = [
   { name: "fechaFin", label: "Fecha de finalización", type: "date", group: "Alcance" },
   { name: "valorSesion", label: "Valor por sesión (cifras)", group: "Economía" },
   { name: "valorLetras", label: "Valor por sesión (letras)", group: "Economía" },
-  { name: "sesionesEstimadas", label: "Sesiones estimadas (referencia)", group: "Economía" },
-  { name: "cuenta", label: "Cuenta bancaria de la docente", group: "Economía" },
-  { name: "inventario", label: "Bienes y accesos entregados", type: "textarea", group: "Economía" }
+  { name: "cuenta", label: "Cuenta bancaria de la docente", group: "Economía" }
 ];
-const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion", "inventario"]);
+const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion"]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
 const CONTRACT_MODALITY_OPTIONS = [
   "Musicala Virtual personalizado",
@@ -151,7 +149,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "4.5. Plazo. Del {{FECHA_INICIO}} al {{FECHA_FIN}}. No hay prórroga tácita: cualquier extensión requiere una nueva versión del contrato o un otrosí aceptado por ambas partes.",
     "4.6. Programación. Las franjas, grupos y modalidades iniciales constan en el Anexo A. Los cambios se comunican por el aplicativo institucional.",
     "4.7. Cambios. Un cambio de franja, grupo, modalidad o lugar requiere la aceptación de EL CONTRATISTA, salvo ajustes menores que no alteren su disponibilidad y que se informen con {{ANTICIPACION_CAMBIO}} de anticipación. Rechazar un cambio material no constituye incumplimiento.",
-    "4.8. Sin mínimo garantizado. El número de sesiones depende de la demanda y de la programación. EL CONTRATANTE no garantiza un número mínimo de sesiones ni un ingreso mensual fijo. El estimado del Anexo A es de referencia y no constituye promesa de asignación.",
+    "4.8. Sin mínimo garantizado. El número de sesiones depende de la demanda y de la programación. EL CONTRATANTE no garantiza un número mínimo de sesiones ni un ingreso mensual fijo.",
     "",
     "## 5. Honorarios, facturación y seguridad social",
     "5.1. Valor. EL CONTRATANTE pagará el valor por sesión efectivamente prestada que consta en el Anexo A, expresado en cifras y en letras. La sesión dura {{DURACION_SESION}} minutos. Un cambio de valor durante la ejecución exige otrosí aceptado por ambas partes: no puede modificarse de forma unilateral ni verbal.",
@@ -225,7 +223,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "12.1. Cada parte conserva la titularidad de lo que le pertenecía antes del contrato. EL CONTRATISTA no adquiere derecho alguno sobre marcas, contenidos, metodologías o plataformas de EL CONTRATANTE, y no puede usarlos por fuera del objeto.",
     "12.2. Materiales creados durante la ejecución: {{REGLA_PI}}. En todo caso se respetan los derechos morales de autor de EL CONTRATISTA, que son inalienables.",
     "12.3. El uso del nombre y la imagen de EL CONTRATISTA en piezas de Musicala requiere autorización separada, expresa y revocable. No se entiende otorgada por la firma de este contrato.",
-    "12.4. Los equipos, materiales, llaves y credenciales que se faciliten constan en el Anexo H y se usan solo para el objeto. Se devuelven al cierre. EL CONTRATISTA responde por el daño atribuible a su culpa, no por el desgaste normal ni por deterioros preexistentes.",
+    "12.4. Cualquier entrega excepcional de equipos, materiales, llaves o credenciales constará en un acta independiente. Se usan solo para el objeto y se devuelven al cierre. EL CONTRATISTA responde por el daño atribuible a su culpa, no por el desgaste normal ni por deterioros preexistentes.",
     "12.5. Las credenciales del aplicativo son personales e intransferibles. EL CONTRATISTA notificará de inmediato cualquier pérdida o uso no autorizado. Al terminar el contrato se desactivan los accesos.",
     "",
     "## 13. Incumplimiento, subsanación, terminación y cierre",
@@ -378,15 +376,6 @@ const TEACHER_CONTRACT_DEFAULT = {
         "Derechos morales de autor: inalienables, siempre de EL CONTRATISTA.",
         "Uso del nombre y la imagen de EL CONTRATISTA: requiere autorización separada, expresa y revocable.",
         "Uso de logos y piezas de Musicala: según el manual de marca institucional."
-      ].join("\n")
-    },
-    {
-      id: "H",
-      title: "Anexo H. Bienes y accesos",
-      body: [
-        "Aplica solo si se entregan bienes o credenciales, y constituye acta de entrega y de devolución.",
-        "Reglas: uso diligente y limitado al objeto; el desgaste normal no genera responsabilidad; el daño atribuible a culpa de EL CONTRATISTA se tasa con evidencia y se comunica antes de cualquier cobro; las credenciales se desactivan al cierre.",
-        "Bienes entregados: {{INVENTARIO}}"
       ].join("\n")
     }
   ],
@@ -7635,7 +7624,7 @@ function buildTeacherContractAnnexA(values) {
   lines.push("## Qué no comprende");
   lines.push("Cualquier otra actividad, y cualquiera de las anteriores fuera de la franja programada: muestras, ensayos, eventos, presentaciones, reuniones y capacitaciones en horario adicional. Se pagan aparte, con acuerdo previo y escrito.");
   lines.push("## Mínimo garantizado");
-  lines.push("No aplica. La programación depende de la demanda y el estimado de sesiones es solo de referencia.");
+  lines.push("No aplica. La programación depende de la demanda y no existe un número mínimo de sesiones garantizado.");
   lines.push("## Cambio de valor");
   lines.push("Solo por otrosí aceptado por ambas partes. Nunca unilateral ni verbal.");
 
@@ -8194,7 +8183,7 @@ function renderAdminContrato(body) {
     </div>
 
     <h3 class="contractAdminTitle">2. Condiciones particulares que completa administración</h3>
-    <p class="adminNote">La docente primero envía identidad, teléfono, cuenta y área. Aquí puedes usar esos datos como base y completar lo que solo define Musicala: modalidad, grupos o estudiantes, franjas, fechas, valor, sesiones e inventario. Sin estos datos el contrato individual muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debe aprobarse ni firmarse.</p>
+    <p class="adminNote">La docente primero envía identidad, teléfono, cuenta y área. Aquí puedes usar esos datos como base y completar lo que solo define Musicala: modalidad, grupos o estudiantes, franjas, fechas y valores. Sin estos datos el contrato individual muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debe aprobarse ni firmarse.</p>
     <div class="customBtnList">
       ${teachers.map((item) => {
         const term = terms[item.email];
