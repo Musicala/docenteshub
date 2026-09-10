@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.9";
+const BUILD = "2026-09-10.10";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -40,7 +40,7 @@ const WIX_BOOKINGS_URL = "https://wixbookingsmusicala.web.app/";
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
 // verificable del contenido, sin reutilizar contratos particulares.
 const SUPPORT_CONTRACT_VERSION = "2.0";
-const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea", "bankAccount"];
+const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea", "bankAccountType", "bankAccount"];
 
 /* ============================================================================
    CONTRATO DE PRESTACIÓN DE SERVICIOS · DOCENTES MUSICALA
@@ -7330,7 +7330,7 @@ function renderSupportFullContract() {
 }
 
 function supportProfileComplete(profile = {}) {
-  return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea", "bankAccount"].every((key) => String(profile[key] || "").trim());
+  return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea", "bankAccountType", "bankAccount"].every((key) => String(profile[key] || "").trim());
 }
 
 function openAdminSupportDetail(email) {
@@ -7406,15 +7406,17 @@ function renderSupportContract(profile, acceptance) {
     ["fullName", "Nombre completo", "text"], ["documentType", "Tipo de documento", "select"], ["documentNumber", "Número de documento", "text"],
     ["documentIssueCity", "Ciudad de expedición", "text"], ["phone", "Celular", "tel"], ["address", "Dirección", "text"],
     ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"],
-    ["bankAccount", "Cuenta bancaria para pagos", "text"]
+    ["bankAccountType", "Tipo de cuenta", "select"], ["bankAccount", "Cuenta bancaria para pagos", "text"]
   ];
   const acceptedAt = acceptance?.acceptedAt?.toDate?.() || null;
   const locked = !!acceptance && String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION;
   const documentTypes = ["Cédula de ciudadanía", "Cédula de extranjería", "Pasaporte", "Permiso por Protección Temporal", "Tarjeta de identidad"];
+  const accountTypes = ["Ahorros", "Corriente", "Billetera digital"];
   const dataForm = fields.map(([key, label, type]) => {
     const value = String(profile[key] || "");
     if (type === "select") {
-      const options = documentTypes.includes(value) ? documentTypes : (value ? [...documentTypes, value] : documentTypes);
+      const predefinedOptions = key === "documentType" ? documentTypes : accountTypes;
+      const options = predefinedOptions.includes(value) ? predefinedOptions : (value ? [...predefinedOptions, value] : predefinedOptions);
       return `<label>${label}<select ${locked ? "disabled" : ""} data-support-field="${key}"><option value="">Selecciona una opción</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
     }
     return `<label>${label}<input ${locked ? "disabled" : ""} type="${type}" data-support-field="${key}" maxlength="160" value="${escapeHtml(value)}" /></label>`;
@@ -7898,9 +7900,9 @@ function renderTeacherContractDataForm() {
     return `
       <section class="contractPanel">
         <h3>Dato pendiente para tu contrato individual</h3>
-        <p>Ya tenemos tus datos de vinculación. Solo falta la cuenta bancaria para que administración pueda preparar las condiciones particulares; no necesitas repetir el resto.</p>
-        <div class="supportFields"><label>Cuenta bancaria para pagos<input type="text" data-contract-data="bankAccount" maxlength="180" value="${escapeHtml(supportProfile.bankAccount || "")}" /></label></div>
-        <div class="contractActions"><button class="btnGoogle" type="button" id="contractDataSubmit">Guardar cuenta para continuar</button></div>
+        <p>Ya tenemos tus datos de vinculación. Solo faltan los datos bancarios para que administración pueda preparar las condiciones particulares; no necesitas repetir el resto.</p>
+        <div class="supportFields"><label>Tipo de cuenta<select data-contract-data="bankAccountType"><option value="">Selecciona una opción</option>${["Ahorros", "Corriente", "Billetera digital"].map((type) => `<option value="${type}" ${supportProfile.bankAccountType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label><label>Cuenta bancaria para pagos<input type="text" data-contract-data="bankAccount" maxlength="180" value="${escapeHtml(supportProfile.bankAccount || "")}" /></label></div>
+        <div class="contractActions"><button class="btnGoogle" type="button" id="contractDataSubmit">Guardar datos bancarios</button><p class="adminNote" id="contractDataFeedback" role="status" aria-live="polite">Completa el tipo y número de cuenta.</p></div>
       </section>`;
   }
   const name = supportProfile.fullName || APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
@@ -7926,6 +7928,7 @@ function renderTeacherContractDataForm() {
 
 function wireTeacherContractDataForm(overlay) {
   const button = $("#contractDataSubmit", overlay);
+  const feedback = $("#contractDataFeedback", overlay);
   if (!button) return;
   button.addEventListener("click", async () => {
     const values = {};
@@ -7933,8 +7936,10 @@ function wireTeacherContractDataForm(overlay) {
       values[input.dataset.contractData] = input.value.trim();
     });
     const isSupportTeacher = APP_STATE.hubUserDoc?.employmentType === "support_contractor";
-    if (isSupportTeacher && !values.bankAccount) {
-      toast("Escribe la cuenta bancaria para continuar.");
+    if (isSupportTeacher && (!values.bankAccountType || !values.bankAccount)) {
+      const message = "Selecciona el tipo y escribe el número de cuenta para continuar.";
+      if (feedback) feedback.textContent = message;
+      toast(message);
       return;
     }
     if (!isSupportTeacher && (!values.fullName || !values.documentId || !values.telefono)) {
@@ -7942,18 +7947,24 @@ function wireTeacherContractDataForm(overlay) {
       return;
     }
     button.disabled = true;
-    button.textContent = "Enviando…";
+    button.textContent = "Guardando…";
+    if (feedback) feedback.textContent = "Estamos guardando y verificando tus datos bancarios…";
     try {
       const email = emailKey(APP_STATE.activeUser);
       if (isSupportTeacher) {
         await setDoc(doc(APP_STATE.db, "supportContractProfiles", email), {
+          bankAccountType: values.bankAccountType,
           bankAccount: values.bankAccount,
           email,
           updatedAt: serverTimestamp()
         }, { merge: true });
         const profileSnap = await getDoc(doc(APP_STATE.db, "supportContractProfiles", email));
+        if (!profileSnap.exists() || profileSnap.data()?.bankAccount !== values.bankAccount || profileSnap.data()?.bankAccountType !== values.bankAccountType) {
+          throw new Error("Los datos bancarios no quedaron confirmados después de guardarlos.");
+        }
         APP_STATE.contract.supportProfile = profileSnap.exists() ? profileSnap.data() : null;
-        toast("Cuenta guardada. Administración ya puede preparar tu contrato.");
+        if (feedback) feedback.textContent = "Datos bancarios guardados correctamente. Administración ya puede preparar tu contrato.";
+        toast("Datos bancarios guardados correctamente.");
         renderTeacherContractView(overlay);
         return;
       }
@@ -7970,9 +7981,11 @@ function wireTeacherContractDataForm(overlay) {
       renderTeacherContractView(overlay);
     } catch (error) {
       console.error("No se pudieron enviar los datos del contrato", error);
-      toast("No pude enviar los datos. Intenta de nuevo.");
+      const message = "No pudimos confirmar el guardado. Revisa tu conexión e inténtalo de nuevo.";
+      if (feedback) feedback.textContent = message;
+      toast(message);
       button.disabled = false;
-      button.textContent = "Enviar datos para revisión";
+      button.textContent = isSupportTeacher ? "Reintentar guardar datos bancarios" : "Enviar datos para revisión";
     }
   });
 }
@@ -8269,7 +8282,7 @@ function renderAdminContrato(body) {
         contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": "),
         contratistaDireccion: source.direccion || source.address || "",
         contratistaTelefono: source.telefono || source.phone || "",
-        cuenta: source.cuenta || source.bankAccount || "",
+        cuenta: source.cuenta || [source.bankAccountType, source.bankAccount].filter(Boolean).join(": "),
         areas: source.areas || source.artisticArea || "",
         approvalStatus: "draft",
         approvedForSignature: false,
