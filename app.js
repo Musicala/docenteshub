@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.7";
+const BUILD = "2026-09-10.8";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -87,7 +87,12 @@ const TEACHER_CONTRACT_TERM_FIELDS = [
 ];
 const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion", "inventario"]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
-const CONTRACT_MODALITY_OPTIONS = ["Sede", "Hogar", "Virtual"];
+const CONTRACT_MODALITY_OPTIONS = [
+  "Musicala Virtual personalizado",
+  "Musicala Sede personalizado",
+  "Musicala Hogar personalizado",
+  "Musicala Sede y Hogar grupal"
+];
 
 function contractRateRows(raw = {}) {
   if (Array.isArray(raw.modalidadTarifas) && raw.modalidadTarifas.length) return raw.modalidadTarifas;
