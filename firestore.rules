@@ -445,6 +445,75 @@ service cloud.firestore {
 
 
     /* ====================================================================
+       CONTRATO DE PRESTACIÓN DE SERVICIOS · DOCENTES MUSICALA
+       Contrato directo Musicala-docente (clases virtuales, a hogar o en
+       sede). Nada aquí toca las colecciones de las otras apps.
+
+       - app_config: solo los DOS documentos del contrato, nombrados uno a
+         uno para no abrir el resto de la colección a nadie más.
+           contratoDocenteAcceso    -> quién ve el botón (arranca vacío).
+           contratoDocenteMusicala  -> plantilla del contrato y sus valores.
+       - teacherContractTerms: Anexo A por persona. Solo coordinación escribe;
+         cada docente lee únicamente el suyo.
+       - teacherContractData: los datos que la propia docente envía para que
+         coordinación emita su contrato.
+       - teacherContractSignatures: la firma se crea UNA vez, desde la propia
+         cuenta, y ya no se puede editar ni borrar. Una versión nueva del
+         contrato genera un documento nuevo, no reescribe el anterior.
+    ==================================================================== */
+
+    // Todo docente del Hub necesita leer esta lista para saber si le
+    // corresponde ver el acceso. Solo coordinación la modifica.
+    match /app_config/contratoDocenteAcceso {
+      allow get: if isTeacherHubUser() || isAdminReader();
+      allow create, update: if isAdminReader();
+      allow delete: if false;
+    }
+
+    // Plantilla del contrato: texto y valores institucionales, sin datos
+    // personales de nadie.
+    match /app_config/contratoDocenteMusicala {
+      allow get: if isTeacherHubUser() || isAdminReader();
+      allow create, update: if isAdminReader();
+      allow delete: if false;
+    }
+
+    match /teacherContractTerms/{userEmail} {
+      allow get: if isAdminReader()
+        || (isTeacherHubUser() && userEmail == request.auth.token.email);
+      allow list: if isAdminReader();
+      allow create, update: if isAdminReader();
+      allow delete: if false;
+    }
+
+    match /teacherContractData/{userEmail} {
+      allow get: if isAdminReader()
+        || (isTeacherHubUser() && userEmail == request.auth.token.email);
+      allow list: if isAdminReader();
+      allow create, update: if isAdminReader()
+        || (
+          isTeacherHubUser()
+          && userEmail == request.auth.token.email
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.uid == request.auth.uid
+        );
+      allow delete: if false;
+    }
+
+    match /teacherContractSignatures/{signatureId} {
+      allow get: if isAdminReader()
+        || (isTeacherHubUser() && resource.data.email == request.auth.token.email);
+      allow list: if isAdminReader();
+      allow create: if isTeacherHubUser()
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.accepted == true
+        && request.resource.data.version is string
+        && signatureId == request.resource.data.email + "__" + request.resource.data.version;
+      allow update, delete: if false;
+    }
+
+    /* ====================================================================
        CIERRE GENERAL
        Todo lo que no esté declarado arriba queda bloqueado.
     ==================================================================== */

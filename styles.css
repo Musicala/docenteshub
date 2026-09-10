@@ -4914,3 +4914,57 @@ body{
 .nextClassGo{
   margin-left:auto; color:var(--muted); font-size:20px; font-weight:700;
 }
+
+/* ===== Contrato de prestación de servicios (docente + panel admin) ===== */
+.contractOverlay{
+  position:fixed; inset:0; z-index:9998;
+  background:rgba(11,16,32,.55);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  display:grid; place-items:center; padding:16px;
+}
+.contractCard{
+  width:min(760px,100%); max-height:min(88vh,900px);
+  display:flex; flex-direction:column;
+  background:rgba(255,255,255,.97);
+  border:1px solid rgba(11,16,32,.14); border-radius:22px;
+  box-shadow:0 28px 80px rgba(11,16,32,.22); overflow:hidden;
+}
+.contractCardHead{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+  padding:14px 16px; border-bottom:1px solid rgba(11,16,32,.10);
+}
+.contractCardHead h2{ margin:0; font-size:18px; }
+.contractEyebrow{ margin:0 0 2px; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.contractCardBody{ padding:14px; overflow:auto; display:grid; gap:14px; }
+
+.contractPanel{ border:1px solid var(--line); border-radius:16px; padding:14px; background:#fff; display:grid; gap:8px; }
+.contractPanel h3{ margin:0; font-size:15px; }
+.contractPanel p{ margin:0; line-height:1.55; font-size:13px; }
+.contractPanelOk{ background:#effbf6; border-color:#a7ead2; }
+.contractDocHead{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.contractDoc{ display:grid; gap:6px; margin-top:6px; }
+.contractSection{ border:1px solid var(--line); border-radius:12px; background:var(--card2); }
+.contractSectionHead{ cursor:pointer; font-weight:800; font-size:13px; padding:10px 12px; list-style:none; }
+.contractSectionHead::-webkit-details-marker{ display:none; }
+.contractSectionHead::before{ content:"▸ "; }
+.contractSection[open] .contractSectionHead::before{ content:"▾ "; }
+.contractSectionBody{ padding:0 12px 12px; }
+.contractHeading{ margin:14px 0 4px; font-size:13px; font-weight:800; }
+.contractParagraph{ margin:6px 0; font-size:12.5px; line-height:1.6; color:var(--text); }
+.contractActions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.contractChecks{ display:grid; gap:10px; margin:6px 0; }
+.contractChecks .adminCheck{ align-items:flex-start; font-size:12.5px; line-height:1.5; }
+.contractSignPanel{ background:#f7faff; border-color:#c9dcff; }
+
+.contractAdminTitle{ margin:18px 0 6px; font-size:14px; }
+.contractAccessGrid{ grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
+.contractTermsForm .supportFields{ margin-bottom:6px; }
+.contractFieldWide{ grid-column:1 / -1; }
+.contractFieldWide textarea{
+  min-height:64px; padding:8px 10px; border:1px solid var(--line);
+  border-radius:10px; font:inherit; color:var(--text); resize:vertical;
+}
+@media (max-width:560px){
+  .contractCard{ max-height:94vh; border-radius:16px; }
+  .contractAccessGrid{ grid-template-columns:1fr; }
+}

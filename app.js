@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-08.3";
+const BUILD = "2026-09-10.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -41,6 +41,363 @@ const WIX_BOOKINGS_URL = "https://wixbookingsmusicala.web.app/";
 // verificable del contenido, sin reutilizar contratos particulares.
 const SUPPORT_CONTRACT_VERSION = "1.0";
 const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea"];
+
+/* ============================================================================
+   CONTRATO DE PRESTACIÓN DE SERVICIOS · DOCENTES MUSICALA
+   ----------------------------------------------------------------------------
+   Contrato directo entre Musicala y la docente, para clases virtuales, a hogar
+   o en sede. No depende de ningún convenio ni de terceros.
+
+   El texto vive en app_config/contratoDocenteMusicala para poder editarlo desde
+   el panel admin sin volver a publicar la app. Las condiciones particulares
+   (Anexo A) van por persona en teacherContractTerms, los datos que envía la
+   docente en teacherContractData y las firmas en teacherContractSignatures,
+   una por persona y versión.
+
+   Quién puede VER el botón se controla en app_config/contratoDocenteAcceso.
+   Arranca vacío: el acceso no le aparece a nadie hasta que se elija.
+
+   IMPORTANTE: esta es una plantilla operativa, no un concepto jurídico.
+   Debe revisarla un abogado antes de usarla como contrato definitivo.
+============================================================================ */
+const TEACHER_CONTRACT_DOC_ID = "contratoDocenteMusicala";
+const TEACHER_CONTRACT_ACCESS_DOC_ID = "contratoDocenteAcceso";
+const TEACHER_CONTRACT_TERMS_COLLECTION = "teacherContractTerms";
+const TEACHER_CONTRACT_DATA_COLLECTION = "teacherContractData";
+const TEACHER_CONTRACT_SIGNATURES_COLLECTION = "teacherContractSignatures";
+
+// Campos del Anexo A. Se llenan por persona desde el panel admin: ni un nombre,
+// ni una fecha, ni un valor viven en el código.
+const TEACHER_CONTRACT_TERM_FIELDS = [
+  { name: "contratistaNombre", label: "Nombre completo", group: "Identificación" },
+  { name: "contratistaDocumento", label: "Documento de identidad", group: "Identificación" },
+  { name: "contratistaDireccion", label: "Dirección (solo si aplica)", group: "Identificación" },
+  { name: "contratistaTelefono", label: "Teléfono", group: "Identificación" },
+  { name: "areas", label: "Área(s) o especialidad", group: "Alcance" },
+  { name: "modalidades", label: "Modalidades acordadas (sede, hogar, virtual)", group: "Alcance" },
+  { name: "grupos", label: "Grupos o estudiantes asignados", group: "Alcance" },
+  { name: "franjas", label: "Franjas acordadas", group: "Alcance" },
+  { name: "fechaInicio", label: "Fecha de inicio", type: "date", group: "Alcance" },
+  { name: "fechaFin", label: "Fecha de finalización", type: "date", group: "Alcance" },
+  { name: "valorSesion", label: "Valor por sesión (cifras)", group: "Economía" },
+  { name: "valorLetras", label: "Valor por sesión (letras)", group: "Economía" },
+  { name: "sesionesEstimadas", label: "Sesiones estimadas (referencia)", group: "Economía" },
+  { name: "cuenta", label: "Cuenta bancaria de la docente", group: "Economía" },
+  { name: "inventario", label: "Bienes y accesos entregados", type: "textarea", group: "Economía" }
+];
+const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion", "inventario"]);
+const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
+
+const TEACHER_CONTRACT_DEFAULT = {
+  version: "2026.1",
+  title: "Contrato de prestación de servicios independientes de formación artística y pedagógica",
+  intro: "Este documento describe las condiciones bajo las cuales prestas tus servicios como formadora o formador independiente para las clases de Musicala, en modalidad virtual, a hogar o en nuestra sede. Léelo completo antes de aceptarlo: al firmarlo quedas obligado por su contenido.",
+  body: [
+    "## 1. Partes y declaraciones",
+    "1.1. Este contrato se celebra entre Musicala, en adelante EL CONTRATANTE, y la persona identificada en el Anexo A, en adelante EL CONTRATISTA.",
+    "1.2. EL CONTRATISTA declara que cuenta con la formación, la experiencia y las condiciones necesarias para prestar los servicios de este contrato de manera autónoma e independiente.",
+    "1.3. EL CONTRATISTA declara que la información y los documentos entregados en el proceso previo (identificación, RUT si aplica, certificación bancaria, soportes de formación o experiencia y afiliación a seguridad social) son veraces y están vigentes, y se obliga a informar cualquier cambio.",
+    "1.4. EL CONTRATISTA declara que autorizó de manera previa, expresa y escrita la consulta de antecedentes e inhabilidades exigida para quienes trabajan con niños, niñas y adolescentes, y que esa consulta está vigente.",
+    "",
+    "## 2. Objeto, alcance y entregables",
+    "2.1. Objeto. EL CONTRATISTA se obliga a prestar, con plena autonomía técnica y administrativa, servicios de formación artística y pedagógica en el área de {{AREAS}}, mediante la ejecución de las sesiones acordadas con los estudiantes o grupos asignados, en las modalidades y franjas descritas en el Anexo A.",
+    "2.2. Actividades incluidas. El valor pactado por sesión comprende: la planeación de la sesión; la realización de la sesión con el estudiante o grupo asignado; el registro de la bitácora de clase y de la asistencia en el aplicativo institucional; el informe periódico del proceso; y el acompañamiento a muestras de proceso, siempre que se desarrollen dentro de la franja programada de EL CONTRATISTA.",
+    "2.3. Actividades no incluidas. Cualquier actividad distinta de las anteriores, o cualquiera de las anteriores que deba desarrollarse fuera de la franja programada (incluidas muestras, ensayos, eventos, presentaciones, reuniones y capacitaciones en horario adicional), no está comprendida en el valor por sesión y se remunera de forma independiente.",
+    "2.4. Acuerdo previo. Ninguna actividad adicional es obligatoria para EL CONTRATISTA. Para que proceda se requiere acuerdo previo y escrito que precise la actividad, la fecha, la duración y el valor. La ausencia de ese acuerdo no puede tratarse como incumplimiento.",
+    "2.5. Autonomía pedagógica. EL CONTRATISTA define la metodología y los recursos didácticos de sus sesiones, dentro de los lineamientos generales de Musicala y de los estándares de seguridad del Anexo E.",
+    "",
+    "## 3. Naturaleza independiente de la relación",
+    "3.1. Este es un contrato de prestación de servicios de naturaleza civil o comercial. EL CONTRATISTA actúa con autonomía técnica, administrativa y directiva, sin subordinación, y asume por su cuenta la organización de los medios necesarios.",
+    "3.2. No existe exclusividad. EL CONTRATISTA puede prestar servicios a terceros, siempre que ello no afecte las franjas acordadas ni infrinja la cláusula 11.",
+    "3.3. Este contrato no genera salario, prestaciones sociales, vacaciones ni indemnizaciones propias de una relación laboral.",
+    "3.4. Las partes reconocen que la realidad de la ejecución prevalece sobre la denominación del contrato. EL CONTRATANTE se obliga a que la coordinación operativa se ejerza mediante acuerdos, requerimientos de subsanación y verificación de entregables, y no mediante órdenes sobre el modo, el tiempo y la cantidad del trabajo, sanciones disciplinarias, multas, control de disponibilidad permanente ni imposición de actividades no acordadas.",
+    "",
+    "## 4. Modalidades, lugar de ejecución, plazo y programación",
+    "4.1. Modalidades. Las sesiones pueden prestarse en tres modalidades, según lo acordado en el Anexo A:",
+    "a) En sede: en {{SEDE_NOMBRE}}, ubicada en {{SEDE_DIRECCION}}.",
+    "b) A hogar: en el domicilio del estudiante indicado por EL CONTRATANTE. EL CONTRATISTA se presenta únicamente en la dirección informada por el canal oficial y no acuerda cambios de dirección directamente con las familias.",
+    "c) Virtual: por la plataforma que EL CONTRATANTE indique, con conexión estable, cámara activa y un entorno adecuado para una clase.",
+    "4.2. Reglas propias de la modalidad a hogar. La sesión se desarrolla en un espacio abierto o visible de la vivienda y con la presencia o disponibilidad de una persona adulta responsable. EL CONTRATISTA no permanece a solas con un estudiante menor de edad en un espacio cerrado. Si al llegar no se cumplen estas condiciones o el espacio es inseguro, la sesión no se realiza, se reporta el mismo día y se aplica la regla económica del Anexo B para cancelaciones no atribuibles a EL CONTRATISTA.",
+    "4.3. Reglas propias de la modalidad virtual. La sesión se realiza por el enlace institucional, no por cuentas personales. La grabación de la sesión solo procede cuando EL CONTRATANTE lo autorice por escrito y con la autorización de las familias, y se sujeta a la cláusula 11 y al Anexo F.",
+    "4.4. Desplazamientos. Si el Anexo A pacta un reconocimiento por desplazamiento para la modalidad a hogar, se paga en los términos allí descritos. Si no lo pacta, no se causa.",
+    "4.5. Plazo. Del {{FECHA_INICIO}} al {{FECHA_FIN}}. No hay prórroga tácita: cualquier extensión requiere una nueva versión del contrato o un otrosí aceptado por ambas partes.",
+    "4.6. Programación. Las franjas, grupos y modalidades iniciales constan en el Anexo A. Los cambios se comunican por el aplicativo institucional.",
+    "4.7. Cambios. Un cambio de franja, grupo, modalidad o lugar requiere la aceptación de EL CONTRATISTA, salvo ajustes menores que no alteren su disponibilidad y que se informen con {{ANTICIPACION_CAMBIO}} de anticipación. Rechazar un cambio material no constituye incumplimiento.",
+    "4.8. Sin mínimo garantizado. El número de sesiones depende de la demanda y de la programación. EL CONTRATANTE no garantiza un número mínimo de sesiones ni un ingreso mensual fijo. El estimado del Anexo A es de referencia y no constituye promesa de asignación.",
+    "",
+    "## 5. Honorarios, facturación y seguridad social",
+    "5.1. Valor. EL CONTRATANTE pagará el valor por sesión efectivamente prestada que consta en el Anexo A, expresado en cifras y en letras. La sesión dura {{DURACION_SESION}} minutos. Un cambio de valor durante la ejecución exige otrosí aceptado por ambas partes: no puede modificarse de forma unilateral ni verbal.",
+    "5.2. Alcance. El valor comprende lo indicado en la cláusula 2.2. Lo señalado en la cláusula 2.3 se paga aparte, según el acuerdo previo y escrito de cada actividad.",
+    "5.3. Corte y soporte. El corte es el {{FECHA_CORTE}} de cada mes. EL CONTRATISTA presentará {{DOCUMENTO_COBRO}} con el detalle de las sesiones efectivamente prestadas, que debe coincidir con los registros del aplicativo.",
+    "5.4. Pago. Dentro de {{PLAZO_PAGO}} siguientes a la presentación conforme del soporte, mediante transferencia a la cuenta {{CUENTA}}, a nombre de EL CONTRATISTA. No se realizan pagos a cuentas de terceros.",
+    "5.5. Retenciones. Se aplicarán las que correspondan según el régimen tributario de EL CONTRATISTA y la normativa vigente.",
+    "5.6. Seguridad social. EL CONTRATISTA es responsable de su afiliación y cotización al Sistema de Seguridad Social Integral, incluidos riesgos laborales. Cuando la normativa o la modalidad lo exijan, deberá mantener vigente su afiliación a una ARL en clase de riesgo {{ARL_RIESGO}} y entregar con cada soporte de cobro la copia de la planilla del periodo. La verificación que haga EL CONTRATANTE no lo convierte en responsable de las obligaciones propias de EL CONTRATISTA ni exonera a este de las suyas.",
+    "5.7. Discrepancias. Si EL CONTRATANTE objeta parte del cobro, pagará dentro del plazo ordinario los valores no controvertidos y comunicará por escrito la objeción sobre el resto con su evidencia. EL CONTRATISTA dispone de {{PLAZO_SUBSANACION}} para aclarar o subsanar. Resuelta la discrepancia, el saldo se paga en el siguiente ciclo.",
+    "5.8. Sin descuentos automáticos. No se aplican multas, descuentos ni compensaciones automáticas sobre honorarios causados. Cualquier suma a cargo de EL CONTRATISTA requiere daño probado, comunicación previa y oportunidad de respuesta.",
+    "5.9. Fallas del aplicativo. Si el registro de una sesión no queda por una falla técnica, la sesión no se da por no prestada: se acredita con evidencia alternativa y se paga con normalidad.",
+    "",
+    "## 6. Obligaciones de EL CONTRATISTA",
+    "6.1. Prestar las sesiones acordadas en la franja, el grupo, la modalidad y el lugar pactados, iniciarlas y cerrarlas en el horario previsto, y registrar su inicio y cierre en el aplicativo.",
+    "6.2. Registrar la bitácora de cada sesión, la asistencia y el informe periódico en las fechas del Anexo C.",
+    "6.3. Informar por el canal oficial, con la anticipación del Anexo B, cualquier imposibilidad de prestar una sesión, y colaborar de buena fe en la gestión del reemplazo.",
+    "6.4. Cumplir íntegramente el Anexo D y los estándares de seguridad del Anexo E.",
+    "6.5. Dar trato respetuoso y no discriminatorio a estudiantes, familias, personal de la sede y demás formadores.",
+    "6.6. Portar el carné institucional durante la prestación presencial y presentarse en condiciones acordes con el contexto educativo.",
+    "6.7. Mantener vigentes la afiliación a seguridad social y las verificaciones de antecedentes exigidas, y entregar los soportes cuando se le soliciten.",
+    "6.8. Usar diligentemente instalaciones, equipos y credenciales, reportar daños o incidencias y devolverlos al cierre.",
+    "6.9. Cumplir la cláusula 11 y el Anexo F.",
+    "6.10. No ceder ni delegar la ejecución en un tercero. Puede proponer un reemplazo, que solo procede con autorización de EL CONTRATANTE y previo cumplimiento de los requisitos del Anexo D.",
+    "",
+    "## 7. Obligaciones de EL CONTRATANTE",
+    "7.1. Pagar los honorarios en las condiciones de la cláusula 5, incluidos los valores no controvertidos dentro del plazo ordinario.",
+    "7.2. Entregar con anticipación razonable la programación de franjas, grupos y modalidades, y comunicar oportunamente sus cambios.",
+    "7.3. Entregar la información necesaria para la prestación: datos de contacto autorizados, dirección del hogar cuando aplique, enlace de la sesión virtual y condiciones del espacio en sede.",
+    "7.4. Poner a disposición el aplicativo institucional y los canales oficiales y mantenerlos operativos en condiciones razonables.",
+    "7.5. Informar los protocolos de seguridad, emergencia y protección de menores aplicables, y sus actualizaciones.",
+    "7.6. Designar un responsable contractual como interlocutor único para requerimientos, novedades y controversias: {{SUPERVISOR}}.",
+    "7.7. Tramitar solicitudes, reclamaciones y descargos dentro de plazos razonables y por escrito.",
+    "7.8. Respetar la autonomía pedagógica de EL CONTRATISTA y abstenerse de imponer actividades no acordadas.",
+    "7.9. Entregar copia de este contrato firmado con sus anexos y conservarla disponible para consulta.",
+    "",
+    "## 8. Seguimiento contractual y calidad",
+    "8.1. El seguimiento verifica el cumplimiento del objeto contratado. No constituye potestad disciplinaria ni subordinación. No existen faltas, expedientes, llamados de atención ni sanciones.",
+    "8.2. Evidencias de ejecución: registro de inicio y cierre de sesión, asistencia, bitácoras, informes periódicos, reportes de incidentes, cumplimiento de las muestras acordadas y retroalimentación de familias y coordinación.",
+    "8.3. La calidad se valora con varias fuentes y con los indicadores del Anexo C. Ningún indicador aislado, y en particular ninguna encuesta de satisfacción, produce por sí solo la terminación del contrato.",
+    "8.4. Ante un hallazgo: se registra el hecho con su evidencia y se comunica por escrito; EL CONTRATISTA dispone de {{PLAZO_DESCARGOS}} para explicar, aclarar o corregir; si es subsanable se acuerda una acción de mejora y un plazo de verificación; verificado el resultado el hallazgo se cierra; si no se subsana, o si se trata de un evento de la cláusula 13.3, se escala como incumplimiento.",
+    "8.5. El registro de seguimiento se denomina registro de desempeño contractual y es accesible para EL CONTRATISTA.",
+    "",
+    "## 9. Novedades, cancelaciones, reemplazos y fuerza mayor",
+    "9.1. Las reglas de aviso, evidencia, efecto económico y reprogramación constan en la matriz única del Anexo B, que reemplaza cualquier otra regla sobre la materia.",
+    "9.2. Si una sesión programada se cancela por causa no atribuible a EL CONTRATISTA y sin el aviso previsto, se reconoce el valor indicado en el Anexo B. Ese reconocimiento no está condicionado a que EL CONTRATISTA realice ninguna actividad sustituta.",
+    "9.3. La sesión no prestada por ausencia de EL CONTRATISTA no causa honorarios. No procede reposición gratuita, ni sesiones adicionales sin costo, ni reposición de tiempo en actividades distintas. Si las partes acuerdan reprogramar, la sesión reprogramada se paga como cualquier otra.",
+    "9.4. La llegada tardía se registra y se conversa dentro del seguimiento contractual. No genera multa ni descuento automático. La reiteración sin justificación puede tratarse como incumplimiento.",
+    "9.5. EL CONTRATISTA puede proponer un reemplazo. Solo procede con autorización previa de EL CONTRATANTE y si la persona cumple los requisitos de habilitación y protección de menores. EL CONTRATISTA no contrata ni paga al reemplazo.",
+    "9.6. Ante inasistencia del estudiante se aplica la regla del Anexo B. En sede y en modalidad virtual, EL CONTRATISTA permanece disponible durante la franja y deja constancia en el aplicativo; en modalidad a hogar, deja constancia del desplazamiento realizado.",
+    "9.7. Ante una condición insegura, lesión o emergencia, EL CONTRATISTA suspende la actividad, activa el protocolo aplicable y reporta el incidente. La suspensión por razones de seguridad nunca constituye incumplimiento.",
+    "9.8. Fuerza mayor. Ninguna parte responde por el incumplimiento causado por hechos imprevisibles e irresistibles ajenos a su control. La parte afectada avisará tan pronto le sea posible. Si la situación se extiende por más de {{DIAS_FUERZA_MAYOR}}, cualquiera de las partes puede terminar el contrato sin penalidad.",
+    "",
+    "## 10. Protección de niños, niñas y adolescentes, convivencia y seguridad",
+    "10.1. EL CONTRATISTA declara conocer y se obliga a cumplir el Anexo D y el Anexo E, que aceptó de forma separada y expresa.",
+    "10.2. El contacto físico con fines pedagógicos o de seguridad (corrección postural, asistencia o apoyo) es admisible únicamente en las condiciones del Anexo D: necesidad justificada, explicación previa, lenguaje apropiado, carácter observable y no invasivo, y respeto inmediato a la negativa o incomodidad del estudiante. Queda prohibido todo contacto sexualizado, humillante, punitivo o innecesario.",
+    "10.3. EL CONTRATISTA reportará de inmediato, por la ruta del Anexo D, cualquier situación de riesgo, maltrato, violencia o sospecha, así como cualquier revelación de un estudiante. No debe investigar ni confrontar por cuenta propia. El deber de confidencialidad no ampara el silencio frente a una situación de riesgo.",
+    "10.4. El incumplimiento de esta cláusula es causal de terminación inmediata, sin perjuicio de las acciones legales que correspondan.",
+    "10.5. Queda prohibida toda forma de discriminación, acoso o intimidación. EL CONTRATISTA realizará los ajustes razonables a su alcance para la participación de estudiantes con discapacidad o condiciones particulares informadas.",
+    "",
+    "## 11. Confidencialidad, datos personales, comunicaciones e imagen",
+    "11.1. La información de estudiantes, familias y de EL CONTRATANTE a la que se acceda por razón del contrato es confidencial y solo puede usarse para ejecutar el objeto. La obligación subsiste {{DURACION_CONFIDENCIALIDAD}} después de terminado el contrato.",
+    "11.2. No es confidencial la información pública, la que EL CONTRATISTA ya conocía legítimamente, ni la que deba revelarse por orden de autoridad competente o en cumplimiento del deber de reporte del Anexo D.",
+    "11.3. El tratamiento de datos personales, en especial de niños, niñas y adolescentes, se sujeta al Anexo F y a la normativa vigente. EL CONTRATISTA trata esos datos únicamente para ejecutar el objeto, solo en las herramientas oficiales, y no los copia, almacena ni transfiere a medios personales.",
+    "11.4. Imágenes. EL CONTRATISTA no publica imágenes de estudiantes en cuentas o medios personales ni las comparte con terceros ajenos a Musicala. La captura solo procede con la finalidad, la autorización y el alcance que EL CONTRATANTE informe por escrito. Las imágenes se cargan únicamente en el aplicativo y se eliminan de los dispositivos personales una vez cargadas.",
+    "11.5. No captación de clientela. EL CONTRATISTA no ofrece ni acuerda clases particulares u otros servicios directamente con estudiantes o familias que haya conocido por razón de este contrato, ni durante su vigencia ni dentro de {{PLAZO_NO_CAPTACION}} siguientes a su terminación.",
+    "11.6. Canales oficiales. Las comunicaciones se surten por el aplicativo institucional y el correo {{CANAL_OFICIAL}}. Las ventanas de respuesta razonable son {{VENTANA_RESPUESTA}}. No se exige disponibilidad permanente ni respuesta fuera de esas ventanas, salvo emergencias que afecten la seguridad de un estudiante.",
+    "11.7. La comunicación con estudiantes y familias se realiza por los canales oficiales. Queda prohibido el contacto privado con estudiantes menores de edad por cuentas o números personales, así como recibir o entregar dinero a estudiantes o familias.",
+    "11.8. EL CONTRATANTE trata los datos personales de EL CONTRATISTA conforme a su política, para la ejecución, el pago, el cumplimiento de obligaciones legales y la conservación de la evidencia contractual.",
+    "",
+    "## 12. Propiedad intelectual, herramientas, accesos y bienes",
+    "12.1. Cada parte conserva la titularidad de lo que le pertenecía antes del contrato. EL CONTRATISTA no adquiere derecho alguno sobre marcas, contenidos, metodologías o plataformas de EL CONTRATANTE, y no puede usarlos por fuera del objeto.",
+    "12.2. Materiales creados durante la ejecución: {{REGLA_PI}}. En todo caso se respetan los derechos morales de autor de EL CONTRATISTA, que son inalienables.",
+    "12.3. El uso del nombre y la imagen de EL CONTRATISTA en piezas de Musicala requiere autorización separada, expresa y revocable. No se entiende otorgada por la firma de este contrato.",
+    "12.4. Los equipos, materiales, llaves y credenciales que se faciliten constan en el Anexo H y se usan solo para el objeto. Se devuelven al cierre. EL CONTRATISTA responde por el daño atribuible a su culpa, no por el desgaste normal ni por deterioros preexistentes.",
+    "12.5. Las credenciales del aplicativo son personales e intransferibles. EL CONTRATISTA notificará de inmediato cualquier pérdida o uso no autorizado. Al terminar el contrato se desactivan los accesos.",
+    "",
+    "## 13. Incumplimiento, subsanación, terminación y cierre",
+    "13.1. Incumplimientos subsanables: los que admiten corrección sin afectar gravemente el objeto (retrasos en entregables, deficiencias en registros, llegadas tardías, incumplimientos puntuales de protocolo). Se tramitan por el procedimiento de la cláusula 8.4 y no dan lugar a terminación mientras se subsanen en el plazo acordado.",
+    "13.2. Terminación ordinaria. Cualquiera de las partes puede terminar el contrato en cualquier momento, sin necesidad de causa y sin indemnización, avisando por escrito con {{PREAVISO}} de anticipación.",
+    "13.3. Terminación inmediata, sin preaviso y sin indemnización, por estos hechos taxativos: a) conducta que ponga en riesgo la integridad física, sexual o psicológica de un estudiante; b) violencia, acoso o discriminación contra cualquier persona de la comunidad educativa; c) incumplimiento grave del Anexo D o de la cláusula 10; d) falsedad en la información o los documentos entregados; e) pérdida o vencimiento no subsanado de una habilitación obligatoria; f) apropiación de bienes o dineros, o cobro directo a estudiantes o familias; g) filtración o divulgación grave de información confidencial o de imágenes de estudiantes; h) suplantación o ejecución del servicio por un tercero no autorizado.",
+    "13.4. Toda terminación se comunica por escrito, con la causal invocada y su fecha. En los casos de 13.3 se informarán los hechos y EL CONTRATISTA podrá presentar su versión por escrito; esto no suspende la terminación cuando exista riesgo para un estudiante.",
+    "13.5. Cierre. Dentro de {{PLAZO_CIERRE}} siguientes, EL CONTRATISTA entregará el informe final del proceso, la documentación pendiente y los bienes y credenciales a su cargo. EL CONTRATANTE liquidará y pagará las sesiones prestadas y las sumas causadas no controvertidas. La terminación no extingue las obligaciones de confidencialidad, protección de datos y reporte.",
+    "",
+    "## 14. Responsabilidad y solución de controversias",
+    "14.1. Cada parte responde por los daños que cause por su culpa, debidamente probados. No se pactan multas automáticas, sanciones pecuniarias unilaterales ni indemnizaciones predeterminadas.",
+    "14.2. EL CONTRATISTA responde por el cumplimiento de los estándares de seguridad del Anexo E. EL CONTRATANTE responde por las condiciones de la infraestructura de su sede y por sus protocolos de emergencia. En modalidad a hogar, las condiciones del espacio son responsabilidad de la familia; EL CONTRATISTA puede negarse a prestar la sesión en un espacio inseguro.",
+    "14.3. Las partes intentarán resolver directamente cualquier diferencia dentro de {{PLAZO_ARREGLO}} siguientes a la comunicación escrita. De no lograrse, acudirán a {{MECANISMO_CONTROVERSIAS}}.",
+    "",
+    "## 15. Modificaciones, integridad, notificaciones y firma electrónica",
+    "15.1. Modificaciones. Solo por otrosí escrito aceptado por ambas partes, que se incorpora como nueva versión conservando el vínculo con la original. Ningún acuerdo verbal modifica este contrato, y ninguna de las partes puede cambiar unilateralmente el valor, el objeto, la modalidad, la carga o el plazo.",
+    "15.2. Integridad. Este contrato y sus anexos constituyen el acuerdo íntegro entre las partes sobre la materia y reemplazan cualquier acuerdo anterior sobre el mismo objeto.",
+    "15.3. Notificaciones. A los datos del Anexo A y a los canales oficiales de la cláusula 11.6. Cualquier cambio debe informarse por escrito.",
+    "15.4. Firma electrónica. Las partes acuerdan suscribir este contrato mediante firma electrónica en el aplicativo institucional, con autenticación de la cuenta del firmante. Las partes reconocen que dicha firma es confiable y apropiada para los fines de este contrato y le atribuyen los mismos efectos jurídicos de la firma manuscrita, conforme a la Ley 527 de 1999 y sus normas reglamentarias. EL CONTRATISTA mantendrá bajo su control exclusivo las credenciales asociadas a su firma e informará de inmediato cualquier uso no autorizado. La versión firmada no se modifica: cualquier cambio posterior consta en un otrosí o en una nueva versión."
+  ].join("\n"),
+  annexes: [
+    {
+      id: "B",
+      title: "Anexo B. Matriz de novedades",
+      body: [
+        "Reemplaza los plazos dispersos del contrato. Todos los plazos son parametrizables y se muestran antes de firmar.",
+        "## Cambio de programación",
+        "Lo origina EL CONTRATANTE. Aviso: {{AVISO_CAMBIO}}. Evidencia: evento en el aplicativo. Sin efecto económico si se acepta.",
+        "## Cancelación atribuible a EL CONTRATANTE o a la familia",
+        "Aviso: {{AVISO_CANCELA}}. Efecto: {{PAGO_CANCELACION}}, sin condicionarlo a ninguna actividad sustituta.",
+        "## Ausencia prevista de EL CONTRATISTA",
+        "Aviso: {{AVISO_AUSENCIA}}. La sesión no causa honorarios. Si se reprograma de común acuerdo, la sesión reprogramada se paga como cualquier otra.",
+        "## Ausencia imprevista o emergencia",
+        "Aviso tan pronto sea posible, con soporte proporcional. Se resuelve caso a caso, sin sanción automática.",
+        "## No asistencia del estudiante",
+        "Registro de asistencia como evidencia. Regla económica: {{REGLA_SIN_ESTUDIANTES}}. En sede y virtual, EL CONTRATISTA permanece disponible durante la franja.",
+        "## Clase a hogar con espacio inseguro o sin adulto responsable",
+        "La sesión no se realiza. Evidencia: reporte del mismo día en el aplicativo. Efecto: {{PAGO_CANCELACION}}, por tratarse de una causa no atribuible a EL CONTRATISTA.",
+        "## Falla de conexión en modalidad virtual",
+        "Regla económica: {{REGLA_FALLA_VIRTUAL}}. Se deja constancia del intento de conexión.",
+        "## Sesión interrumpida por riesgo",
+        "Aviso inmediato y reporte de incidente. Se reconoce según el tiempo y la causa. Nunca constituye incumplimiento.",
+        "## Falla técnica del aplicativo",
+        "Se admite evidencia alternativa. No se niega el pago por una falla del sistema.",
+        "## Reemplazo autorizado",
+        "Requiere autorización previa y cumplimiento de los requisitos del Anexo D. Tarifa: {{TARIFA_REEMPLAZO}}.",
+        "## Llegada tardía",
+        "Se registra con su contexto. Sin multa ni descuento automático. Corrección razonable dentro de la sesión.",
+        "## Sesión compartida entre dos formadores",
+        "Regla económica: {{REGLA_COMPARTIDA}}. Nunca reducción automática a la mitad."
+      ].join("\n")
+    },
+    {
+      id: "C",
+      title: "Anexo C. Entregables e indicadores",
+      body: [
+        "## Entregables",
+        "Registro de inicio y cierre de sesión: cada sesión, al iniciar y al cerrar, en el aplicativo.",
+        "Asistencia: cada sesión, el mismo día.",
+        "Bitácora de clase: cada sesión, dentro de {{PLAZO_BITACORA}}.",
+        "Informe periódico del proceso: {{PLAZO_INFORME}}.",
+        "Reporte de incidente: cuando ocurra, de forma inmediata.",
+        "Acompañamiento a muestras: según la programación acordada.",
+        "## Alcance",
+        "Todos estos entregables están comprendidos en el valor por sesión, conforme a la cláusula 2.2. La evidencia fotográfica se sujeta a la cláusula 11.4 y al Anexo F.",
+        "## Indicadores de calidad",
+        "Continuidad del proceso, cumplimiento de los registros, calidad pedagógica observada y retroalimentación de familias y coordinación. Se valoran con varias fuentes. Ningún indicador aislado produce por sí solo la terminación del contrato."
+      ].join("\n")
+    },
+    {
+      id: "D",
+      title: "Anexo D. Protección integral de niños, niñas y adolescentes",
+      body: [
+        "## Principio",
+        "El interés superior del niño prevalece sobre cualquier consideración operativa, pedagógica o económica. Ante la duda entre continuar una actividad y proteger a un estudiante, se protege al estudiante.",
+        "## Conductas prohibidas",
+        "1. Todo contacto sexualizado, insinuación, comentario o material de esa naturaleza.",
+        "2. Castigo físico, humillación, burla, grito intimidante, aislamiento punitivo o trato degradante.",
+        "3. Contacto privado con estudiantes menores por cuentas, números o redes personales.",
+        "4. Reunirse a solas con un estudiante en un espacio cerrado o fuera de la vista de otras personas, tanto en sede como en la modalidad a hogar.",
+        "5. En modalidad virtual, sostener sesiones sin cámara, desde cuentas personales o sin el enlace institucional.",
+        "6. Transportar estudiantes en vehículo propio o acompañarlos fuera del lugar de la clase sin autorización escrita.",
+        "7. Recibir o entregar dinero, y dar o pedir regalos de valor.",
+        "8. Pedir a un estudiante que guarde un secreto frente a su familia o frente a la institución.",
+        "9. Consumir o presentarse bajo efectos de alcohol o sustancias psicoactivas.",
+        "10. Fotografiar o grabar con dispositivos o cuentas personales por fuera de lo autorizado.",
+        "## Contacto físico pedagógico seguro",
+        "La formación artística requiere en ocasiones corrección postural, ubicación de manos en el instrumento o asistencia. Por eso no se prohíbe el contacto físico: se regula. Es admisible cuando cumple todas estas condiciones:",
+        "1. Existe una necesidad pedagógica o de seguridad real.",
+        "2. Se explica antes, con lenguaje apropiado para la edad.",
+        "3. Es limitado, profesional y no invasivo: la zona mínima necesaria, el tiempo mínimo necesario.",
+        "4. Ocurre a la vista de otras personas.",
+        "5. Se respeta de inmediato la negativa o incomodidad del estudiante, sin insistir ni reprochar.",
+        "6. Se adapta a condiciones de discapacidad, trauma, salud o indicaciones familiares conocidas.",
+        "7. Cualquier situación inusual o malinterpretable se reporta el mismo día, aunque parezca menor.",
+        "## Ruta de reporte",
+        "1. Poner a salvo al estudiante y garantizar la atención inmediata si la requiere.",
+        "2. Reportar el mismo día al responsable contractual.",
+        "3. Registrar el hecho en el aplicativo con lo observado, sin interpretaciones ni juicios.",
+        "4. Preservar la evidencia: no borrar mensajes, imágenes ni registros.",
+        "5. No investigar ni confrontar por cuenta propia, ni interrogar al estudiante más allá de escuchar lo que quiera contar.",
+        "6. EL CONTRATANTE activa la ruta institucional y, cuando corresponda, el reporte a las autoridades competentes.",
+        "El deber de confidencialidad no ampara el silencio frente a una situación de riesgo. Reportar de buena fe nunca puede tener consecuencias adversas para quien reporta.",
+        "## Habilitación",
+        "Para prestar el servicio deben estar vigentes: identificación, afiliación a seguridad social y la verificación de antecedentes e inhabilidades exigida para quienes trabajan con niños, niñas y adolescentes. Si una verificación obligatoria vence y no se renueva, no se pueden dictar sesiones hasta regularizarla."
+      ].join("\n"),
+      declaration: "He leído y me comprometo a cumplir el protocolo de protección integral de niños, niñas y adolescentes y seguridad de las actividades."
+    },
+    {
+      id: "E",
+      title: "Anexo E. Seguridad de la actividad, emergencias e incidentes",
+      body: [
+        "## Antes de la sesión",
+        "Verificar el estado del espacio, la ventilación, el espacio libre y los implementos o instrumentos. En sede, conocer la ruta de evacuación y la ubicación del botiquín. Conocer las condiciones médicas informadas del estudiante.",
+        "## Durante la sesión",
+        "Calentamiento y cuidado corporal cuando la actividad lo requiera. Pausas e hidratación según la intensidad. Progresiones técnicas acordes con la edad y el nivel real del estudiante. Cuidado auditivo y de volumen en las prácticas musicales.",
+        "Se suspende la actividad ante dolor, lesión, mareo, conducta de riesgo o condición insegura del espacio.",
+        "## Modalidad a hogar",
+        "Confirmar la dirección por el canal oficial antes de desplazarse. Prestar la sesión en un espacio abierto o visible, con una persona adulta responsable disponible. No ingresar a habitaciones ni espacios privados. Reportar el mismo día cualquier condición insegura.",
+        "## Modalidad virtual",
+        "Usar el enlace institucional, con cámara activa y un fondo y entorno adecuados. No compartir el enlace con terceros. Verificar que el estudiante cuente con un espacio seguro y con acompañamiento de un adulto cuando su edad lo requiera.",
+        "## Emergencias",
+        "Activar el protocolo aplicable e informar de inmediato al responsable contractual y a la familia. Acompañar al estudiante hasta que lo reciba quien corresponda. No diagnosticar ni administrar medicamentos. Registrar el incidente el mismo día, incluidos los casi accidentes."
+      ].join("\n")
+    },
+    {
+      id: "F",
+      title: "Anexo F. Tratamiento de datos, seguridad digital y canales",
+      body: [
+        "## Datos de estudiantes y familias",
+        "Se tratan únicamente para ejecutar el objeto del contrato y solo en las herramientas oficiales. No se copian a dispositivos, cuentas o servicios personales, ni se comparten con terceros ajenos a Musicala.",
+        "Imágenes y grabaciones: son información personal y no pueden compartirse ni divulgarse. La grabación de clases virtuales solo procede con autorización escrita.",
+        "Datos de salud: solo se registra lo estrictamente necesario para la seguridad de la actividad, en los campos habilitados. No se registran diagnósticos en campos abiertos.",
+        "## Seguridad digital",
+        "Credenciales personales e intransferibles; no se comparten ni se dejan sesiones abiertas. Reporte inmediato de pérdida, robo o uso no autorizado. Al terminar el contrato se desactivan los accesos y EL CONTRATISTA elimina la información de Musicala que conserve por fuera de las herramientas oficiales.",
+        "## Canales oficiales",
+        "Aplicativo institucional y {{CANAL_OFICIAL}}. Ventanas de respuesta razonable: {{VENTANA_RESPUESTA}}. No se exige disponibilidad permanente; las emergencias que afecten la seguridad de un estudiante son la única excepción.",
+        "## Derechos del titular",
+        "EL CONTRATISTA puede conocer, actualizar, rectificar y solicitar la supresión de sus datos personales, y revocar la autorización cuando proceda, escribiendo a {{CANAL_DATOS}}."
+      ].join("\n"),
+      declaration: "Autorizo el tratamiento de mis datos personales en los términos de este anexo, y me obligo a tratar los datos a los que acceda conforme a las reglas aquí descritas."
+    },
+    {
+      id: "G",
+      title: "Anexo G. Propiedad intelectual, imagen y materiales",
+      body: [
+        "Marcas, plataformas y contenidos preexistentes de EL CONTRATANTE: titularidad de Musicala. EL CONTRATISTA no adquiere derechos ni puede usarlos fuera del objeto.",
+        "Materiales preexistentes de EL CONTRATISTA: siguen siendo suyos. Si los usa en las clases, concede a EL CONTRATANTE una licencia de uso limitada al objeto y al periodo.",
+        "Materiales creados durante la ejecución: {{REGLA_PI}}.",
+        "Derechos morales de autor: inalienables, siempre de EL CONTRATISTA.",
+        "Uso del nombre y la imagen de EL CONTRATISTA: requiere autorización separada, expresa y revocable.",
+        "Uso de logos y piezas de Musicala: según el manual de marca institucional."
+      ].join("\n")
+    },
+    {
+      id: "H",
+      title: "Anexo H. Bienes y accesos",
+      body: [
+        "Aplica solo si se entregan bienes o credenciales, y constituye acta de entrega y de devolución.",
+        "Reglas: uso diligente y limitado al objeto; el desgaste normal no genera responsabilidad; el daño atribuible a culpa de EL CONTRATISTA se tasa con evidencia y se comunica antes de cualquier cobro; las credenciales se desactivan al cierre.",
+        "Bienes entregados: {{INVENTARIO}}"
+      ].join("\n")
+    }
+  ],
+  // Valores institucionales. Los edita el admin una vez y aplican a todos los contratos.
+  defaults: {
+    SEDE_NOMBRE: "{{PENDIENTE_DEFINIR}}",
+    SEDE_DIRECCION: "{{PENDIENTE_DEFINIR}}",
+    DURACION_SESION: "{{PENDIENTE_DEFINIR}}",
+    ARL_RIESGO: "{{PENDIENTE_DEFINIR}}",
+    FECHA_CORTE: "{{PENDIENTE_DEFINIR}}",
+    DOCUMENTO_COBRO: "cuenta de cobro o factura, según su situación tributaria",
+    PLAZO_PAGO: "{{PENDIENTE_DEFINIR}}",
+    ANTICIPACION_CAMBIO: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_SUBSANACION: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_DESCARGOS: "{{PENDIENTE_DEFINIR}}",
+    DIAS_FUERZA_MAYOR: "30 días calendario",
+    DURACION_CONFIDENCIALIDAD: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_NO_CAPTACION: "{{PENDIENTE_DEFINIR}}",
+    CANAL_OFICIAL: "{{PENDIENTE_DEFINIR}}",
+    CANAL_DATOS: "{{PENDIENTE_DEFINIR}}",
+    VENTANA_RESPUESTA: "{{PENDIENTE_DEFINIR}}",
+    SUPERVISOR: "{{PENDIENTE_DEFINIR}}",
+    PREAVISO: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_CIERRE: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_ARREGLO: "{{PENDIENTE_DEFINIR}}",
+    MECANISMO_CONTROVERSIAS: "{{PENDIENTE_DEFINIR}}",
+    REGLA_PI: "{{PENDIENTE_DEFINIR}}",
+    AVISO_CAMBIO: "{{PENDIENTE_DEFINIR}}",
+    AVISO_CANCELA: "{{PENDIENTE_DEFINIR}}",
+    PAGO_CANCELACION: "{{PENDIENTE_DEFINIR}}",
+    AVISO_AUSENCIA: "{{PENDIENTE_DEFINIR}}",
+    REGLA_SIN_ESTUDIANTES: "{{PENDIENTE_DEFINIR}}",
+    REGLA_FALLA_VIRTUAL: "{{PENDIENTE_DEFINIR}}",
+    TARIFA_REEMPLAZO: "{{PENDIENTE_DEFINIR}}",
+    REGLA_COMPARTIDA: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_BITACORA: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_INFORME: "{{PENDIENTE_DEFINIR}}"
+  }
+};
 
 const ADMIN_EMAILS = [
   "alekcaballeromusic@gmail.com",
@@ -222,6 +579,9 @@ const HUB = {
 
     { id: "reglamento", icon: "📜", title: "Reglamento interno de trabajo", subtitle: "Documento", section: "Institucional" },
     { id: "documentosContratacion", icon: "📁", title: "Documentos de contratación", subtitle: "Carpeta", section: "Institucional", showWhenMissing: true },
+    // Solo lo ven las docentes marcadas en app_config/contratoDocenteAcceso.
+    // Mientras esa lista esté vacía, no le aparece a nadie.
+    { id: "contratoDocente", icon: "✍️", title: "Contrato de prestación de servicios", subtitle: "Lee, acepta y firma", section: "Institucional", contractAllowlist: true },
     { id: "vacaciones", icon: "🌞", title: "Info Vacaciones artísticas", subtitle: "General", section: "Institucional" },
     { id: "vacacionales", icon: "🌴", title: "Vacacionales", subtitle: "Cursos", section: "Institucional" },
     { id: "musicalaFest", icon: "🎸", title: "Musicala Fest 2025", subtitle: "Programa", section: "Institucional" },
@@ -293,6 +653,19 @@ const APP_STATE = {
   teacherShiftStatus: {
     open: false,
     record: null
+  },
+  // Contrato de prestación de servicios de la sesión activa.
+  contract: {
+    access: { allowedEmails: [] },
+    accessLoaded: false,
+    doc: null,
+    docLoaded: false,
+    terms: null,
+    termsLoaded: false,
+    data: null,
+    dataLoaded: false,
+    signature: null,
+    signatureLoaded: false
   }
 };
 
@@ -614,7 +987,9 @@ async function deleteCustomButton(id) {
 }
 
 function getAssignableButtons() {
-  return HUB.BUTTONS.filter((button) => !button.adminOnly);
+  // El contrato no se asigna aquí: tiene su propia lista en la pestaña
+  // Contrato, y marcarlo dos veces solo confundiría.
+  return HUB.BUTTONS.filter((button) => !button.adminOnly && !button.contractAllowlist);
 }
 
 function getVisibleButtonsForUserDoc(docData = null) {
@@ -2533,6 +2908,15 @@ const ADMIN_STATE = {
   supportAcceptances: {},
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   customButtons: [],   // botones personalizados creados desde el panel
+  contract: {          // pestaña Contrato: plantilla, acceso, Anexo A y firmas
+    doc: null,
+    allowedEmails: [],
+    terms: {},
+    data: {},
+    signatures: [],
+    editingText: false,
+    termsEmail: ""
+  },
   scheduleTeacher: "", // email del docente seleccionado en la pestaña Horarios
   loading: false,
   tab: "puntualidad",
@@ -2656,6 +3040,7 @@ function ensureAdminPanelModal() {
         <button class="adminTab" type="button" data-admin-tab="horarios" role="tab">Horarios</button>
         <button class="adminTab" type="button" data-admin-tab="docentes" role="tab">Docentes</button>
         <button class="adminTab" type="button" data-admin-tab="botones" role="tab">Botones</button>
+        <button class="adminTab" type="button" data-admin-tab="contrato" role="tab">Contrato</button>
         <button class="adminTab" type="button" data-admin-tab="soporte" role="tab">Soporte y mejoras</button>
         <button class="adminTab" type="button" data-admin-tab="vivo" role="tab">En vivo</button>
       </div>
@@ -2762,7 +3147,7 @@ function setAdminTab(tabId) {
   });
 
   const filters = $("#adminFilters", adminPanelModal);
-  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones" || tabId === "soporte") ? "none" : "";
+  if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones" || tabId === "contrato" || tabId === "soporte") ? "none" : "";
 
   renderAdminBody();
 }
@@ -2797,6 +3182,10 @@ async function loadAdminData() {
     } else if (ADMIN_STATE.tab === "botones") {
       ADMIN_STATE.customButtons = await fetchCustomButtons();
       applyCustomButtons(ADMIN_STATE.customButtons);
+    } else if (ADMIN_STATE.tab === "contrato") {
+      ADMIN_STATE.hubUsers = await fetchHubUsers();
+      await loadContractAdminData();
+      refreshAdminTeacherFilterOptions();
     } else if (ADMIN_STATE.tab === "soporte") {
       ADMIN_STATE.supportReports = await fetchSupportReportsFor();
     } else {
@@ -3414,6 +3803,7 @@ function renderAdminBody() {
   if (ADMIN_STATE.tab === "docentes") return renderAdminDocentes(body);
   if (ADMIN_STATE.tab === "horarios") return renderAdminHorarios(body);
   if (ADMIN_STATE.tab === "botones") return renderAdminBotones(body);
+  if (ADMIN_STATE.tab === "contrato") return renderAdminContrato(body);
   if (ADMIN_STATE.tab === "soporte") return renderAdminSupport(body);
   if (ADMIN_STATE.tab === "vivo") return renderAdminVivo(body);
 }
@@ -5770,7 +6160,13 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "academicModule" ||
     button?.id === "studentMessages" ||
     button?.id === "bibliotecaRecursos" ||
-    button?.id === "supportContract";
+    button?.id === "supportContract" ||
+    button?.id === "contratoDocente";
+  // El contrato tiene su propia lista de acceso y es la única que manda: no
+  // depende de la asignación general de botones ni del rol.
+  if (button?.contractAllowlist && !canSeeTeacherContract()) {
+    return { isSpecial: false, url: "", available: false, visible: false };
+  }
   if (button?.adminOnly && !isAdminUser()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
@@ -5778,7 +6174,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
-  if (assignedButtons && !button?.adminOnly && !["studentMessages", "supportContract"].includes(button?.id) && !assignedButtons.includes(button?.id)) {
+  if (assignedButtons && !button?.adminOnly && !["studentMessages", "supportContract", "contratoDocente"].includes(button?.id) && !assignedButtons.includes(button?.id)) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.id === "horarioAnual") {
@@ -5787,7 +6183,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: true, url: "__SPECIAL__", available: visible, visible };
   }
   // Módulos internos disponibles para cualquier usuario con acceso al HUB.
-  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos" || button?.id === "supportContract") {
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos" || button?.id === "supportContract" || button?.id === "contratoDocente") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
@@ -7004,6 +7400,925 @@ function renderSupportContract(profile, acceptance) {
   });
 }
 
+/* ============================================================================
+   CONTRATO DE PRESTACIÓN DE SERVICIOS · MOTOR Y VISTAS
+   ----------------------------------------------------------------------------
+   Flujo completo: la docente envía sus datos → coordinación los revisa, completa
+   el Anexo A y aprueba la versión → la docente lee, acepta casilla por casilla
+   y firma → queda una copia íntegra (snapshot) y su huella SHA-256.
+
+   El botón solo lo ve quien esté en la lista de acceso (app_config/
+   contratoDocenteAcceso). Mientras esa lista esté vacía, no le aparece a nadie.
+============================================================================ */
+
+/* ---- Lista de acceso: quién puede ver el contrato ---- */
+async function loadTeacherContractAccess(force = false) {
+  if (APP_STATE.contract.accessLoaded && !force) return APP_STATE.contract.access;
+  if (!APP_STATE.db) return APP_STATE.contract.access;
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID));
+    const raw = snap.exists() ? snap.data() : {};
+    APP_STATE.contract.access = {
+      allowedEmails: Array.isArray(raw.allowedEmails)
+        ? raw.allowedEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+        : []
+    };
+  } catch (_) {
+    // Sin doc, sin reglas o sin permiso: nadie lo ve. El silencio es la opción segura.
+    APP_STATE.contract.access = { allowedEmails: [] };
+  }
+  APP_STATE.contract.accessLoaded = true;
+  return APP_STATE.contract.access;
+}
+
+function canSeeTeacherContract(email = emailKey(APP_STATE.activeUser)) {
+  const allowed = APP_STATE.contract.access?.allowedEmails || [];
+  return allowed.includes(String(email || "").trim().toLowerCase());
+}
+
+/* ---- Plantilla del contrato ---- */
+function normalizeTeacherContract(raw = {}) {
+  const annexes = (Array.isArray(raw.annexes) && raw.annexes.length ? raw.annexes : TEACHER_CONTRACT_DEFAULT.annexes)
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      title: String(item?.title || "").trim(),
+      body: String(item?.body || ""),
+      declaration: String(item?.declaration || "").trim()
+    }))
+    .filter((item) => item.id && item.title);
+
+  return {
+    version: String(raw.version || TEACHER_CONTRACT_DEFAULT.version).trim() || TEACHER_CONTRACT_DEFAULT.version,
+    title: String(raw.title || TEACHER_CONTRACT_DEFAULT.title).trim(),
+    intro: String(raw.intro !== undefined ? raw.intro : TEACHER_CONTRACT_DEFAULT.intro),
+    body: String(raw.body || TEACHER_CONTRACT_DEFAULT.body),
+    annexes,
+    defaults: { ...TEACHER_CONTRACT_DEFAULT.defaults, ...(raw.defaults && typeof raw.defaults === "object" ? raw.defaults : {}) },
+    updatedAtClient: raw.updatedAtClient || 0,
+    updatedBy: String(raw.updatedBy || "")
+  };
+}
+
+function getTeacherContract() {
+  return APP_STATE.contract.doc || normalizeTeacherContract(TEACHER_CONTRACT_DEFAULT);
+}
+
+async function loadTeacherContract(force = false) {
+  if (APP_STATE.contract.docLoaded && !force) return getTeacherContract();
+  if (!APP_STATE.db) return getTeacherContract();
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID));
+    APP_STATE.contract.doc = normalizeTeacherContract(snap.exists() ? snap.data() : TEACHER_CONTRACT_DEFAULT);
+  } catch (error) {
+    console.warn("No se pudo leer el contrato:", error);
+    APP_STATE.contract.doc = normalizeTeacherContract(TEACHER_CONTRACT_DEFAULT);
+  }
+  APP_STATE.contract.docLoaded = true;
+  return getTeacherContract();
+}
+
+/* ---- Variables y armado del documento ---- */
+// contratistaNombre -> CONTRATISTA_NOMBRE
+function teacherContractVariableName(field) {
+  return String(field || "").replace(/([A-Z])/g, "_$1").toUpperCase();
+}
+
+function buildTeacherContractVariables(contract, terms) {
+  const values = {};
+
+  // Un valor vacío o sin definir se muestra como texto visible, no como una
+  // llave sin resolver: así se puede contar y avisar antes de pedir la firma.
+  Object.entries(contract.defaults || {}).forEach(([key, value]) => {
+    const clean = String(value ?? "").trim();
+    values[key] = (!clean || clean === "{{PENDIENTE_DEFINIR}}") ? TEACHER_CONTRACT_PENDING_LABEL : clean;
+  });
+
+  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+    const raw = String(terms?.[field.name] ?? "").trim();
+    let value = raw;
+    if (!value) value = OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
+    else if (field.type === "date") value = longDateLabel(value);
+    values[teacherContractVariableName(field.name)] = value;
+  });
+
+  return values;
+}
+
+function resolveTeacherContractText(text, values) {
+  return String(text || "").replace(/\{\{([A-Z_]+)\}\}/g, (match, key) => {
+    if (key === "PENDIENTE_DEFINIR") return TEACHER_CONTRACT_PENDING_LABEL;
+    const value = values[key];
+    return value === undefined || value === "" ? TEACHER_CONTRACT_PENDING_LABEL : String(value);
+  });
+}
+
+function buildTeacherContractAnnexA(values) {
+  const lines = ["## Datos del contrato"];
+  const grupos = new Map();
+
+  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+    if (!grupos.has(field.group)) grupos.set(field.group, []);
+    grupos.get(field.group).push(`${field.label}: ${values[teacherContractVariableName(field.name)]}`);
+  });
+
+  lines.push(`Duración de la sesión: ${values.DURACION_SESION} minutos`);
+  lines.push(`Sede de Musicala: ${values.SEDE_NOMBRE}`);
+  lines.push(`Responsable contractual: ${values.SUPERVISOR}`);
+
+  grupos.forEach((items, grupo) => {
+    lines.push(`## ${grupo}`);
+    items.forEach((item) => lines.push(item));
+  });
+
+  lines.push("## Qué comprende el valor por sesión");
+  lines.push("Planeación, realización de la sesión, registro de bitácora y asistencia, informe periódico y acompañamiento a muestras de proceso dentro de la franja programada.");
+  lines.push("## Qué no comprende");
+  lines.push("Cualquier otra actividad, y cualquiera de las anteriores fuera de la franja programada: muestras, ensayos, eventos, presentaciones, reuniones y capacitaciones en horario adicional. Se pagan aparte, con acuerdo previo y escrito.");
+  lines.push("## Mínimo garantizado");
+  lines.push("No aplica. La programación depende de la demanda y el estimado de sesiones es solo de referencia.");
+  lines.push("## Cambio de valor");
+  lines.push("Solo por otrosí aceptado por ambas partes. Nunca unilateral ni verbal.");
+
+  return lines.join("\n");
+}
+
+// Documento completo y resuelto: es lo que se lee, lo que se firma y lo que
+// queda congelado en el snapshot.
+function buildTeacherContractDocument(contract = getTeacherContract(), terms = null) {
+  const values = buildTeacherContractVariables(contract, terms);
+  const sections = [
+    { id: "CONTRATO", title: contract.title, body: resolveTeacherContractText(contract.body, values), declaration: "" },
+    { id: "A", title: "Anexo A. Condiciones particulares", body: buildTeacherContractAnnexA(values), declaration: "" },
+    ...contract.annexes.map((annex) => ({
+      id: annex.id,
+      title: annex.title,
+      body: resolveTeacherContractText(annex.body, values),
+      declaration: annex.declaration || ""
+    }))
+  ];
+
+  return {
+    version: contract.version,
+    title: contract.title,
+    intro: resolveTeacherContractText(contract.intro, values),
+    sections,
+    pendingCount: sections.reduce((total, section) => total + (section.body.split(TEACHER_CONTRACT_PENDING_LABEL).length - 1), 0)
+  };
+}
+
+/* ---- Condiciones particulares, datos enviados y firmas ---- */
+async function loadMyTeacherContractTerms(force = false) {
+  if (APP_STATE.contract.termsLoaded && !force) return APP_STATE.contract.terms;
+  const email = emailKey(APP_STATE.activeUser);
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email));
+    APP_STATE.contract.terms = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch (error) {
+    console.warn("No se pudieron leer las condiciones particulares:", error);
+    APP_STATE.contract.terms = null;
+  }
+  APP_STATE.contract.termsLoaded = true;
+  return APP_STATE.contract.terms;
+}
+
+async function loadMyTeacherContractData(force = false) {
+  if (APP_STATE.contract.dataLoaded && !force) return APP_STATE.contract.data;
+  const email = emailKey(APP_STATE.activeUser);
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION, email));
+    APP_STATE.contract.data = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch (error) {
+    console.warn("No se pudieron leer los datos enviados:", error);
+    APP_STATE.contract.data = null;
+  }
+  APP_STATE.contract.dataLoaded = true;
+  return APP_STATE.contract.data;
+}
+
+function teacherContractSignatureId(email = emailKey(APP_STATE.activeUser), version = getTeacherContract().version) {
+  return `${String(email || "").toLowerCase()}__${String(version || "").replace(/[^\w.-]/g, "")}`;
+}
+
+async function loadMyTeacherContractSignature(force = false) {
+  if (APP_STATE.contract.signatureLoaded && !force) return APP_STATE.contract.signature;
+  try {
+    const snap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId()));
+    APP_STATE.contract.signature = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch (error) {
+    console.warn("No se pudo leer la firma del contrato:", error);
+    APP_STATE.contract.signature = null;
+  }
+  APP_STATE.contract.signatureLoaded = true;
+  return APP_STATE.contract.signature;
+}
+
+// Huella del documento firmado. Permite comprobar después que el texto no
+// cambió: la copia se arma desde el snapshot, no desde la plantilla vigente.
+async function computeTeacherContractHash(text) {
+  try {
+    const data = new TextEncoder().encode(String(text || ""));
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    console.warn("No se pudo calcular la huella del contrato:", error);
+    return "";
+  }
+}
+
+function teacherContractSnapshotText(documento) {
+  return [
+    documento.title,
+    `Versión ${documento.version}`,
+    documento.intro,
+    ...documento.sections.map((section) => `${section.title}\n${section.body}`)
+  ].join("\n\n");
+}
+
+/* ---- Render del documento ---- */
+function renderTeacherContractBody(body) {
+  return String(body || "")
+    .split("\n")
+    .map((line) => {
+      const text = line.trim();
+      if (!text) return "";
+      if (text.startsWith("## ")) return `<h4 class="contractHeading">${escapeHtml(text.slice(3))}</h4>`;
+      return `<p class="contractParagraph">${escapeHtml(text)}</p>`;
+    })
+    .join("");
+}
+
+function renderTeacherContractSections(documento) {
+  return documento.sections.map((section, index) => `
+    <details class="contractSection"${index === 0 ? " open" : ""}>
+      <summary class="contractSectionHead">${escapeHtml(section.title)}</summary>
+      <div class="contractSectionBody">${renderTeacherContractBody(section.body)}</div>
+    </details>
+  `).join("");
+}
+
+// Overlay ancho propio: el modal del menú lateral es demasiado angosto para
+// leer un contrato con anexos.
+function openContractOverlay(title, bodyHtml) {
+  $("#contractOverlay")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "contractOverlay";
+  overlay.className = "contractOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", title);
+  overlay.innerHTML = `
+    <div class="contractCard" role="document">
+      <div class="contractCardHead">
+        <div>
+          <p class="contractEyebrow">Institucional</p>
+          <h2>${escapeHtml(title)}</h2>
+        </div>
+        <button class="btnGhost" type="button" data-contract-close aria-label="Cerrar">Cerrar</button>
+      </div>
+      <div class="contractCardBody">${bodyHtml}</div>
+    </div>
+  `;
+  const close = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest("[data-contract-close]")) close();
+  });
+  window.addEventListener("keydown", function onKey(event) {
+    if (event.key === "Escape") { close(); window.removeEventListener("keydown", onKey); }
+  });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+/* ---- Vista de la docente ---- */
+async function openTeacherContract() {
+  if (!canSeeTeacherContract()) {
+    toast("Esta sección todavía no está habilitada para tu cuenta.");
+    return;
+  }
+  const overlay = openContractOverlay("Contrato de prestación de servicios", "<p class=\"adminNote\">Cargando el documento…</p>");
+  try {
+    await Promise.all([
+      loadTeacherContract(true),
+      loadMyTeacherContractTerms(true),
+      loadMyTeacherContractData(true)
+    ]);
+    // La firma depende de la versión vigente, por eso se lee después.
+    await loadMyTeacherContractSignature(true);
+  } catch (error) {
+    console.error("No se pudo abrir el contrato", error);
+  }
+  if (!document.body.contains(overlay)) return;
+  renderTeacherContractView(overlay);
+}
+
+function renderTeacherContractView(overlay) {
+  const contract = getTeacherContract();
+  const terms = APP_STATE.contract.terms;
+  const submitted = APP_STATE.contract.data;
+  const signature = APP_STATE.contract.signature;
+  const approved = terms?.approvedForSignature && String(terms.approvedVersion || "") === String(contract.version);
+
+  // Si ya firmó lee exactamente lo que firmó; si no, la versión vigente.
+  const documento = signature?.snapshot?.sections?.length
+    ? { version: signature.version, title: signature.snapshot.title, intro: signature.snapshot.intro, sections: signature.snapshot.sections, pendingCount: 0 }
+    : buildTeacherContractDocument(contract, terms);
+  const vigente = buildTeacherContractDocument(contract, terms);
+
+  let actionHtml = "";
+  if (signature) {
+    const alDia = String(signature.version) === String(contract.version);
+    actionHtml = `
+      <section class="contractPanel ${alDia ? "contractPanelOk" : ""}">
+        <h3>Contrato firmado</h3>
+        <div class="supportStatus ${alDia ? "supportStatus-accepted" : "supportStatus-incomplete"}">Versión ${escapeHtml(String(signature.version))}</div>
+        <p>${escapeHtml(signature.fullName || "")} · documento ${escapeHtml(signature.documentId || "")}</p>
+        <p>${escapeHtml(signature.email || "")} · firmado el ${escapeHtml(longDateLabel(signature.signedDate))}</p>
+        ${signature.contentHash ? `<p class="adminNote">Huella del documento: <code>${escapeHtml(String(signature.contentHash).slice(0, 16))}…</code></p>` : ""}
+        <p class="adminNote">${alDia
+          ? "Guardamos copia íntegra del documento que aceptaste. Lo que descargues sale de esa copia, no de la plantilla vigente."
+          : "Hay una versión más reciente del documento. Revísala y vuelve a firmar."}</p>
+      </section>`;
+  }
+
+  let pendingHtml = "";
+  if (!signature || String(signature.version) !== String(contract.version)) {
+    if (!submitted) {
+      pendingHtml = renderTeacherContractDataForm();
+    } else if (!approved) {
+      pendingHtml = `
+        <section class="contractPanel">
+          <h3>Contrato en revisión</h3>
+          <p>Enviaste tus datos${submitted.submittedAtClient ? ` el ${escapeHtml(longDateLabel(new Date(Number(submitted.submittedAtClient)).toISOString().slice(0, 10)))}` : ""}. Coordinación los revisa y completa tus condiciones particulares. Cuando la versión final esté aprobada podrás firmarla desde aquí.</p>
+          <div class="supportStatus supportStatus-pending_acceptance">Pendiente de revisión</div>
+        </section>`;
+    } else if (vigente.pendingCount) {
+      pendingHtml = `
+        <section class="contractPanel">
+          <h3>Contrato en preparación</h3>
+          <p>Tus condiciones particulares aún no están completas: el documento tiene datos sin definir. Cuando coordinación los cargue podrás firmar.</p>
+        </section>`;
+    } else {
+      pendingHtml = renderTeacherContractSignForm(vigente, terms);
+    }
+  }
+
+  const body = $(".contractCardBody", overlay);
+  body.innerHTML = `
+    <section class="contractPanel">
+      <div class="contractDocHead">
+        <div>
+          <h3>${escapeHtml(documento.title)}</h3>
+          <p class="supportIntro">${escapeHtml(documento.intro)}</p>
+        </div>
+        <span class="supportStatus ${signature ? "supportStatus-accepted" : "supportStatus-pending_acceptance"}">${signature ? "Firmado" : "Sin firmar"}</span>
+      </div>
+      <p class="adminNote">Versión ${escapeHtml(documento.version)} · ${escapeHtml(String(documento.sections.length))} secciones. Toca cada título para abrirlo.</p>
+      <div class="contractDoc">${renderTeacherContractSections(documento)}</div>
+      <div class="contractActions">
+        <button class="btnGhost" type="button" id="contractPrint">Descargar o imprimir</button>
+      </div>
+    </section>
+    ${actionHtml}
+    ${pendingHtml}
+  `;
+
+  $("#contractPrint", overlay)?.addEventListener("click", () => printTeacherContract(documento, signature));
+  wireTeacherContractDataForm(overlay);
+  wireTeacherContractSignForm(overlay, vigente);
+}
+
+function renderTeacherContractDataForm() {
+  const name = APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
+  return `
+    <section class="contractPanel">
+      <h3>Datos para emitir tu contrato</h3>
+      <p>Completa estos datos una vez. Esto no es una firma ni te obliga todavía: coordinación revisa la información y solo después habilita la versión final para firma.</p>
+      <div class="supportFields">
+        <label>Nombre completo<input type="text" data-contract-data="fullName" maxlength="90" value="${escapeHtml(name)}" /></label>
+        <label>Número de documento<input type="text" data-contract-data="documentId" maxlength="30" /></label>
+        <label>Teléfono<input type="tel" data-contract-data="telefono" maxlength="40" /></label>
+        <label>Dirección (solo si aplica)<input type="text" data-contract-data="direccion" maxlength="160" /></label>
+        <label>Cuenta bancaria para pago<input type="text" data-contract-data="cuenta" maxlength="180" /></label>
+        <label>Área o especialidad<input type="text" data-contract-data="areas" maxlength="120" /></label>
+      </div>
+      <div class="contractActions">
+        <button class="btnGoogle" type="button" id="contractDataSubmit">Enviar datos para revisión</button>
+      </div>
+    </section>`;
+}
+
+function wireTeacherContractDataForm(overlay) {
+  const button = $("#contractDataSubmit", overlay);
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const values = {};
+    overlay.querySelectorAll("[data-contract-data]").forEach((input) => {
+      values[input.dataset.contractData] = input.value.trim();
+    });
+    if (!values.fullName || !values.documentId || !values.telefono) {
+      toast("Completa nombre, documento y teléfono antes de enviar.");
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Enviando…";
+    try {
+      const email = emailKey(APP_STATE.activeUser);
+      await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION, email), {
+        ...values,
+        email,
+        uid: APP_STATE.activeUser.uid,
+        status: "submitted",
+        submittedAt: serverTimestamp(),
+        submittedAtClient: Date.now()
+      });
+      toast("Datos enviados para revisión. Aún no has firmado el contrato.");
+      await loadMyTeacherContractData(true);
+      renderTeacherContractView(overlay);
+    } catch (error) {
+      console.error("No se pudieron enviar los datos del contrato", error);
+      toast("No pude enviar los datos. Intenta de nuevo.");
+      button.disabled = false;
+      button.textContent = "Enviar datos para revisión";
+    }
+  });
+}
+
+// Cada declaración se acepta por separado, sin casillas premarcadas.
+function teacherContractStatements(documento) {
+  return [
+    { id: "IDENTITY_DATA_CONFIRMED", field: "ackIdentity", text: "He verificado que mis datos de identificación son correctos." },
+    { id: "TRUTHFUL_INFO", field: "ackTruth", text: "Declaro que la información suministrada es veraz y se encuentra actualizada." },
+    { id: "E_SIGNATURE_AGREEMENT_ACCEPTED", field: "ackSignature", text: "Acepto utilizar el mecanismo de firma electrónica definido por Musicala y mantener bajo mi control sus credenciales." },
+    { id: "FULL_CONTRACT_ACCEPTED", field: "ackContract", text: "He tenido acceso al contrato completo, sus condiciones particulares y anexos, y acepto obligarme conforme a su contenido." },
+    ...documento.sections
+      .filter((section) => section.declaration)
+      .map((section) => ({ id: `ANNEX_${section.id}_ACKNOWLEDGED`, field: `ackAnnex${section.id}`, text: section.declaration }))
+  ];
+}
+
+function renderTeacherContractSignForm(documento, terms) {
+  const suggestedName = terms?.contratistaNombre || APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
+  const suggestedDoc = terms?.contratistaDocumento || "";
+  return `
+    <section class="contractPanel contractSignPanel">
+      <h3>Firmar el contrato</h3>
+      <p>Al firmar quedas obligado por el contenido de este documento en su versión ${escapeHtml(documento.version)}. Ninguna casilla viene marcada: debes aceptarlas una por una.</p>
+      <div class="supportFields">
+        <label>Nombre completo<input type="text" data-contract-sign="fullName" maxlength="90" value="${escapeHtml(suggestedName)}" /></label>
+        <label>Número de documento<input type="text" data-contract-sign="documentId" maxlength="30" value="${escapeHtml(suggestedDoc)}" /></label>
+      </div>
+      <div class="contractChecks">
+        ${teacherContractStatements(documento).map((item) => `
+          <label class="adminCheck">
+            <input type="checkbox" data-contract-ack="${escapeHtml(item.field)}" />
+            <span>${escapeHtml(item.text)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <div class="contractActions">
+        <button class="btnGoogle" type="button" id="contractSign">Firmar y aceptar</button>
+      </div>
+    </section>`;
+}
+
+function wireTeacherContractSignForm(overlay, documento) {
+  const button = $("#contractSign", overlay);
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const contract = getTeacherContract();
+    const terms = APP_STATE.contract.terms;
+    if (!terms?.approvedForSignature || String(terms.approvedVersion || "") !== String(contract.version)) {
+      toast("Este contrato aún no ha sido aprobado por coordinación para firma.");
+      return;
+    }
+    const values = {};
+    overlay.querySelectorAll("[data-contract-sign]").forEach((input) => { values[input.dataset.contractSign] = input.value.trim(); });
+    if (!values.fullName || !values.documentId) {
+      toast("Escribe tu nombre completo y tu número de documento.");
+      return;
+    }
+    const statements = teacherContractStatements(documento);
+    const accepted = [];
+    for (const statement of statements) {
+      const input = overlay.querySelector(`[data-contract-ack="${statement.field}"]`);
+      if (!input?.checked) { toast("Debes aceptar todas las casillas para poder firmar."); return; }
+      accepted.push({ statementId: statement.id, exactText: statement.text });
+    }
+    if (!confirm("Al continuar quedará registrada tu firma electrónica junto con la fecha, la versión del contrato y una copia íntegra del documento que aceptaste.")) return;
+
+    button.disabled = true;
+    button.textContent = "Firmando…";
+    try {
+      const snapshotText = teacherContractSnapshotText(documento);
+      const contentHash = await computeTeacherContractHash(snapshotText);
+      const email = emailKey(APP_STATE.activeUser);
+      await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, contract.version)), {
+        uid: APP_STATE.activeUser.uid,
+        email,
+        fullName: values.fullName,
+        documentId: values.documentId,
+        version: contract.version,
+        contractTitle: documento.title,
+        accepted: true,
+        acceptedStatements: accepted,
+        // Snapshot íntegro de lo que la persona vio y aceptó.
+        snapshot: {
+          title: documento.title,
+          version: documento.version,
+          intro: documento.intro,
+          sections: documento.sections.map((section) => ({ id: section.id, title: section.title, body: section.body }))
+        },
+        contentHash,
+        signedAt: serverTimestamp(),
+        signedAtClient: Date.now(),
+        signedDate: bogotaParts().date,
+        timezone: "America/Bogota",
+        userAgent: String(navigator.userAgent || "").slice(0, 300)
+      });
+      toast("Contrato firmado. Guardamos la constancia ✅");
+      await loadMyTeacherContractSignature(true);
+      renderTeacherContractView(overlay);
+    } catch (error) {
+      console.error("No se pudo firmar el contrato", error);
+      toast("No pude registrar la firma. Intenta de nuevo.");
+      button.disabled = false;
+      button.textContent = "Firmar y aceptar";
+    }
+  });
+}
+
+function printTeacherContract(documento, signature = null) {
+  const win = window.open("", "_blank");
+  if (!win) { toast("Tu navegador bloqueó la ventana de impresión."); return; }
+  win.document.write(`
+    <html><head><meta charset="utf-8"><title>${escapeHtml(documento.title)}</title>
+    <style>
+      body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#10223a;line-height:1.55;}
+      h1{font-size:20px;} h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #ccc;padding-top:14px;}
+      h4{margin:16px 0 4px;font-size:14px;} p{margin:6px 0;}
+      .evidence{margin-top:28px;padding:14px 16px;border:1px solid #ccc;border-radius:10px;font-size:13px;}
+      code{font-size:11px;word-break:break-all;}
+    </style></head><body>
+    <h1>${escapeHtml(documento.title)}</h1>
+    <p><em>Versión ${escapeHtml(documento.version)}</em></p>
+    <p>${escapeHtml(documento.intro)}</p>
+    ${documento.sections.map((section) => `<h2>${escapeHtml(section.title)}</h2>${renderTeacherContractBody(section.body)}`).join("")}
+    ${signature ? `<div class="evidence">
+      <strong>Constancia de aceptación</strong>
+      <p>${escapeHtml(signature.fullName || "")} - documento ${escapeHtml(signature.documentId || "")}</p>
+      <p>${escapeHtml(signature.email || "")}</p>
+      <p>Firmado el ${escapeHtml(longDateLabel(signature.signedDate))} - versión ${escapeHtml(String(signature.version))}</p>
+      ${(signature.acceptedStatements || []).map((item) => `<p>· ${escapeHtml(item.exactText)}</p>`).join("")}
+      ${signature.contentHash ? `<p>Huella SHA-256 del documento firmado:<br><code>${escapeHtml(signature.contentHash)}</code></p>` : ""}
+      <p><em>Copia del documento firmado. Generada el ${escapeHtml(longDateLabel(bogotaParts().date))}.</em></p>
+    </div>` : ""}
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+/* ============================================================================
+   PESTAÑA ADMIN · CONTRATO
+============================================================================ */
+async function loadContractAdminData() {
+  const [contract, accessSnap, termsSnap, dataSnap, signSnap] = await Promise.all([
+    loadTeacherContract(true),
+    getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
+    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
+    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
+    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION))
+  ]);
+  ADMIN_STATE.contract.doc = contract;
+  ADMIN_STATE.contract.allowedEmails = Array.isArray(accessSnap.data()?.allowedEmails)
+    ? accessSnap.data().allowedEmails.map((item) => String(item || "").toLowerCase())
+    : [];
+  ADMIN_STATE.contract.terms = Object.fromEntries(termsSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  // La lista de acceso también manda sobre la sesión actual.
+  APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
+  APP_STATE.contract.accessLoaded = true;
+}
+
+function renderAdminContrato(body) {
+  const contract = ADMIN_STATE.contract.doc || getTeacherContract();
+  const teachers = getAdminTeacherOptions();
+  const allowed = new Set(ADMIN_STATE.contract.allowedEmails || []);
+  const terms = ADMIN_STATE.contract.terms || {};
+  const submissions = ADMIN_STATE.contract.data || {};
+  const signatures = (ADMIN_STATE.contract.signatures || []).filter((item) => String(item.version) === String(contract.version));
+  const signedEmails = new Set(signatures.map((item) => String(item.email || "").toLowerCase()));
+  const editingEmail = ADMIN_STATE.contract.termsEmail;
+
+  if (ADMIN_STATE.contract.editingText) return renderAdminContratoEditor(body, contract);
+  if (editingEmail) return renderAdminContratoTerms(body, editingEmail);
+
+  const vistaPrevia = buildTeacherContractDocument(contract, null);
+
+  body.innerHTML = `
+    <p class="adminMeta">Contrato directo Musicala · versión <strong>${escapeHtml(contract.version)}</strong> · ${signatures.length} firma(s) de esta versión. El botón del HUB solo lo ven las docentes marcadas abajo: hoy son <strong>${allowed.size}</strong>.</p>
+    ${vistaPrevia.pendingCount ? `<p class="adminNote">⚠️ La plantilla tiene ${vistaPrevia.pendingCount} dato(s) institucionales sin definir. Complétalos en “Editar texto y valores” antes de aprobar firmas.</p>` : ""}
+    <div class="adminSubActions">
+      <span></span>
+      <div><button class="btnGhost" id="contractEditText" type="button">Editar texto y valores</button></div>
+    </div>
+
+    <h3 class="contractAdminTitle">Quién puede ver el contrato</h3>
+    <p class="adminNote">Marca solo a quien ya deba verlo. Si no marcas a nadie, el acceso no le aparece a ninguna docente.</p>
+    <div class="buttonAssignGrid contractAccessGrid">
+      ${teachers.map((item) => `
+        <label class="adminCheck buttonAssignItem">
+          <input type="checkbox" data-contract-allow="${escapeHtml(item.email)}" ${allowed.has(item.email) ? "checked" : ""} />
+          <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.email)}${item.enabled ? "" : " · inhabilitado"}</small></span>
+        </label>
+      `).join("")}
+    </div>
+    <div class="adminSubActions">
+      <span></span>
+      <div>
+        <button class="btnGhost" id="contractAllowClear" type="button">Quitar a todas</button>
+        <button class="btnGoogle" id="contractAllowSave" type="button">Guardar quién lo ve</button>
+      </div>
+    </div>
+
+    <h3 class="contractAdminTitle">Condiciones particulares por persona</h3>
+    <p class="adminNote">Cada contrato se arma con estos datos. Sin ellos el documento muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debería firmarse.</p>
+    <div class="customBtnList">
+      ${teachers.map((item) => {
+        const term = terms[item.email];
+        const submission = submissions[item.email];
+        const completos = term ? TEACHER_CONTRACT_TERM_FIELDS.filter((field) => String(term[field.name] || "").trim()).length : 0;
+        const firmo = signedEmails.has(item.email);
+        const estado = firmo
+          ? "Firmó la versión vigente"
+          : term?.approvedForSignature && String(term.approvedVersion || "") === String(contract.version)
+            ? "Aprobado para firma · pendiente de firmar"
+            : submission
+              ? "Datos enviados · pendiente de revisión"
+              : "Aún no envía sus datos";
+        return `
+          <div class="customBtnRow">
+            <span class="customBtnIcon">${firmo ? "✅" : allowed.has(item.email) ? "✍️" : "🔒"}</span>
+            <div class="customBtnInfo">
+              <strong>${escapeHtml(item.label)}</strong>
+              <small>${escapeHtml(item.email)}</small>
+              <small>${completos} de ${TEACHER_CONTRACT_TERM_FIELDS.length} campos diligenciados${term?.valorSesion ? ` · valor por sesión ${escapeHtml(term.valorSesion)}` : ""}</small>
+              <small>${escapeHtml(estado)}</small>
+            </div>
+            <div class="customBtnActions">
+              ${submission ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">Usar datos enviados</button>` : ""}
+              <button class="btnGhost" type="button" data-contract-terms="${escapeHtml(item.email)}">${term ? "Editar" : "Diligenciar"}</button>
+            </div>
+          </div>`;
+      }).join("")}
+    </div>
+
+    <h3 class="contractAdminTitle">Firmas de la versión ${escapeHtml(contract.version)}</h3>
+    ${signatures.length ? `<div class="customBtnList">${signatures.map((item) => `
+      <div class="customBtnRow">
+        <span class="customBtnIcon">🖊️</span>
+        <div class="customBtnInfo">
+          <strong>${escapeHtml(item.fullName || item.email)}</strong>
+          <small>${escapeHtml(item.email || "")} · documento ${escapeHtml(item.documentId || "")}</small>
+          <small>Firmado el ${escapeHtml(longDateLabel(item.signedDate))}${item.contentHash ? ` · huella ${escapeHtml(String(item.contentHash).slice(0, 12))}…` : ""}</small>
+        </div>
+      </div>`).join("")}</div>` : '<p class="adminNote">Aún no hay firmas de esta versión.</p>'}
+    <p class="adminNote">Este documento es un borrador operativo, no un concepto jurídico: debe revisarlo un abogado antes de usarse como contrato definitivo.</p>
+  `;
+
+  $("#contractEditText", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = true; renderAdminBody(); });
+  $("#contractAllowClear", body)?.addEventListener("click", () => {
+    body.querySelectorAll("[data-contract-allow]").forEach((input) => { input.checked = false; });
+  });
+  $("#contractAllowSave", body)?.addEventListener("click", async () => {
+    const allowedEmails = Array.from(body.querySelectorAll("[data-contract-allow]"))
+      .filter((input) => input.checked)
+      .map((input) => input.dataset.contractAllow);
+    try {
+      await setDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID), {
+        allowedEmails,
+        updatedAt: serverTimestamp(),
+        updatedBy: emailKey(APP_STATE.activeUser)
+      }, { merge: true });
+      ADMIN_STATE.contract.allowedEmails = allowedEmails;
+      APP_STATE.contract.access = { allowedEmails: [...allowedEmails] };
+      toast(allowedEmails.length ? `Contrato visible para ${allowedEmails.length} docente(s) ✅` : "Contrato oculto para todas las docentes 🔒");
+      // El HUB de quien está viendo el panel también refleja el cambio.
+      renderButtons(HUB.BUTTONS, APP_STATE.activeLinks, APP_STATE.activeProfile);
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudo guardar el acceso al contrato", error);
+      toast("No pude guardar quién lo ve. Revisa permisos/reglas.");
+    }
+  });
+  body.querySelectorAll("[data-contract-terms]").forEach((button) => button.addEventListener("click", () => {
+    ADMIN_STATE.contract.termsEmail = button.dataset.contractTerms;
+    renderAdminBody();
+  }));
+  body.querySelectorAll("[data-contract-use]").forEach((button) => button.addEventListener("click", async () => {
+    const email = button.dataset.contractUse;
+    const submitted = ADMIN_STATE.contract.data?.[email];
+    if (!submitted) return;
+    try {
+      await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
+        email,
+        contratistaNombre: submitted.fullName || "",
+        contratistaDocumento: submitted.documentId || "",
+        contratistaDireccion: submitted.direccion || "",
+        contratistaTelefono: submitted.telefono || "",
+        cuenta: submitted.cuenta || "",
+        areas: submitted.areas || "",
+        approvalStatus: "draft",
+        approvedForSignature: false,
+        approvedVersion: "",
+        reviewedAt: serverTimestamp(),
+        reviewedBy: emailKey(APP_STATE.activeUser),
+        updatedAt: serverTimestamp(),
+        updatedAtClient: Date.now(),
+        updatedBy: emailKey(APP_STATE.activeUser)
+      }, { merge: true });
+      await loadContractAdminData();
+      ADMIN_STATE.contract.termsEmail = email;
+      toast("Datos cargados. Completa las condiciones y aprueba cuando todo esté correcto.");
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudieron cargar los datos enviados", error);
+      toast("No pude cargar los datos enviados.");
+    }
+  }));
+}
+
+function renderAdminContratoTerms(body, email) {
+  const contract = ADMIN_STATE.contract.doc || getTeacherContract();
+  const draft = ADMIN_STATE.contract.terms?.[email] || {};
+  const label = getAdminTeacherOptions().find((item) => item.email === email)?.label || email;
+  const grupos = new Map();
+  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+    if (!grupos.has(field.group)) grupos.set(field.group, []);
+    grupos.get(field.group).push(field);
+  });
+  const aprobado = draft.approvedForSignature && String(draft.approvedVersion || "") === String(contract.version);
+
+  body.innerHTML = `
+    <p class="adminMeta">Condiciones particulares (Anexo A) de <strong>${escapeHtml(label)}</strong> · ${escapeHtml(email)}. El valor por sesión vive aquí, no en el texto del contrato: cambiarlo después de firmado exige un otrosí.</p>
+    ${aprobado ? '<p class="adminNote">✅ Ya está aprobado para firma en la versión vigente.</p>' : ""}
+    <div class="contractTermsForm">
+      ${[...grupos.entries()].map(([grupo, fields]) => `
+        <h4 class="contractAdminTitle">${escapeHtml(grupo)}</h4>
+        <div class="supportFields">
+          ${fields.map((field) => (field.type === "textarea"
+            ? `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(draft[field.name] || "")}</textarea></label>`
+            : `<label>${escapeHtml(field.label)}<input type="${escapeHtml(field.type || "text")}" data-contract-term="${escapeHtml(field.name)}" value="${escapeHtml(draft[field.name] || "")}" /></label>`
+          )).join("")}
+        </div>
+      `).join("")}
+    </div>
+    <div class="adminSubActions">
+      <span></span>
+      <div>
+        <button class="btnGhost" id="contractTermsBack" type="button">Volver</button>
+        <button class="btnGhost" id="contractTermsApprove" type="button">Aprobar para firma</button>
+        <button class="btnGoogle" id="contractTermsSave" type="button">Guardar condiciones</button>
+      </div>
+    </div>
+  `;
+
+  const readValues = () => {
+    const values = {};
+    body.querySelectorAll("[data-contract-term]").forEach((input) => { values[input.dataset.contractTerm] = input.value.trim(); });
+    return values;
+  };
+
+  $("#contractTermsBack", body)?.addEventListener("click", () => {
+    ADMIN_STATE.contract.termsEmail = "";
+    renderAdminBody();
+  });
+
+  const save = async () => {
+    const values = readValues();
+    // Guardar vuelve a dejar la versión en borrador: nadie firma algo que se
+    // acaba de editar sin una nueva aprobación explícita.
+    await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
+      ...values,
+      email,
+      approvalStatus: "draft",
+      approvedForSignature: false,
+      approvedVersion: "",
+      updatedAt: serverTimestamp(),
+      updatedAtClient: Date.now(),
+      updatedBy: emailKey(APP_STATE.activeUser)
+    }, { merge: true });
+    return values;
+  };
+
+  $("#contractTermsSave", body)?.addEventListener("click", async () => {
+    try {
+      await save();
+      await loadContractAdminData();
+      toast("Condiciones guardadas ✅");
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudieron guardar las condiciones", error);
+      toast("No pude guardar las condiciones. Revisa permisos/reglas.");
+    }
+  });
+
+  $("#contractTermsApprove", body)?.addEventListener("click", async () => {
+    const values = readValues();
+    const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
+    const documento = buildTeacherContractDocument(contract, values);
+    if (missing.length || documento.pendingCount) {
+      toast("Completa las condiciones particulares y los valores institucionales antes de aprobar.");
+      return;
+    }
+    if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) return;
+    try {
+      await save();
+      await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
+        approvalStatus: "approved",
+        approvedForSignature: true,
+        approvedVersion: contract.version,
+        approvedAt: serverTimestamp(),
+        approvedAtClient: Date.now(),
+        approvedBy: emailKey(APP_STATE.activeUser)
+      }, { merge: true });
+      await loadContractAdminData();
+      ADMIN_STATE.contract.termsEmail = "";
+      toast("Versión aprobada. La persona ya puede revisar y firmar ✅");
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudo aprobar el contrato", error);
+      toast("No pude aprobar la firma. Revisa permisos/reglas.");
+    }
+  });
+}
+
+function renderAdminContratoEditor(body, contract) {
+  body.innerHTML = `
+    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Cambia la versión cuando el contenido cambie: quienes ya firmaron tendrán que firmar de nuevo.</p>
+    <div class="supportFields">
+      <label>Título<input type="text" id="contractTitle" maxlength="160" value="${escapeHtml(contract.title)}" /></label>
+      <label>Versión<input type="text" id="contractVersion" maxlength="20" value="${escapeHtml(contract.version)}" /></label>
+      <label class="contractFieldWide">Introducción<textarea id="contractIntro" rows="3" maxlength="900">${escapeHtml(contract.intro)}</textarea></label>
+      <label class="contractFieldWide">Cuerpo del contrato<textarea id="contractBody" rows="18">${escapeHtml(contract.body)}</textarea></label>
+    </div>
+    <h4 class="contractAdminTitle">Valores institucionales</h4>
+    <div class="supportFields">
+      ${Object.keys(contract.defaults).sort().map((key) => `
+        <label>${escapeHtml(key)}<input type="text" data-contract-default="${escapeHtml(key)}" value="${escapeHtml(contract.defaults[key])}" /></label>
+      `).join("")}
+    </div>
+    <div class="adminSubActions">
+      <span></span>
+      <div>
+        <button class="btnGhost" id="contractEditCancel" type="button">Cancelar</button>
+        <button class="btnGoogle" id="contractEditSave" type="button">Guardar contrato</button>
+      </div>
+    </div>
+  `;
+
+  $("#contractEditCancel", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = false; renderAdminBody(); });
+  $("#contractEditSave", body)?.addEventListener("click", async () => {
+    const version = $("#contractVersion", body).value.trim();
+    const title = $("#contractTitle", body).value.trim();
+    const text = $("#contractBody", body).value.trim();
+    if (!version || !title || !text) { toast("Completa versión, título y contenido."); return; }
+    // El id de cada firma es "correo__version" y las reglas de Firestore lo
+    // verifican. Si la versión trae espacios o signos, el id no coincidiría y
+    // Firestore rechazaría la firma: mejor no dejar escribirla así.
+    if (!/^[\w.-]+$/.test(version)) {
+      toast("La versión solo admite letras, números, punto, guion y guion bajo. Ej: 2026.1");
+      return;
+    }
+    const defaults = { ...contract.defaults };
+    body.querySelectorAll("[data-contract-default]").forEach((input) => { defaults[input.dataset.contractDefault] = input.value.trim(); });
+    try {
+      const payload = {
+        version,
+        title,
+        intro: $("#contractIntro", body).value.trim(),
+        body: text,
+        annexes: contract.annexes,
+        defaults,
+        updatedAt: serverTimestamp(),
+        updatedAtClient: Date.now(),
+        updatedBy: emailKey(APP_STATE.activeUser)
+      };
+      await setDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID), payload);
+      APP_STATE.contract.doc = normalizeTeacherContract(payload);
+      ADMIN_STATE.contract.editingText = false;
+      await loadContractAdminData();
+      toast("Contrato actualizado. Quienes ya firmaron verán la nueva versión como pendiente.");
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudo guardar el contrato", error);
+      toast("No pude guardar el contrato. Revisa permisos/reglas.");
+    }
+  });
+}
+
 async function handleButtonAction(id, trigger = null) {
   if (!id) return;
 
@@ -7046,6 +8361,11 @@ async function handleButtonAction(id, trigger = null) {
 
   if (id === "supportContract") {
     openSupportContract();
+    return;
+  }
+
+  if (id === "contratoDocente") {
+    openTeacherContract();
     return;
   }
 
@@ -7791,6 +9111,10 @@ async function handleAuthorizedUser(user, managed = null) {
       if (snap.exists()) APP_STATE.hubUserDoc = snap.data();
     } catch (_) { /* sin doc o sin permiso: queda null */ }
   }
+
+  // Quién puede ver el contrato se resuelve antes de pintar los botones: si la
+  // lectura falla, la lista queda vacía y el acceso simplemente no aparece.
+  await loadTeacherContractAccess(true);
 
   setUserLine(profile, user);
   setDrawerProfile(profile, user);
