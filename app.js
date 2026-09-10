@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.5";
+const BUILD = "2026-09-10.6";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -74,7 +74,7 @@ const TEACHER_CONTRACT_TERM_FIELDS = [
   { name: "contratistaDireccion", label: "Dirección (solo si aplica)", group: "Identificación" },
   { name: "contratistaTelefono", label: "Teléfono", group: "Identificación" },
   { name: "areas", label: "Área(s) o especialidad", group: "Alcance" },
-  { name: "modalidades", label: "Modalidades acordadas (sede, hogar, virtual)", group: "Alcance" },
+  { name: "modalidades", label: "Modalidades acordadas", type: "select", group: "Alcance", options: ["Sede", "Hogar", "Virtual", "Sede y hogar", "Sede y virtual", "Hogar y virtual", "Sede, hogar y virtual"] },
   { name: "grupos", label: "Grupos o estudiantes asignados", group: "Alcance" },
   { name: "franjas", label: "Franjas acordadas", group: "Alcance" },
   { name: "fechaInicio", label: "Fecha de inicio", type: "date", group: "Alcance" },
@@ -8281,10 +8281,15 @@ function renderAdminContratoTerms(body, email) {
       ${[...grupos.entries()].map(([grupo, fields]) => `
         <h4 class="contractAdminTitle">${escapeHtml(grupo)}</h4>
         <div class="supportFields">
-          ${fields.map((field) => (field.type === "textarea"
-            ? `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(draft[field.name] || "")}</textarea></label>`
-            : `<label>${escapeHtml(field.label)}<input type="${escapeHtml(field.type || "text")}" data-contract-term="${escapeHtml(field.name)}" value="${escapeHtml(draft[field.name] || "")}" /></label>`
-          )).join("")}
+          ${fields.map((field) => {
+            const value = String(draft[field.name] || "");
+            if (field.type === "textarea") return `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(value)}</textarea></label>`;
+            if (field.type === "select") {
+              const options = Array.from(new Set([...(field.options || []), ...(value && !(field.options || []).includes(value) ? [value] : [])]));
+              return `<label>${escapeHtml(field.label)}<select data-contract-term="${escapeHtml(field.name)}"><option value="">Selecciona una modalidad</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+            }
+            return `<label>${escapeHtml(field.label)}<input type="${escapeHtml(field.type || "text")}" data-contract-term="${escapeHtml(field.name)}" value="${escapeHtml(value)}" /></label>`;
+          }).join("")}
         </div>
       `).join("")}
     </div>
