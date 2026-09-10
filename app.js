@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.11";
+const BUILD = "2026-09-10.12";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -633,6 +633,8 @@ import {
   limit,
   getDoc,
   getDocs,
+  getDocFromServer,
+  getDocsFromServer,
   setDoc,
   addDoc,
   updateDoc,
@@ -2931,7 +2933,9 @@ const ADMIN_STATE = {
     allowedEmails: [],
     terms: {},
     data: {},
+    supportProfiles: {},
     signatures: [],
+    liveSyncUnsubscribe: null,
     editingText: false,
     termsEmail: ""
   },
@@ -3152,11 +3156,13 @@ function openAdminPanel() {
 
 function closeAdminPanel() {
   if (!adminPanelModal) return;
+  stopAdminContractLiveSync();
   adminPanelModal.hidden = true;
   document.body.style.overflow = "";
 }
 
 function setAdminTab(tabId) {
+  if (tabId !== "contrato") stopAdminContractLiveSync();
   ADMIN_STATE.tab = tabId;
   if (!adminPanelModal) return;
 
@@ -8121,23 +8127,50 @@ function printTeacherContract(documento, signature = null) {
 async function loadContractAdminData() {
   const [contract, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap] = await Promise.all([
     loadTeacherContract(true),
-    getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
-    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
-    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
-    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION)),
-    getDocs(collection(APP_STATE.db, "supportContractProfiles"))
+    getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
+    getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
+    getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
+    getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION)),
+    getDocsFromServer(collection(APP_STATE.db, "supportContractProfiles"))
   ]);
   ADMIN_STATE.contract.doc = contract;
   ADMIN_STATE.contract.allowedEmails = Array.isArray(accessSnap.data()?.allowedEmails)
     ? accessSnap.data().allowedEmails.map((item) => String(item || "").toLowerCase())
     : [];
-  ADMIN_STATE.contract.terms = Object.fromEntries(termsSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
-  ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
-  ADMIN_STATE.contract.supportProfiles = Object.fromEntries(supportProfilesSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.terms = Object.fromEntries(termsSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.supportProfiles = Object.fromEntries(supportProfilesSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
   // La lista de acceso también manda sobre la sesión actual.
   APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
   APP_STATE.contract.accessLoaded = true;
+  startAdminContractLiveSync();
+}
+
+function refreshAdminContractFromLiveData() {
+  if (ADMIN_STATE.tab !== "contrato" || ADMIN_STATE.contract.editingText || ADMIN_STATE.contract.termsEmail) return;
+  if (!adminPanelModal || adminPanelModal.hidden) return;
+  renderAdminBody();
+}
+
+function stopAdminContractLiveSync() {
+  ADMIN_STATE.contract.liveSyncUnsubscribe?.();
+  ADMIN_STATE.contract.liveSyncUnsubscribe = null;
+}
+
+function startAdminContractLiveSync() {
+  if (ADMIN_STATE.contract.liveSyncUnsubscribe || !APP_STATE.db || !isAdminUser()) return;
+  const stopProfiles = onSnapshot(collection(APP_STATE.db, "supportContractProfiles"), (snapshot) => {
+    if (snapshot.metadata.fromCache) return;
+    ADMIN_STATE.contract.supportProfiles = Object.fromEntries(snapshot.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
+    refreshAdminContractFromLiveData();
+  }, (error) => console.warn("No se pudo actualizar en vivo los datos de vinculación.", error));
+  const stopSubmissions = onSnapshot(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION), (snapshot) => {
+    if (snapshot.metadata.fromCache) return;
+    ADMIN_STATE.contract.data = Object.fromEntries(snapshot.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
+    refreshAdminContractFromLiveData();
+  }, (error) => console.warn("No se pudieron actualizar en vivo los datos del contrato.", error));
+  ADMIN_STATE.contract.liveSyncUnsubscribe = () => { stopProfiles(); stopSubmissions(); };
 }
 
 function renderAdminContrato(body) {
@@ -8186,11 +8219,15 @@ function renderAdminContrato(body) {
     <p class="adminNote">La docente primero envía identidad, teléfono, cuenta y área. Aquí puedes usar esos datos como base y completar lo que solo define Musicala: modalidad, grupos o estudiantes, franjas, fechas y valores. Sin estos datos el contrato individual muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debe aprobarse ni firmarse.</p>
     <div class="customBtnList">
       ${teachers.map((item) => {
-        const term = terms[item.email];
-        const submission = submissions[item.email];
-        const supportProfile = supportProfiles[item.email];
+        const email = String(item.email || "").toLowerCase();
+        const term = terms[email];
+        const submission = submissions[email];
+        const supportProfile = supportProfiles[email];
         const source = submission || supportProfile;
         const completos = term ? TEACHER_CONTRACT_TERM_FIELDS.filter((field) => String(term[field.name] || "").trim()).length : 0;
+        const datosVinculacion = source ? (submission
+          ? ["fullName", "documentId", "telefono", "direccion", "cuenta", "areas"].filter((field) => String(source[field] || "").trim()).length
+          : SUPPORT_PROFILE_FIELDS.filter((field) => String(supportProfile[field] || "").trim()).length) : 0;
         const firmo = signedEmails.has(item.email);
         const estado = firmo
           ? "Firmó la versión vigente"
@@ -8205,7 +8242,7 @@ function renderAdminContrato(body) {
             <div class="customBtnInfo">
               <strong>${escapeHtml(item.label)}</strong>
               <small>${escapeHtml(item.email)}</small>
-              <small>${completos} de ${TEACHER_CONTRACT_TERM_FIELDS.length} campos diligenciados${term?.valorSesion ? ` · valor por sesión ${escapeHtml(term.valorSesion)}` : ""}</small>
+              <small>${term ? `${completos} de ${TEACHER_CONTRACT_TERM_FIELDS.length} condiciones administrativas diligenciadas` : source ? `${datosVinculacion} datos de vinculación recibidos` : "Aún no hay datos enviados"}${term?.valorSesion ? ` · valor por sesión ${escapeHtml(term.valorSesion)}` : ""}</small>
               <small>${escapeHtml(estado)}</small>
             </div>
             <div class="customBtnActions">
@@ -8259,7 +8296,7 @@ function renderAdminContrato(body) {
     renderAdminBody();
   }));
   body.querySelectorAll("[data-contract-use]").forEach((button) => button.addEventListener("click", async () => {
-    const email = button.dataset.contractUse;
+    const email = String(button.dataset.contractUse || "").toLowerCase();
     const submitted = ADMIN_STATE.contract.data?.[email];
     const supportProfile = ADMIN_STATE.contract.supportProfiles?.[email];
     const source = submitted || supportProfile;
