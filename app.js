@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.2";
+const BUILD = "2026-09-10.3";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -7395,22 +7395,53 @@ function renderSupportContract(profile, acceptance) {
       <section><h3>¿Qué significa ser Docente de apoyo?</h3><p>Como Docente de apoyo puedes recibir propuestas para clases, talleres, reemplazos u otras actividades artísticas y pedagógicas ocasionales. La asignación depende de las necesidades de Musicala y de tu disponibilidad; no garantiza un mínimo de actividades. Cada servicio aceptado exige puntualidad, preparación, responsabilidad, buen trato y protección especial de niños, niñas y adolescentes.</p></section>
       <section><h3>Contrato marco completo</h3>${renderSupportFullContract()}</section>
       <section><h3>Resumen de temas principales</h3>${SUPPORT_TERMS.map(([title, text]) => `<details><summary>${escapeHtml(title)}</summary><p>${escapeHtml(text)}</p></details>`).join("")}</section>
-      <section><h3>Tus datos para la firma</h3><p class="adminNote">Ahora confirma los datos que identificarán tu aceptación. El correo será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button></section>
+      <section><h3>Tus datos para la firma</h3><p class="adminNote">Ahora confirma los datos que identificarán tu aceptación. El correo será el de tu sesión: <strong>${escapeHtml(emailKey(APP_STATE.activeUser))}</strong>.</p><div class="supportFields">${dataForm}</div><div class="contractActions"><button class="btnGhost" type="button" id="supportSaveProfile">Guardar datos</button><p class="adminNote" id="supportSaveFeedback" role="status" aria-live="polite">Revisa los datos y guárdalos antes de continuar.</p></div></section>
       <section class="supportAcceptance"><h3>Aceptación electrónica de las condiciones de vinculación</h3><label class="adminCheck"><input type="checkbox" id="supportAcceptTerms" disabled><span>Declaro que leí, comprendí y acepto las condiciones, el resumen de normas, los compromisos académicos, la confidencialidad y los lineamientos presentados.</span></label><label class="adminCheck"><input type="checkbox" id="supportConfirmData"><span>Confirmo que los datos registrados son correctos y corresponden a mi identidad.</span></label><button class="btnGoogle" id="supportAcceptBtn" type="button" disabled>Aceptar condiciones</button></section>`}
   `);
   if (locked) return;
   const save = async () => {
     const values = { email: emailKey(APP_STATE.activeUser), updatedAt: serverTimestamp() };
     modal.querySelectorAll("[data-support-field]").forEach((input) => { values[input.dataset.supportField] = input.value.trim(); });
-    await setDoc(doc(APP_STATE.db, "supportContractProfiles", values.email), values, { merge: true });
-    toast("Datos guardados.");
+    const profileRef = doc(APP_STATE.db, "supportContractProfiles", values.email);
+    await setDoc(profileRef, values, { merge: true });
+    // Confirmamos con una lectura posterior al guardado: la interfaz no debe
+    // afirmar éxito solo porque el clic fue recibido localmente.
+    const saved = await getDoc(profileRef);
+    if (!saved.exists()) throw new Error("No encontré los datos después de guardarlos.");
+    const persisted = saved.data() || {};
+    const mismatch = SUPPORT_PROFILE_FIELDS.some((field) => String(persisted[field] || "").trim() !== String(values[field] || "").trim());
+    if (mismatch) throw new Error("Los datos guardados no coinciden con los enviados.");
+    Object.assign(profile, persisted);
     return values;
   };
-  $("#supportSaveProfile", modal)?.addEventListener("click", async () => { try { await save(); } catch (e) { console.error(e); toast("No se pudieron guardar los datos."); } });
+  const saveProfileBtn = $("#supportSaveProfile", modal);
+  const saveFeedback = $("#supportSaveFeedback", modal);
+  const markChangesPending = () => {
+    if (!saveProfileBtn || !saveFeedback) return;
+    saveProfileBtn.textContent = "Guardar cambios";
+    saveFeedback.textContent = "Cambios pendientes de guardar.";
+  };
+  saveProfileBtn?.addEventListener("click", async () => {
+    saveProfileBtn.disabled = true;
+    saveProfileBtn.textContent = "Guardando…";
+    if (saveFeedback) saveFeedback.textContent = "Estamos verificando el guardado de tus datos…";
+    try {
+      await save();
+      saveProfileBtn.textContent = "Datos guardados ✓";
+      if (saveFeedback) saveFeedback.textContent = "Datos guardados correctamente. Puedes continuar con la aceptación cuando estés listo.";
+    } catch (e) {
+      console.error(e);
+      saveProfileBtn.textContent = "Reintentar guardado";
+      if (saveFeedback) saveFeedback.textContent = "No pudimos confirmar el guardado. Revisa tu conexión e inténtalo de nuevo.";
+      toast("No se pudieron guardar los datos.");
+    } finally {
+      saveProfileBtn.disabled = false;
+    }
+  });
   const fullTerms = $("#supportFullTerms", modal), termsCheck = $("#supportAcceptTerms", modal), confirmCheck = $("#supportConfirmData", modal), acceptBtn = $("#supportAcceptBtn", modal);
   fullTerms?.addEventListener("toggle", () => { if (fullTerms.open) { termsCheck.disabled = false; } });
   const updateAccept = () => { acceptBtn.disabled = !(supportProfileComplete(Object.fromEntries(Array.from(modal.querySelectorAll("[data-support-field]")).map((el) => [el.dataset.supportField, el.value.trim()]))) && termsCheck.checked && confirmCheck.checked); };
-  modal.querySelectorAll("[data-support-field]").forEach((input) => { input.addEventListener("input", updateAccept); input.addEventListener("change", updateAccept); }); termsCheck?.addEventListener("change", updateAccept); confirmCheck?.addEventListener("change", updateAccept);
+  modal.querySelectorAll("[data-support-field]").forEach((input) => { input.addEventListener("input", () => { markChangesPending(); updateAccept(); }); input.addEventListener("change", () => { markChangesPending(); updateAccept(); }); }); termsCheck?.addEventListener("change", updateAccept); confirmCheck?.addEventListener("change", updateAccept);
   acceptBtn?.addEventListener("click", async () => {
     let values;
     try { values = await save(); } catch (_) { return; }
