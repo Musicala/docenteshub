@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.6";
+const BUILD = "2026-09-10.7";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -87,6 +87,18 @@ const TEACHER_CONTRACT_TERM_FIELDS = [
 ];
 const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion", "inventario"]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
+const CONTRACT_MODALITY_OPTIONS = ["Sede", "Hogar", "Virtual"];
+
+function contractRateRows(raw = {}) {
+  if (Array.isArray(raw.modalidadTarifas) && raw.modalidadTarifas.length) return raw.modalidadTarifas;
+  if (raw.modalidades || raw.valorSesion || raw.valorLetras) return [{ modalidad: raw.modalidades || "", valor: raw.valorSesion || "", letras: raw.valorLetras || "" }];
+  return [{ modalidad: "", valor: "", letras: "" }];
+}
+function renderContractRateRow(rate = {}) {
+  const modalidad = String(rate.modalidad || ""), valor = String(rate.valor || ""), letras = String(rate.letras || "");
+  const options = Array.from(new Set([...CONTRACT_MODALITY_OPTIONS, ...(modalidad && !CONTRACT_MODALITY_OPTIONS.includes(modalidad) ? [modalidad] : [])]));
+  return `<div class="supportFields contractRateRow"><label>Modalidad<select data-contract-rate="modalidad"><option value="">Selecciona</option>${options.map((item) => `<option value="${escapeHtml(item)}" ${item === modalidad ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><label>Valor por sesión (cifras)<input data-contract-rate="valor" inputmode="numeric" value="${escapeHtml(valor)}" /></label><label>Valor por sesión (letras)<input data-contract-rate="letras" value="${escapeHtml(letras)}" /></label><button class="btnGhost" type="button" data-contract-rate-remove>Quitar</button></div>`;
+}
 
 const TEACHER_CONTRACT_DEFAULT = {
   version: "2026.1",
@@ -8283,6 +8295,8 @@ function renderAdminContratoTerms(body, email) {
         <div class="supportFields">
           ${fields.map((field) => {
             const value = String(draft[field.name] || "");
+            if (field.name === "modalidades") return `<div class="contractFieldWide"><label>Valores por modalidad</label><p class="adminNote">Agrega una fila por modalidad. El contrato mostrará cada modalidad con su pago acordado.</p><div data-contract-rate-list>${contractRateRows(draft).map(renderContractRateRow).join("")}</div><button class="btnGhost" type="button" id="contractRateAdd">Agregar modalidad y valor</button></div>`;
+            if (field.name === "valorSesion" || field.name === "valorLetras") return "";
             if (field.type === "textarea") return `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(value)}</textarea></label>`;
             if (field.type === "select") {
               const options = Array.from(new Set([...(field.options || []), ...(value && !(field.options || []).includes(value) ? [value] : [])]));
@@ -8306,8 +8320,21 @@ function renderAdminContratoTerms(body, email) {
   const readValues = () => {
     const values = {};
     body.querySelectorAll("[data-contract-term]").forEach((input) => { values[input.dataset.contractTerm] = input.value.trim(); });
+    const rates = Array.from(body.querySelectorAll(".contractRateRow")).map((row) => ({
+      modalidad: row.querySelector('[data-contract-rate="modalidad"]')?.value.trim() || "",
+      valor: row.querySelector('[data-contract-rate="valor"]')?.value.trim() || "",
+      letras: row.querySelector('[data-contract-rate="letras"]')?.value.trim() || ""
+    })).filter((item) => item.modalidad || item.valor || item.letras);
+    values.modalidadTarifas = rates;
+    values.modalidades = rates.map((item) => item.modalidad).filter(Boolean).join(", ");
+    values.valorSesion = rates.map((item) => `${item.modalidad}: ${item.valor}`).join(" · ");
+    values.valorLetras = rates.map((item) => `${item.modalidad}: ${item.letras}`).join(" · ");
     return values;
   };
+
+  const rateList = body.querySelector("[data-contract-rate-list]");
+  $("#contractRateAdd", body)?.addEventListener("click", () => { rateList?.insertAdjacentHTML("beforeend", renderContractRateRow()); });
+  rateList?.addEventListener("click", (event) => { const remove = event.target.closest("[data-contract-rate-remove]"); if (remove) remove.closest(".contractRateRow")?.remove(); });
 
   $("#contractTermsBack", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.termsEmail = "";
@@ -8347,7 +8374,8 @@ function renderAdminContratoTerms(body, email) {
     const values = readValues();
     const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
     const documento = buildTeacherContractDocument(contract, values);
-    if (missing.length || documento.pendingCount) {
+    const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
+    if (missing.length || invalidRates || documento.pendingCount) {
       toast("Completa las condiciones particulares y los valores institucionales antes de aprobar.");
       return;
     }
