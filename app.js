@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.4";
+const BUILD = "2026-09-10.5";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -40,7 +40,7 @@ const WIX_BOOKINGS_URL = "https://wixbookingsmusicala.web.app/";
 // sola vez en este archivo; cada aceptación conserva esta versión y un resumen
 // verificable del contenido, sin reutilizar contratos particulares.
 const SUPPORT_CONTRACT_VERSION = "2.0";
-const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea"];
+const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "documentIssueCity", "phone", "address", "residenceCity", "artisticArea", "bankAccount"];
 
 /* ============================================================================
    CONTRATO DE PRESTACIÓN DE SERVICIOS · DOCENTES MUSICALA
@@ -7302,7 +7302,7 @@ function renderSupportFullContract() {
 }
 
 function supportProfileComplete(profile = {}) {
-  return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea"].every((key) => String(profile[key] || "").trim());
+  return ["fullName", "documentType", "documentNumber", "phone", "residenceCity", "artisticArea", "bankAccount"].every((key) => String(profile[key] || "").trim());
 }
 
 function openAdminSupportDetail(email) {
@@ -7339,6 +7339,7 @@ async function loadSupportAdminData() {
 }
 function supportAcceptanceId(email = emailKey(APP_STATE.activeUser)) { return `${email}_${SUPPORT_CONTRACT_VERSION}`; }
 function supportStatus(profile, acceptance) {
+  if (acceptance && String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION) return "accepted";
   if (!supportProfileComplete(profile)) return "incomplete";
   if (!acceptance) return "pending_acceptance";
   return String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION ? "accepted" : "outdated";
@@ -7376,7 +7377,8 @@ function renderSupportContract(profile, acceptance) {
   const fields = [
     ["fullName", "Nombre completo", "text"], ["documentType", "Tipo de documento", "select"], ["documentNumber", "Número de documento", "text"],
     ["documentIssueCity", "Ciudad de expedición", "text"], ["phone", "Celular", "tel"], ["address", "Dirección", "text"],
-    ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"]
+    ["residenceCity", "Ciudad de residencia", "text"], ["artisticArea", "Área artística o especialidad", "text"],
+    ["bankAccount", "Cuenta bancaria para pagos", "text"]
   ];
   const acceptedAt = acceptance?.acceptedAt?.toDate?.() || null;
   const locked = !!acceptance && String(acceptance.contractVersion || "") === SUPPORT_CONTRACT_VERSION;
@@ -7788,6 +7790,7 @@ function renderTeacherContractView(overlay) {
   const contract = getTeacherContract();
   const terms = APP_STATE.contract.terms;
   const submitted = APP_STATE.contract.data;
+  const supportProfileReady = APP_STATE.hubUserDoc?.employmentType === "support_contractor" && supportProfileComplete(APP_STATE.contract.supportProfile || {});
   const signature = APP_STATE.contract.signature;
   const approved = terms?.approvedForSignature && String(terms.approvedVersion || "") === String(contract.version);
 
@@ -7815,7 +7818,7 @@ function renderTeacherContractView(overlay) {
 
   let pendingHtml = "";
   if (!signature || String(signature.version) !== String(contract.version)) {
-    if (!submitted) {
+    if (!submitted && !supportProfileReady) {
       pendingHtml = renderTeacherContractDataForm();
     } else if (!approved) {
       pendingHtml = `
@@ -7862,6 +7865,16 @@ function renderTeacherContractView(overlay) {
 
 function renderTeacherContractDataForm() {
   const supportProfile = APP_STATE.contract.supportProfile || {};
+  const isSupportTeacher = APP_STATE.hubUserDoc?.employmentType === "support_contractor";
+  if (isSupportTeacher) {
+    return `
+      <section class="contractPanel">
+        <h3>Dato pendiente para tu contrato individual</h3>
+        <p>Ya tenemos tus datos de vinculación. Solo falta la cuenta bancaria para que administración pueda preparar las condiciones particulares; no necesitas repetir el resto.</p>
+        <div class="supportFields"><label>Cuenta bancaria para pagos<input type="text" data-contract-data="bankAccount" maxlength="180" value="${escapeHtml(supportProfile.bankAccount || "")}" /></label></div>
+        <div class="contractActions"><button class="btnGoogle" type="button" id="contractDataSubmit">Guardar cuenta para continuar</button></div>
+      </section>`;
+  }
   const name = supportProfile.fullName || APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
   const documentId = [supportProfile.documentType, supportProfile.documentNumber].filter(Boolean).join(": ");
   return `
@@ -7891,7 +7904,12 @@ function wireTeacherContractDataForm(overlay) {
     overlay.querySelectorAll("[data-contract-data]").forEach((input) => {
       values[input.dataset.contractData] = input.value.trim();
     });
-    if (!values.fullName || !values.documentId || !values.telefono) {
+    const isSupportTeacher = APP_STATE.hubUserDoc?.employmentType === "support_contractor";
+    if (isSupportTeacher && !values.bankAccount) {
+      toast("Escribe la cuenta bancaria para continuar.");
+      return;
+    }
+    if (!isSupportTeacher && (!values.fullName || !values.documentId || !values.telefono)) {
       toast("Completa nombre, documento y teléfono antes de enviar.");
       return;
     }
@@ -7899,6 +7917,18 @@ function wireTeacherContractDataForm(overlay) {
     button.textContent = "Enviando…";
     try {
       const email = emailKey(APP_STATE.activeUser);
+      if (isSupportTeacher) {
+        await setDoc(doc(APP_STATE.db, "supportContractProfiles", email), {
+          bankAccount: values.bankAccount,
+          email,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        const profileSnap = await getDoc(doc(APP_STATE.db, "supportContractProfiles", email));
+        APP_STATE.contract.supportProfile = profileSnap.exists() ? profileSnap.data() : null;
+        toast("Cuenta guardada. Administración ya puede preparar tu contrato.");
+        renderTeacherContractView(overlay);
+        return;
+      }
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION, email), {
         ...values,
         email,
@@ -8059,12 +8089,13 @@ function printTeacherContract(documento, signature = null) {
    PESTAÑA ADMIN · CONTRATO
 ============================================================================ */
 async function loadContractAdminData() {
-  const [contract, accessSnap, termsSnap, dataSnap, signSnap] = await Promise.all([
+  const [contract, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap] = await Promise.all([
     loadTeacherContract(true),
     getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
     getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
     getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
-    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION))
+    getDocs(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION)),
+    getDocs(collection(APP_STATE.db, "supportContractProfiles"))
   ]);
   ADMIN_STATE.contract.doc = contract;
   ADMIN_STATE.contract.allowedEmails = Array.isArray(accessSnap.data()?.allowedEmails)
@@ -8072,6 +8103,7 @@ async function loadContractAdminData() {
     : [];
   ADMIN_STATE.contract.terms = Object.fromEntries(termsSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
+  ADMIN_STATE.contract.supportProfiles = Object.fromEntries(supportProfilesSnap.docs.map((item) => [item.id, { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
   // La lista de acceso también manda sobre la sesión actual.
   APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
@@ -8084,6 +8116,7 @@ function renderAdminContrato(body) {
   const allowed = new Set(ADMIN_STATE.contract.allowedEmails || []);
   const terms = ADMIN_STATE.contract.terms || {};
   const submissions = ADMIN_STATE.contract.data || {};
+  const supportProfiles = ADMIN_STATE.contract.supportProfiles || {};
   const signatures = (ADMIN_STATE.contract.signatures || []).filter((item) => String(item.version) === String(contract.version));
   const signedEmails = new Set(signatures.map((item) => String(item.email || "").toLowerCase()));
   const editingEmail = ADMIN_STATE.contract.termsEmail;
@@ -8125,14 +8158,16 @@ function renderAdminContrato(body) {
       ${teachers.map((item) => {
         const term = terms[item.email];
         const submission = submissions[item.email];
+        const supportProfile = supportProfiles[item.email];
+        const source = submission || supportProfile;
         const completos = term ? TEACHER_CONTRACT_TERM_FIELDS.filter((field) => String(term[field.name] || "").trim()).length : 0;
         const firmo = signedEmails.has(item.email);
         const estado = firmo
           ? "Firmó la versión vigente"
           : term?.approvedForSignature && String(term.approvedVersion || "") === String(contract.version)
             ? "Aprobado para firma · pendiente de firmar"
-              : submission
-              ? "Datos enviados por la docente · falta revisión administrativa"
+              : source
+              ? "Datos de vinculación disponibles · falta revisión administrativa"
               : "La docente aún no envía datos para su contrato individual";
         return `
           <div class="customBtnRow">
@@ -8144,7 +8179,7 @@ function renderAdminContrato(body) {
               <small>${escapeHtml(estado)}</small>
             </div>
             <div class="customBtnActions">
-              ${submission ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">Usar datos enviados</button>` : ""}
+              ${source ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">Usar datos de vinculación</button>` : ""}
               <button class="btnGhost" type="button" data-contract-terms="${escapeHtml(item.email)}">${term ? "Editar" : "Diligenciar"}</button>
             </div>
           </div>`;
@@ -8196,16 +8231,18 @@ function renderAdminContrato(body) {
   body.querySelectorAll("[data-contract-use]").forEach((button) => button.addEventListener("click", async () => {
     const email = button.dataset.contractUse;
     const submitted = ADMIN_STATE.contract.data?.[email];
-    if (!submitted) return;
+    const supportProfile = ADMIN_STATE.contract.supportProfiles?.[email];
+    const source = submitted || supportProfile;
+    if (!source) return;
     try {
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
         email,
-        contratistaNombre: submitted.fullName || "",
-        contratistaDocumento: submitted.documentId || "",
-        contratistaDireccion: submitted.direccion || "",
-        contratistaTelefono: submitted.telefono || "",
-        cuenta: submitted.cuenta || "",
-        areas: submitted.areas || "",
+        contratistaNombre: source.fullName || "",
+        contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": "),
+        contratistaDireccion: source.direccion || source.address || "",
+        contratistaTelefono: source.telefono || source.phone || "",
+        cuenta: source.cuenta || source.bankAccount || "",
+        areas: source.areas || source.artisticArea || "",
         approvalStatus: "draft",
         approvedForSignature: false,
         approvedVersion: "",
