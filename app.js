@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-10.14";
+const BUILD = "2026-09-11.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -566,6 +566,7 @@ const HUB = {
     },
     { id: "bibliotecaRecursos", icon: "📚", title: "Biblioteca de Recursos", subtitle: "Materiales por área", section: "Mi trabajo hoy" },
     { id: "studentMessages", icon: "💬", title: "Mensajes de estudiantes", subtitle: "Conversaciones privadas", section: "Mi trabajo hoy" },
+    { id: "coordinationMessages", icon: "🔒", title: "Coordinación privada", subtitle: "Canal confidencial", section: "Mi trabajo hoy" },
     {
       // Módulo interno unificado: tareas académicas + bolsa de horas.
       id: "bitacoraAcademica",
@@ -665,6 +666,8 @@ const APP_STATE = {
   unreadStudentMessages: 0,
   unreadMessagesUnsubscribe: null,
   unreadMessageReceiptsUnsubscribe: null,
+  unreadCoordinationMessages: 0,
+  unreadCoordinationMessagesUnsubscribe: null,
   bibliotecaCache: { recursos: null, areasConfig: null },
   teacherSchedule: {
     loading: false,
@@ -716,6 +719,43 @@ function updateStudentMessagesBadge(count = 0) {
   tile.setAttribute("aria-label", APP_STATE.unreadStudentMessages
     ? `Mensajes de estudiantes, ${APP_STATE.unreadStudentMessages} sin leer`
     : "Mensajes de estudiantes");
+}
+
+function updateCoordinationMessagesBadge(count = 0) {
+  APP_STATE.unreadCoordinationMessages = Math.max(0, Number(count) || 0);
+  const tile = document.querySelector('button[data-id="coordinationMessages"]');
+  if (!tile) return;
+  const icon = $(".ico", tile);
+  let badge = $(".messageTileBadge", tile);
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "messageTileBadge coordinationTileBadge";
+    badge.setAttribute("aria-hidden", "true");
+    (icon || tile).appendChild(badge);
+    icon?.classList.add("iconWithNotify");
+  }
+  badge.textContent = APP_STATE.unreadCoordinationMessages > 99 ? "99+" : String(APP_STATE.unreadCoordinationMessages);
+  badge.hidden = APP_STATE.unreadCoordinationMessages === 0;
+  tile.setAttribute("aria-label", APP_STATE.unreadCoordinationMessages
+    ? `Coordinación privada, ${APP_STATE.unreadCoordinationMessages} sin leer`
+    : "Coordinación privada");
+}
+
+function startCoordinationMessagesBadge() {
+  APP_STATE.unreadCoordinationMessagesUnsubscribe?.();
+  if (!APP_STATE.db || !APP_STATE.activeUser) return;
+  const email = emailKey(APP_STATE.activeUser);
+  const inbox = isAdminUser()
+    ? query(collection(APP_STATE.db, "coordination_messages"), limit(200))
+    : doc(APP_STATE.db, "coordination_messages", email);
+  APP_STATE.unreadCoordinationMessagesUnsubscribe = onSnapshot(inbox, (snap) => {
+    const unreadField = isAdminUser() ? "adminUnread" : "teacherUnread";
+    const docs = isAdminUser() ? snap.docs : (snap.exists() ? [snap] : []);
+    updateCoordinationMessagesBadge(docs.filter((item) => item.data()?.[unreadField] === true).length);
+  }, (error) => {
+    console.warn("No se pudo actualizar el contador de coordinación", error);
+    updateCoordinationMessagesBadge(0);
+  });
 }
 
 function messageSentAt(message = {}) {
@@ -6185,6 +6225,7 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "bitacoraAcademica" ||
     button?.id === "academicModule" ||
     button?.id === "studentMessages" ||
+    button?.id === "coordinationMessages" ||
     button?.id === "bibliotecaRecursos" ||
     button?.id === "supportContract" ||
     button?.id === "contratoDocente";
@@ -6200,7 +6241,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
-  if (assignedButtons && !button?.adminOnly && !["studentMessages", "supportContract", "contratoDocente"].includes(button?.id) && !assignedButtons.includes(button?.id)) {
+  if (assignedButtons && !button?.adminOnly && !["studentMessages", "coordinationMessages", "supportContract", "contratoDocente"].includes(button?.id) && !assignedButtons.includes(button?.id)) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.id === "horarioAnual") {
@@ -6209,7 +6250,7 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: true, url: "__SPECIAL__", available: visible, visible };
   }
   // Módulos internos disponibles para cualquier usuario con acceso al HUB.
-  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "bibliotecaRecursos" || button?.id === "supportContract" || button?.id === "contratoDocente") {
+  if (button?.id === "bitacoraAcademica" || button?.id === "academicModule" || button?.id === "studentMessages" || button?.id === "coordinationMessages" || button?.id === "bibliotecaRecursos" || button?.id === "supportContract" || button?.id === "contratoDocente") {
     return { isSpecial: true, url: "__SPECIAL__", available: true, visible: true };
   }
   const url = isSpecial ? "__SPECIAL__" : String(links?.[button?.id] || "").trim();
@@ -7283,6 +7324,125 @@ function openStudentMessages() {
   $("#messageSearchInput", overlay)?.addEventListener("input", renderThreadList);
   ensureStudentsServices();
   if (APP_STATE.studentsAuth.currentUser) connect();
+}
+
+/* ============================================================================
+   CANAL PRIVADO CON COORDINACIÓN
+   Este canal no comparte colección ni audiencia con los mensajes de estudiantes.
+   Cada hilo está identificado por el correo del docente: solo ese docente y
+   coordinación pueden leerlo; los admins pueden además iniciarlo desde su bandeja.
+============================================================================ */
+function openCoordinationMessages() {
+  const isAdmin = isAdminUser();
+  const myEmail = emailKey(APP_STATE.activeUser);
+  let threadsUnsubscribe = null;
+  let messagesUnsubscribe = null;
+  let allThreads = [];
+  let activeThread = null;
+  const overlay = document.createElement("div");
+  overlay.className = "adminSubModal";
+  overlay.innerHTML = `<div class="adminSubCard adminSubCardWide messageHub coordinationHub" role="dialog" aria-modal="true">
+    <div class="messageHubHead"><div><h3>Coordinación privada</h3><p class="adminSubSub">Canal confidencial entre ${isAdmin ? "Coordinación y cada docente" : "tú y Coordinación"}. No se comparte con estudiantes ni con otros docentes.</p></div><button class="btnGhost" id="coordinationClose" type="button">Cerrar</button></div>
+    <div class="coordinationNotice">🔒 Usa este espacio para asuntos sensibles, acompañamiento o información que deba tratarse directamente con Coordinación.</div>
+    <div class="messageHubLayout" id="coordinationLayout"><aside class="messageInbox"><label class="messageSearch"><span>${isAdmin ? "Buscar docente" : "Tu conversación"}</span><input id="coordinationSearch" type="search" placeholder="${isAdmin ? "Nombre o correo…" : "Buscar en el hilo…"}" /></label>${isAdmin ? '<button class="btnGoogle coordinationStart" id="coordinationStart" type="button">＋ Escribir a un docente</button>' : ""}<div id="coordinationInboxCount"></div><div id="coordinationThreads"></div></aside><section id="coordinationConversation"><div class="messageEmpty"><span>🔒</span><strong>${isAdmin ? "Elige un docente" : "Tu canal privado con Coordinación"}</strong><p>${isAdmin ? "Puedes abrir un hilo existente o iniciar una conversación." : "Aquí aparecerán los mensajes que intercambies con Coordinación."}</p></div></section></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close = () => { threadsUnsubscribe?.(); messagesUnsubscribe?.(); overlay.remove(); };
+  $("#coordinationClose", overlay)?.addEventListener("click", close);
+
+  const selectThread = (thread) => {
+    activeThread = thread;
+    renderThreads();
+    overlay.classList.add("messageConversationOpen");
+    messagesUnsubscribe?.();
+    const panel = $("#coordinationConversation", overlay);
+    const messageRef = collection(APP_STATE.db, "coordination_messages", thread.teacherEmail, "messages");
+    messagesUnsubscribe = onSnapshot(query(messageRef, orderBy("createdAt", "asc"), limit(200)), (snap) => {
+      const messages = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const visibleName = thread.teacherName || thread.teacherEmail;
+      panel.innerHTML = `<div class="messageConversationHead"><button class="messageBack" type="button" aria-label="Volver a conversaciones">←</button><div><strong>${escapeHtml(isAdmin ? visibleName : "Coordinación Musicala")}</strong><span>${escapeHtml(isAdmin ? thread.teacherEmail : "Solo tú y Coordinación pueden ver este hilo")}</span></div></div>
+        <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${emailKey({ email: message.senderEmail }) === myEmail ? "own" : ""}"><strong>${escapeHtml(message.senderName || (message.senderRole === "coordination" ? "Coordinación" : "Docente"))}</strong><p>${escapeHtml(message.text || "")}</p><time class="messageSentAt">${escapeHtml(messageSentAt(message))}</time></article>`).join("") || '<div class="messageEmpty small"><span>👋</span><strong>Inicia esta conversación</strong><p>El primer mensaje abrirá el canal privado.</p></div>'}</div>
+        <form class="messageComposer"><textarea rows="2" maxlength="1600" placeholder="Escribe un mensaje privado…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
+      $(".messageBack", panel)?.addEventListener("click", () => overlay.classList.remove("messageConversationOpen"));
+      $(".messageComposer", panel)?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const input = $("textarea", event.currentTarget);
+        const text = input.value.trim();
+        if (!text) return;
+        try {
+          const senderName = isAdmin ? "Coordinación Musicala" : (APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente");
+          await addDoc(messageRef, {
+            text,
+            senderRole: isAdmin ? "coordination" : "teacher",
+            senderName,
+            senderEmail: myEmail,
+            createdAt: serverTimestamp()
+          });
+          await setDoc(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail), {
+            teacherEmail: thread.teacherEmail,
+            teacherName: visibleName,
+            lastMessage: text.slice(0, 160),
+            updatedAt: serverTimestamp(),
+            teacherUnread: isAdmin,
+            adminUnread: !isAdmin
+          }, { merge: true });
+          input.value = "";
+        } catch (error) {
+          console.error("No se pudo enviar el mensaje a Coordinación", error);
+          toast("No se pudo enviar el mensaje. Revisa que las reglas de Firestore estén publicadas.");
+        }
+      });
+      const unread = messages.filter((message) => isAdmin
+        ? message.senderRole === "teacher" && message.readByCoordination !== true
+        : message.senderRole === "coordination" && message.readByTeacher !== true);
+      if (unread.length) {
+        const batch = writeBatch(APP_STATE.db);
+        unread.forEach((message) => batch.update(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail, "messages", message.id), isAdmin ? { readByCoordination: true } : { readByTeacher: true }));
+        batch.commit().catch(() => {});
+        setDoc(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail), { [isAdmin ? "adminUnread" : "teacherUnread"]: false }, { merge: true }).catch(() => {});
+      }
+    }, (error) => { console.error(error); toast("No se pudo abrir este canal privado."); });
+  };
+
+  const renderThreads = () => {
+    const term = normalizeText($("#coordinationSearch", overlay)?.value || "");
+    const threads = allThreads.filter((thread) => !term || normalizeText(`${thread.teacherName} ${thread.teacherEmail} ${thread.lastMessage}`).includes(term));
+    $("#coordinationInboxCount", overlay).textContent = isAdmin ? `${threads.length} conversación${threads.length === 1 ? "" : "es"}` : "Canal personal";
+    $("#coordinationThreads", overlay).innerHTML = threads.length ? threads.map((thread) => {
+      const date = thread.updatedAt?.toDate?.();
+      return `<button class="messageThread ${activeThread?.teacherEmail === thread.teacherEmail ? "active" : ""}" data-email="${escapeHtml(thread.teacherEmail)}" type="button"><span class="messageThreadAvatar">${escapeHtml((thread.teacherName || "D").trim().charAt(0).toUpperCase())}</span><span class="messageThreadCopy"><strong>${escapeHtml(isAdmin ? thread.teacherName || thread.teacherEmail : "Coordinación Musicala")} ${thread[isAdmin ? "adminUnread" : "teacherUnread"] ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.lastMessage || "Sin mensajes")}</span><small>${escapeHtml(isAdmin ? thread.teacherEmail : "Canal privado")}</small></span><time>${escapeHtml(date ? date.toLocaleDateString("es-CO", { day: "numeric", month: "short" }) : "")}</time></button>`;
+    }).join("") : `<div class="messageEmpty small"><strong>${isAdmin ? "Sin conversaciones" : "Aún no hay mensajes"}</strong><p>${isAdmin ? "Usa “Escribir a un docente” para iniciar una." : "Escríbele a Coordinación cuando lo necesites."}</p></div>`;
+    $$(".messageThread", overlay).forEach((button) => button.addEventListener("click", () => selectThread(allThreads.find((thread) => thread.teacherEmail === button.dataset.email))));
+  };
+
+  $("#coordinationStart", overlay)?.addEventListener("click", () => {
+    const teachers = getAdminTeacherOptions({ includeDisabled: false }).filter((item) => !item.isAdmin);
+    const dialog = document.createElement("div");
+    dialog.className = "adminSubModal";
+    dialog.innerHTML = `<div class="adminSubCard" role="dialog" aria-modal="true"><h3>Escribir a un docente</h3><p class="adminSubNote">El mensaje quedará solo entre Coordinación y la persona seleccionada.</p><label>Docente<select id="coordinationTeacher"><option value="" selected disabled>Selecciona docente…</option>${teachers.map((teacher) => `<option value="${escapeHtml(teacher.email)}">${escapeHtml(teacher.label)} · ${escapeHtml(teacher.email)}</option>`).join("")}</select></label><div class="contractActions"><button class="btnGhost" id="coordinationCancel" type="button">Cancelar</button><button class="btnGoogle" id="coordinationChoose" type="button">Continuar</button></div></div>`;
+    document.body.appendChild(dialog);
+    $("#coordinationCancel", dialog)?.addEventListener("click", () => dialog.remove());
+    $("#coordinationChoose", dialog)?.addEventListener("click", () => {
+      const email = $("#coordinationTeacher", dialog)?.value || "";
+      const teacher = teachers.find((item) => item.email === email);
+      if (!teacher) { toast("Selecciona un docente."); return; }
+      dialog.remove();
+      const thread = allThreads.find((item) => item.teacherEmail === email) || { teacherEmail: email, teacherName: teacher.label };
+      if (!allThreads.some((item) => item.teacherEmail === email)) allThreads.unshift(thread);
+      selectThread(thread);
+    });
+  });
+  $("#coordinationSearch", overlay)?.addEventListener("input", renderThreads);
+  const inbox = isAdmin
+    ? query(collection(APP_STATE.db, "coordination_messages"), limit(200))
+    : doc(APP_STATE.db, "coordination_messages", myEmail);
+  threadsUnsubscribe = onSnapshot(inbox, (snap) => {
+    const docs = isAdmin ? snap.docs : (snap.exists() ? [snap] : []);
+    allThreads = docs.map((item) => ({ teacherEmail: item.id, ...item.data() }))
+      .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+    if (!isAdmin && !allThreads.length) allThreads = [{ teacherEmail: myEmail, teacherName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente" }];
+    renderThreads();
+  }, (error) => { console.error(error); toast("No se pudo cargar la bandeja privada. Revisa las reglas de Firestore."); });
 }
 
 /* ============================================================================
@@ -8584,6 +8744,11 @@ async function handleButtonAction(id, trigger = null) {
     return;
   }
 
+  if (id === "coordinationMessages") {
+    openCoordinationMessages();
+    return;
+  }
+
   if (id === "supportContract") {
     openSupportContract();
     return;
@@ -9350,6 +9515,7 @@ async function handleAuthorizedUser(user, managed = null) {
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
   startStudentMessagesBadge();
+  startCoordinationMessagesBadge();
   const backgroundLoads = [
     autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true }),
     loadTeacherScheduleForActiveUser(),
