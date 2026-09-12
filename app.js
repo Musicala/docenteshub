@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-11.1";
+const BUILD = "2026-09-12.1";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -425,6 +425,13 @@ const ADMIN_EMAILS = [
   "adminmusicala@gmail.com"
 ];
 
+// Este rol es deliberadamente más pequeño que ADMIN_EMAILS. El canal privado
+// de Coordinación no forma parte de las herramientas administrativas generales.
+const COORDINATION_EMAILS = [
+  "alekcaballeromusic@gmail.com",
+  "catalina.medina.leal@gmail.com"
+];
+
 /* ============================================================================
    1) FIREBASE CONFIG
 ============================================================================ */
@@ -744,13 +751,17 @@ function updateCoordinationMessagesBadge(count = 0) {
 function startCoordinationMessagesBadge() {
   APP_STATE.unreadCoordinationMessagesUnsubscribe?.();
   if (!APP_STATE.db || !APP_STATE.activeUser) return;
+  if (!canUseCoordinationMessages()) {
+    updateCoordinationMessagesBadge(0);
+    return;
+  }
   const email = emailKey(APP_STATE.activeUser);
-  const inbox = isAdminUser()
+  const inbox = isCoordinationUser()
     ? query(collection(APP_STATE.db, "coordination_messages"), limit(200))
     : doc(APP_STATE.db, "coordination_messages", email);
   APP_STATE.unreadCoordinationMessagesUnsubscribe = onSnapshot(inbox, (snap) => {
-    const unreadField = isAdminUser() ? "adminUnread" : "teacherUnread";
-    const docs = isAdminUser() ? snap.docs : (snap.exists() ? [snap] : []);
+    const unreadField = isCoordinationUser() ? "adminUnread" : "teacherUnread";
+    const docs = isCoordinationUser() ? snap.docs : (snap.exists() ? [snap] : []);
     updateCoordinationMessagesBadge(docs.filter((item) => item.data()?.[unreadField] === true).length);
   }, (error) => {
     console.warn("No se pudo actualizar el contador de coordinación", error);
@@ -6216,6 +6227,16 @@ function isAdminUser(user = APP_STATE.activeUser) {
   return ADMIN_EMAILS.includes(emailKey(user));
 }
 
+function isCoordinationUser(user = APP_STATE.activeUser) {
+  return COORDINATION_EMAILS.includes(emailKey(user));
+}
+
+function canUseCoordinationMessages(user = APP_STATE.activeUser) {
+  // Alek y Cata ven la bandeja completa; un docente ve únicamente su hilo.
+  // Los demás perfiles administrativos no tienen acceso a este canal.
+  return isCoordinationUser(user) || !isAdminUser(user);
+}
+
 function getResolvedButtonState(button, links = {}) {
   const isSpecial =
     button?.id === "carnet" ||
@@ -6235,6 +6256,9 @@ function getResolvedButtonState(button, links = {}) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.adminOnly && !isAdminUser()) {
+    return { isSpecial: false, url: "", available: false, visible: false };
+  }
+  if (button?.id === "coordinationMessages" && !canUseCoordinationMessages()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   if (button?.supportOnly && APP_STATE.hubUserDoc?.employmentType !== "support_contractor") {
@@ -7330,10 +7354,14 @@ function openStudentMessages() {
    CANAL PRIVADO CON COORDINACIÓN
    Este canal no comparte colección ni audiencia con los mensajes de estudiantes.
    Cada hilo está identificado por el correo del docente: solo ese docente y
-   coordinación pueden leerlo; los admins pueden además iniciarlo desde su bandeja.
+   coordinación pueden leerlo; Alek y Cata pueden además iniciarlo desde su bandeja.
 ============================================================================ */
 function openCoordinationMessages() {
-  const isAdmin = isAdminUser();
+  if (!canUseCoordinationMessages()) {
+    toast("Este canal está reservado para docentes y Coordinación.");
+    return;
+  }
+  const isCoordination = isCoordinationUser();
   const myEmail = emailKey(APP_STATE.activeUser);
   let threadsUnsubscribe = null;
   let messagesUnsubscribe = null;
@@ -7342,9 +7370,9 @@ function openCoordinationMessages() {
   const overlay = document.createElement("div");
   overlay.className = "adminSubModal";
   overlay.innerHTML = `<div class="adminSubCard adminSubCardWide messageHub coordinationHub" role="dialog" aria-modal="true">
-    <div class="messageHubHead"><div><h3>Coordinación privada</h3><p class="adminSubSub">Canal confidencial entre ${isAdmin ? "Coordinación y cada docente" : "tú y Coordinación"}. No se comparte con estudiantes ni con otros docentes.</p></div><button class="btnGhost" id="coordinationClose" type="button">Cerrar</button></div>
+    <div class="messageHubHead"><div><h3>Coordinación privada</h3><p class="adminSubSub">Canal confidencial entre ${isCoordination ? "Coordinación y cada docente" : "tú y Coordinación"}. No se comparte con estudiantes ni con otros docentes.</p></div><button class="btnGhost" id="coordinationClose" type="button">Cerrar</button></div>
     <div class="coordinationNotice">🔒 Usa este espacio para asuntos sensibles, acompañamiento o información que deba tratarse directamente con Coordinación.</div>
-    <div class="messageHubLayout" id="coordinationLayout"><aside class="messageInbox"><label class="messageSearch"><span>${isAdmin ? "Buscar docente" : "Tu conversación"}</span><input id="coordinationSearch" type="search" placeholder="${isAdmin ? "Nombre o correo…" : "Buscar en el hilo…"}" /></label>${isAdmin ? '<button class="btnGoogle coordinationStart" id="coordinationStart" type="button">＋ Escribir a un docente</button>' : ""}<div id="coordinationInboxCount"></div><div id="coordinationThreads"></div></aside><section id="coordinationConversation"><div class="messageEmpty"><span>🔒</span><strong>${isAdmin ? "Elige un docente" : "Tu canal privado con Coordinación"}</strong><p>${isAdmin ? "Puedes abrir un hilo existente o iniciar una conversación." : "Aquí aparecerán los mensajes que intercambies con Coordinación."}</p></div></section></div>
+    <div class="messageHubLayout" id="coordinationLayout"><aside class="messageInbox"><label class="messageSearch"><span>${isCoordination ? "Buscar docente" : "Tu conversación"}</span><input id="coordinationSearch" type="search" placeholder="${isCoordination ? "Nombre o correo…" : "Buscar en el hilo…"}" /></label>${isCoordination ? '<button class="btnGoogle coordinationStart" id="coordinationStart" type="button">＋ Escribir a un docente</button>' : ""}<div id="coordinationInboxCount"></div><div id="coordinationThreads"></div></aside><section id="coordinationConversation"><div class="messageEmpty"><span>🔒</span><strong>${isCoordination ? "Elige un docente" : "Tu canal privado con Coordinación"}</strong><p>${isCoordination ? "Puedes abrir un hilo existente o iniciar una conversación." : "Aquí aparecerán los mensajes que intercambies con Coordinación."}</p></div></section></div>
   </div>`;
   document.body.appendChild(overlay);
   const close = () => { threadsUnsubscribe?.(); messagesUnsubscribe?.(); overlay.remove(); };
@@ -7360,7 +7388,7 @@ function openCoordinationMessages() {
     messagesUnsubscribe = onSnapshot(query(messageRef, orderBy("createdAt", "asc"), limit(200)), (snap) => {
       const messages = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
       const visibleName = thread.teacherName || thread.teacherEmail;
-      panel.innerHTML = `<div class="messageConversationHead"><button class="messageBack" type="button" aria-label="Volver a conversaciones">←</button><div><strong>${escapeHtml(isAdmin ? visibleName : "Coordinación Musicala")}</strong><span>${escapeHtml(isAdmin ? thread.teacherEmail : "Solo tú y Coordinación pueden ver este hilo")}</span></div></div>
+      panel.innerHTML = `<div class="messageConversationHead"><button class="messageBack" type="button" aria-label="Volver a conversaciones">←</button><div><strong>${escapeHtml(isCoordination ? visibleName : "Coordinación Musicala")}</strong><span>${escapeHtml(isCoordination ? thread.teacherEmail : "Solo tú y Coordinación pueden ver este hilo")}</span></div></div>
         <div class="messageBubbles">${messages.map((message) => `<article class="messageBubble ${emailKey({ email: message.senderEmail }) === myEmail ? "own" : ""}"><strong>${escapeHtml(message.senderName || (message.senderRole === "coordination" ? "Coordinación" : "Docente"))}</strong><p>${escapeHtml(message.text || "")}</p><time class="messageSentAt">${escapeHtml(messageSentAt(message))}</time></article>`).join("") || '<div class="messageEmpty small"><span>👋</span><strong>Inicia esta conversación</strong><p>El primer mensaje abrirá el canal privado.</p></div>'}</div>
         <form class="messageComposer"><textarea rows="2" maxlength="1600" placeholder="Escribe un mensaje privado…" required></textarea><button class="btnGoogle" type="submit">Enviar</button></form>`;
       $(".messageBack", panel)?.addEventListener("click", () => overlay.classList.remove("messageConversationOpen"));
@@ -7370,10 +7398,10 @@ function openCoordinationMessages() {
         const text = input.value.trim();
         if (!text) return;
         try {
-          const senderName = isAdmin ? "Coordinación Musicala" : (APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente");
+          const senderName = isCoordination ? "Coordinación Musicala" : (APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente");
           await addDoc(messageRef, {
             text,
-            senderRole: isAdmin ? "coordination" : "teacher",
+            senderRole: isCoordination ? "coordination" : "teacher",
             senderName,
             senderEmail: myEmail,
             createdAt: serverTimestamp()
@@ -7383,8 +7411,8 @@ function openCoordinationMessages() {
             teacherName: visibleName,
             lastMessage: text.slice(0, 160),
             updatedAt: serverTimestamp(),
-            teacherUnread: isAdmin,
-            adminUnread: !isAdmin
+            teacherUnread: isCoordination,
+            adminUnread: !isCoordination
           }, { merge: true });
           input.value = "";
         } catch (error) {
@@ -7392,14 +7420,14 @@ function openCoordinationMessages() {
           toast("No se pudo enviar el mensaje. Revisa que las reglas de Firestore estén publicadas.");
         }
       });
-      const unread = messages.filter((message) => isAdmin
+      const unread = messages.filter((message) => isCoordination
         ? message.senderRole === "teacher" && message.readByCoordination !== true
         : message.senderRole === "coordination" && message.readByTeacher !== true);
       if (unread.length) {
         const batch = writeBatch(APP_STATE.db);
-        unread.forEach((message) => batch.update(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail, "messages", message.id), isAdmin ? { readByCoordination: true } : { readByTeacher: true }));
+        unread.forEach((message) => batch.update(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail, "messages", message.id), isCoordination ? { readByCoordination: true } : { readByTeacher: true }));
         batch.commit().catch(() => {});
-        setDoc(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail), { [isAdmin ? "adminUnread" : "teacherUnread"]: false }, { merge: true }).catch(() => {});
+        setDoc(doc(APP_STATE.db, "coordination_messages", thread.teacherEmail), { [isCoordination ? "adminUnread" : "teacherUnread"]: false }, { merge: true }).catch(() => {});
       }
     }, (error) => { console.error(error); toast("No se pudo abrir este canal privado."); });
   };
@@ -7407,11 +7435,11 @@ function openCoordinationMessages() {
   const renderThreads = () => {
     const term = normalizeText($("#coordinationSearch", overlay)?.value || "");
     const threads = allThreads.filter((thread) => !term || normalizeText(`${thread.teacherName} ${thread.teacherEmail} ${thread.lastMessage}`).includes(term));
-    $("#coordinationInboxCount", overlay).textContent = isAdmin ? `${threads.length} conversación${threads.length === 1 ? "" : "es"}` : "Canal personal";
+    $("#coordinationInboxCount", overlay).textContent = isCoordination ? `${threads.length} conversación${threads.length === 1 ? "" : "es"}` : "Canal personal";
     $("#coordinationThreads", overlay).innerHTML = threads.length ? threads.map((thread) => {
       const date = thread.updatedAt?.toDate?.();
-      return `<button class="messageThread ${activeThread?.teacherEmail === thread.teacherEmail ? "active" : ""}" data-email="${escapeHtml(thread.teacherEmail)}" type="button"><span class="messageThreadAvatar">${escapeHtml((thread.teacherName || "D").trim().charAt(0).toUpperCase())}</span><span class="messageThreadCopy"><strong>${escapeHtml(isAdmin ? thread.teacherName || thread.teacherEmail : "Coordinación Musicala")} ${thread[isAdmin ? "adminUnread" : "teacherUnread"] ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.lastMessage || "Sin mensajes")}</span><small>${escapeHtml(isAdmin ? thread.teacherEmail : "Canal privado")}</small></span><time>${escapeHtml(date ? date.toLocaleDateString("es-CO", { day: "numeric", month: "short" }) : "")}</time></button>`;
-    }).join("") : `<div class="messageEmpty small"><strong>${isAdmin ? "Sin conversaciones" : "Aún no hay mensajes"}</strong><p>${isAdmin ? "Usa “Escribir a un docente” para iniciar una." : "Escríbele a Coordinación cuando lo necesites."}</p></div>`;
+      return `<button class="messageThread ${activeThread?.teacherEmail === thread.teacherEmail ? "active" : ""}" data-email="${escapeHtml(thread.teacherEmail)}" type="button"><span class="messageThreadAvatar">${escapeHtml((thread.teacherName || "D").trim().charAt(0).toUpperCase())}</span><span class="messageThreadCopy"><strong>${escapeHtml(isCoordination ? thread.teacherName || thread.teacherEmail : "Coordinación Musicala")} ${thread[isCoordination ? "adminUnread" : "teacherUnread"] ? '<b class="messageNew">Nuevo</b>' : ""}</strong><span>${escapeHtml(thread.lastMessage || "Sin mensajes")}</span><small>${escapeHtml(isCoordination ? thread.teacherEmail : "Canal privado")}</small></span><time>${escapeHtml(date ? date.toLocaleDateString("es-CO", { day: "numeric", month: "short" }) : "")}</time></button>`;
+    }).join("") : `<div class="messageEmpty small"><strong>${isCoordination ? "Sin conversaciones" : "Aún no hay mensajes"}</strong><p>${isCoordination ? "Usa “Escribir a un docente” para iniciar una." : "Escríbele a Coordinación cuando lo necesites."}</p></div>`;
     $$(".messageThread", overlay).forEach((button) => button.addEventListener("click", () => selectThread(allThreads.find((thread) => thread.teacherEmail === button.dataset.email))));
   };
 
@@ -7433,14 +7461,14 @@ function openCoordinationMessages() {
     });
   });
   $("#coordinationSearch", overlay)?.addEventListener("input", renderThreads);
-  const inbox = isAdmin
+  const inbox = isCoordination
     ? query(collection(APP_STATE.db, "coordination_messages"), limit(200))
     : doc(APP_STATE.db, "coordination_messages", myEmail);
   threadsUnsubscribe = onSnapshot(inbox, (snap) => {
-    const docs = isAdmin ? snap.docs : (snap.exists() ? [snap] : []);
+    const docs = isCoordination ? snap.docs : (snap.exists() ? [snap] : []);
     allThreads = docs.map((item) => ({ teacherEmail: item.id, ...item.data() }))
       .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
-    if (!isAdmin && !allThreads.length) allThreads = [{ teacherEmail: myEmail, teacherName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente" }];
+    if (!isCoordination && !allThreads.length) allThreads = [{ teacherEmail: myEmail, teacherName: APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "Docente" }];
     renderThreads();
   }, (error) => { console.error(error); toast("No se pudo cargar la bandeja privada. Revisa las reglas de Firestore."); });
 }
