@@ -143,6 +143,15 @@ h4{font-size:16px}
 .status{font-size:12px;color:var(--muted);font-weight:800}
 .status--error{color:var(--danger)}
 .helper-text{margin:0;color:var(--muted);line-height:1.55}
+.suggestion-panel{border-color:#ded3ff;background:linear-gradient(135deg,#fff 0%,#faf8ff 100%)}
+.suggestion-list{display:grid;gap:10px;margin-top:14px}
+.suggestion-card{border:1px solid #e6def8;border-radius:14px;padding:14px;background:#fff}
+.suggestion-card__head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
+.suggestion-card__head strong,.suggestion-card__head small{display:block}
+.suggestion-card__head small,.suggestion-card__category{color:var(--muted);font-size:12px;margin-top:4px}
+.suggestion-card p{margin:10px 0;white-space:pre-wrap;line-height:1.45}
+.suggestion-card__note{padding:10px;border-radius:10px;background:#f6f3ff;color:#3f2c7c}
+.suggestion-card__actions{margin-top:12px}
 
 .btn{
   display:inline-flex;
@@ -362,6 +371,7 @@ abbr{color:var(--danger);text-decoration:none;font-weight:950}
   .grid-2,.modal-grid{grid-template-columns:1fr}
   .budget-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .task-summary{grid-template-columns:1fr 1fr}
+  .suggestion-card__head{flex-direction:column}
   .admin-log-overview{grid-template-columns:1fr 1fr}
 }
 

@@ -24,6 +24,7 @@ Como el `iframe` es del **mismo origen** que el HUB, reutiliza la sesión de Fir
 | `academicObjectives`   | Tareas académicas y tareas de bolsa. Se diferencian con `workScope: "academica"` o `workScope: "bolsa"`. |
 | `academicTaskBudgets`  | Bolsas de horas por periodo y docente. |
 | `academicTaskHourLogs` | Seguimientos / avances registrados por la docente. |
+| `academicTaskSuggestions` | Propuestas de tarea enviadas por docentes; no son oficiales hasta que Coordinación las aprueba. |
 | `hubUsers`             | Docentes gestionados desde el panel admin del HUB. |
 
 Cada documento académico lleva `teacherEmail` y `teacherName`. Las reglas de Firestore garantizan que cada docente solo vea/escriba lo suyo y que coordinación admin pueda gestionar todo.
@@ -31,8 +32,8 @@ Cada documento académico lleva `teacherEmail` y `teacherName`. Las reglas de Fi
 > Importante: las reglas de `firestore.rules` deben publicarse aparte en Firebase Console → Firestore → Rules → Publicar. Si no se publican, Firebase hará su encantador numerito de “no tengo permisos” y nada se guardará.
 
 ## Roles
-- **Docente** (`role=docente`): ve solo sus tareas, su bolsa y sus seguimientos. Puede registrar avances y enviarlos como pendiente de aprobación; solo coordinación puede marcar una tarea como cumplida.
-- **Coordinación** (`role=admin`): ve todas las docentes, puede asignar tareas a una docente específica y configurar bolsas de horas.
+- **Docente** (`role=docente`): ve solo sus tareas, su bolsa y sus seguimientos. Puede registrar avances y enviar propuestas de tareas; una propuesta no cuenta como tarea ni como horas hasta la aprobación de Coordinación.
+- **Coordinación** (`role=admin`): ve todas las docentes, puede asignar tareas, revisar propuestas (aprobar o rechazar con comentario) y configurar bolsas de horas. Al aprobar, la propuesta queda guardada como historial y se crea una tarea oficial.
 
 ## Gestión de docentes desde el HUB
 Los docentes nuevos se agregan desde el panel admin en la colección `hubUsers`. El guardado ahora se verifica inmediatamente leyendo de nuevo el documento creado/actualizado, para evitar que el front muestre éxito cuando Firestore no guardó nada.

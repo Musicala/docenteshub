@@ -10,6 +10,7 @@
      academicObjectives    → tareas / objetivos
      academicTaskBudgets   → bolsas de horas
      academicTaskHourLogs  → registros de horas (avances)
+     academicTaskSuggestions → propuestas de docentes pendientes de revisión
 
    El "Volver al HUB" avisa a la ventana padre (postMessage) para cerrar.
 ============================================================================ */
@@ -47,6 +48,7 @@ const COL = {
   objectives: "academicObjectives",
   budgets: "academicTaskBudgets",
   hourLogs: "academicTaskHourLogs",
+  suggestions: "academicTaskSuggestions",
   hubUsers: "hubUsers"
 };
 
@@ -120,7 +122,8 @@ let teacherDirectory = [];
 const store = {
   objectives: [],
   budgets: [],
-  hourLogs: []
+  hourLogs: [],
+  suggestions: []
 };
 
 function isAdminContext() {
@@ -407,14 +410,16 @@ async function loadCollection(name) {
 
 async function loadAll() {
   setStatus('Cargando…');
-  const [objectives, budgets, hourLogs] = await Promise.all([
+  const [objectives, budgets, hourLogs, suggestions] = await Promise.all([
     loadCollection(COL.objectives),
     loadCollection(COL.budgets),
-    loadCollection(COL.hourLogs)
+    loadCollection(COL.hourLogs),
+    loadCollection(COL.suggestions)
   ]);
   store.objectives = objectives;
   store.budgets = budgets;
   store.hourLogs = hourLogs;
+  store.suggestions = suggestions;
   dataReady = true;
   const n = store.objectives.length;
   setStatus(`${n} tarea${n === 1 ? '' : 's'} cargada${n === 1 ? '' : 's'}.`);
@@ -529,6 +534,26 @@ function getAllTasks() {
 
 function getTaskById(id) {
   return getAllTasks().find(task => String(task.id) === String(id));
+}
+
+function suggestionState(value) {
+  const state = norm(value);
+  if (state.includes('aprob')) return 'Aprobada';
+  if (state.includes('rechaz')) return 'Rechazada';
+  return 'Pendiente de revisión';
+}
+
+function suggestionStateClass(value) {
+  const state = suggestionState(value);
+  if (state === 'Aprobada') return 'pill pill--ok';
+  if (state === 'Rechazada') return 'pill pill--danger';
+  return 'pill pill--warn';
+}
+
+function suggestionsForCurrentUser() {
+  return store.suggestions
+    .slice()
+    .sort((a, b) => createdAtMillis(b) - createdAtMillis(a));
 }
 
 function durationHours(start, end) {
@@ -882,6 +907,36 @@ function formatCreatedAt(record) {
   return Number.isFinite(millis) ? formatDateTime(millis) : '—';
 }
 
+function renderSuggestions() {
+  const panel = $('#suggestionPanel');
+  const list = $('#suggestionList');
+  const title = $('#suggestionTitle');
+  const intro = $('#suggestionIntro');
+  if (!panel || !list || !title || !intro) return;
+
+  const admin = isAdminContext();
+  const suggestions = suggestionsForCurrentUser();
+  const pending = suggestions.filter(item => suggestionState(item.status) === 'Pendiente de revisión');
+  title.textContent = admin ? `Propuestas de tareas${pending.length ? ` · ${pending.length} pendiente${pending.length === 1 ? '' : 's'}` : ''}` : 'Mis tareas sugeridas';
+  intro.textContent = admin
+    ? 'Revisa cada propuesta antes de convertirla en una tarea oficial. Aprobar crea la tarea; rechazar conserva el registro y la respuesta.'
+    : 'Estas propuestas no son tareas oficiales ni suman horas hasta que Coordinación las apruebe.';
+
+  if (!suggestions.length) {
+    list.innerHTML = `<p class="helper-text">${admin ? 'No hay propuestas para revisar.' : 'Aún no has sugerido tareas.'}</p>`;
+    return;
+  }
+
+  list.innerHTML = suggestions.map(item => {
+    const state = suggestionState(item.status);
+    const review = item.reviewNote ? `<p class="suggestion-card__note"><strong>Respuesta de Coordinación:</strong> ${esc(item.reviewNote)}</p>` : '';
+    const actions = admin && state === 'Pendiente de revisión'
+      ? `<div class="form-actions suggestion-card__actions"><button class="btn btn-dark btn-approve-suggestion" type="button" data-suggestion-id="${esc(item.id)}">Aprobar y crear tarea</button><button class="btn btn-danger btn-reject-suggestion" type="button" data-suggestion-id="${esc(item.id)}">Rechazar</button></div>`
+      : '';
+    return `<article class="suggestion-card"><div class="suggestion-card__head"><div><strong>${esc(item.title || 'Tarea sin título')}</strong><small>${esc(item.teacherName || item.person || item.teacherEmail || 'Docente')} · ${esc(item.period || 'Sin periodo')} · ${esc(formatCreatedAt(item))}</small></div><span class="${suggestionStateClass(state)}">${esc(state)}</span></div><p>${esc(item.description || 'Sin descripción adicional.')}</p>${item.category ? `<small class="suggestion-card__category">${esc(item.category)}</small>` : ''}${review}${actions}</article>`;
+  }).join('');
+}
+
 function adminCommentsFor(task) {
   const comments = Array.isArray(task?.adminComments) ? task.adminComments.filter(comment => String(comment?.text || '').trim()) : [];
   // Compatibilidad: muestra la última nota guardada antes de que existiera el historial.
@@ -963,6 +1018,7 @@ function renderAll() {
   renderNeedsEstimate();
   renderBudgetSummary();
   renderMainTable();
+  renderSuggestions();
   renderObjectivesTable();
   renderHourLogs();
 }
@@ -1434,6 +1490,95 @@ async function createObjective(event) {
   }
 }
 
+async function submitTaskSuggestion(event) {
+  event.preventDefault();
+  if (isAdminContext()) {
+    alert('Las tareas oficiales se asignan desde “Asignar tarea”.');
+    return;
+  }
+  const form = $('#suggestionForm');
+  if (!form?.checkValidity()) { form?.reportValidity(); return; }
+  const suggestion = {
+    id: uid('SUG'),
+    title: $('#suggestionTitleInput').value.trim(),
+    description: $('#suggestionDescription').value.trim(),
+    category: $('#suggestionCategory').value,
+    period: $('#suggestionPeriod').value || todayMonth(),
+    teacherEmail: ME,
+    teacherName: ACADEMIC_CTX.name || inferPerson() || ME,
+    person: inferPerson() || ACADEMIC_CTX.name || ME,
+    status: 'Pendiente de revisión',
+    createdAt: new Date().toISOString()
+  };
+  try {
+    await setDoc(doc(DB, COL.suggestions, suggestion.id), suggestion);
+    store.suggestions.unshift(suggestion);
+    form.reset();
+    $('#suggestionPeriod').value = todayMonth();
+    hideModal('#modalSuggestion');
+    switchView('tareas');
+  } catch (err) {
+    console.error(err);
+    alert(`No se pudo enviar la propuesta: ${err.message}`);
+  }
+}
+
+async function reviewTaskSuggestion(id, approved) {
+  if (!isAdminContext()) return;
+  const suggestion = store.suggestions.find(item => String(item.id) === String(id));
+  if (!suggestion || suggestionState(suggestion.status) !== 'Pendiente de revisión') return;
+  const action = approved ? 'aprobar y crear la tarea oficial' : 'rechazar';
+  if (!confirm(`¿Confirmas ${action} “${suggestion.title || 'esta propuesta'}”?`)) return;
+  const reviewNote = prompt(approved
+    ? 'Comentario para la docente (opcional):'
+    : 'Indica a la docente por qué no se aprueba (opcional):') || '';
+  try {
+    const batch = writeBatch(DB);
+    let createdTask = null;
+    const reviewedAt = new Date().toISOString();
+    const suggestionRef = doc(DB, COL.suggestions, suggestion.id);
+    const review = {
+      status: approved ? 'Aprobada' : 'Rechazada',
+      reviewNote: reviewNote.trim(),
+      reviewedAt,
+      reviewedBy: ME
+    };
+    if (approved) {
+      const task = {
+        id: uid('OBJ'),
+        title: suggestion.title,
+        teacherEmail: suggestion.teacherEmail,
+        teacherName: suggestion.teacherName,
+        person: suggestion.person || suggestion.teacherName,
+        period: suggestion.period || todayMonth(),
+        estimatedHours: 0,
+        category: suggestion.category || 'Otro',
+        state: 'Pendiente',
+        description: suggestion.description || '',
+        urgency: '',
+        dueDate: '',
+        workScope: 'academica',
+        createdAt: reviewedAt,
+        createdFromSuggestionId: suggestion.id,
+        createdBy: ME,
+        updatedBy: ME,
+        updatedAt: serverTimestamp()
+      };
+      review.approvedObjectiveId = task.id;
+      batch.set(doc(DB, COL.objectives, task.id), task);
+      createdTask = { ...task, updatedAt: reviewedAt };
+    }
+    batch.set(suggestionRef, review, { merge: true });
+    await batch.commit();
+    if (createdTask) store.objectives.unshift(createdTask);
+    Object.assign(suggestion, review);
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    alert(`No se pudo registrar la decisión: ${err.message}`);
+  }
+}
+
 async function saveBudget(event) {
   event.preventDefault();
   if (!isAdminContext()) {
@@ -1692,6 +1837,8 @@ function applyRoleScope() {
   document.body.classList.toggle('is-admin-context', admin);
   const reportButton = $('#btnAcademicReport');
   if (reportButton) reportButton.hidden = !admin;
+  const suggestButton = $('#btnSuggestObjective');
+  if (suggestButton) suggestButton.hidden = admin;
   const exportHoursButton = $('#btnExportHours');
   if (exportHoursButton) exportHoursButton.hidden = !admin;
   ['#btnNewObjective', '#budgetForm', '#estimateForm'].forEach(sel => {
@@ -1732,6 +1879,11 @@ function attachEvents() {
     $('#objPerson').value = isAdminContext() ? '' : inferPerson();
     showModal('#modalObjective');
   });
+  $('#btnSuggestObjective')?.addEventListener('click', () => {
+    $('#suggestionForm')?.reset();
+    $('#suggestionPeriod').value = todayMonth();
+    showModal('#modalSuggestion');
+  });
 
   $('#fPersona')?.addEventListener('change', renderAll);
   $('#fEstado')?.addEventListener('change', renderAll);
@@ -1757,6 +1909,10 @@ function attachEvents() {
     if (toggleDoneButton?.dataset?.budgetId) toggleBudgetDone(toggleDoneButton.dataset.budgetId, toggleDoneButton.dataset.done === '1');
     const deleteTaskButton = event.target.closest('#btnDeleteObjective');
     if (deleteTaskButton && currentTask?.id) deleteObjectiveWithLogs(currentTask.id);
+    const approveSuggestionButton = event.target.closest('.btn-approve-suggestion');
+    if (approveSuggestionButton?.dataset?.suggestionId) reviewTaskSuggestion(approveSuggestionButton.dataset.suggestionId, true);
+    const rejectSuggestionButton = event.target.closest('.btn-reject-suggestion');
+    if (rejectSuggestionButton?.dataset?.suggestionId) reviewTaskSuggestion(rejectSuggestionButton.dataset.suggestionId, false);
     if (event.target.dataset.close) hideModal(event.target.closest('.modal') ? `#${event.target.closest('.modal').id}` : null);
   });
 
@@ -1766,6 +1922,7 @@ function attachEvents() {
   $('#estimateForm')?.addEventListener('submit', saveEstimate);
   $('#estimateForm')?.addEventListener('input', () => showEstimateSaveStatus());
   $('#objectiveForm')?.addEventListener('submit', createObjective);
+  $('#suggestionForm')?.addEventListener('submit', submitTaskSuggestion);
   $('#budgetForm')?.addEventListener('submit', saveBudget);
   $('#btnExportHours')?.addEventListener('click', exportHoursCsv);
   $('#btnExportJson')?.addEventListener('click', exportJson);

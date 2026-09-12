@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bitácora Académica · Musicala</title>
   <meta name="description" content="Bitácora de tareas académicas, seguimiento de avances y bolsa de horas por objetivos para Musicala." />
-  <link rel="stylesheet" href="styles.css?v=2026-08-01.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-12.2" />
 </head>
 <body>
   <header class="hero" role="banner">
@@ -28,6 +28,7 @@
         <button id="btnBackHub" class="btn btn-light btn-back" type="button" hidden>← Volver al HUB</button>
         <button id="btnReload" class="btn btn-light" type="button">↻ Recargar datos</button>
         <button id="btnAcademicReport" class="btn btn-light" type="button" hidden>Informe para IA</button>
+        <button id="btnSuggestObjective" class="btn btn-light" type="button">＋ Sugerir tarea</button>
         <button id="btnNewObjective" class="btn btn-dark" type="button">＋ Asignar tarea</button>
       </div>
     </div>
@@ -110,6 +111,17 @@
     </section>
 
     <section id="view-tareas" class="view" aria-labelledby="tareas-title">
+      <article id="suggestionPanel" class="panel suggestion-panel">
+        <div class="section-head section-head--wrap">
+          <div>
+            <p class="eyebrow">Revisión de Coordinación</p>
+            <h2 id="suggestionTitle">Propuestas de tareas</h2>
+            <p id="suggestionIntro" class="helper-text"></p>
+          </div>
+        </div>
+        <div id="suggestionList" class="suggestion-list" aria-live="polite"></div>
+      </article>
+
       <article class="panel">
         <div class="section-head section-head--wrap">
           <div>
@@ -562,6 +574,49 @@
     </div>
   </div>
 
+  <div id="modalSuggestion" class="modal" aria-hidden="true">
+    <div class="modal__backdrop" data-close="1" aria-hidden="true"></div>
+    <div class="modal__dialog modal__dialog--small" role="dialog" aria-modal="true" aria-labelledby="modalSuggestionTitle">
+      <header class="modal__header">
+        <div>
+          <p class="eyebrow">Propuesta para Coordinación</p>
+          <h3 id="modalSuggestionTitle">Sugerir una tarea académica</h3>
+        </div>
+        <button class="btn btn-icon modal__close" type="button" aria-label="Cerrar" data-close="1">✕</button>
+      </header>
+      <form id="suggestionForm" class="modal__content form-grid form-grid--compact" novalidate>
+        <p class="helper-text full">Tu propuesta se enviará a Coordinación para revisión. Solo será una tarea oficial si la aprueban.</p>
+        <label class="full">
+          <span>Tarea que propones <abbr title="Obligatorio">*</abbr></span>
+          <input id="suggestionTitleInput" type="text" required maxlength="160" placeholder="Ej.: Actualizar repertorio pedagógico para ciclo II" />
+        </label>
+        <label>
+          <span>Periodo sugerido</span>
+          <input id="suggestionPeriod" type="month" />
+        </label>
+        <label>
+          <span>Categoría</span>
+          <select id="suggestionCategory">
+            <option>Planeación de clase</option>
+            <option>Material pedagógico</option>
+            <option>Informe / documentación</option>
+            <option>Revisión académica</option>
+            <option>Comunicación / seguimiento</option>
+            <option>Otro</option>
+          </select>
+        </label>
+        <label class="full">
+          <span>¿Qué se haría y por qué es necesaria?</span>
+          <textarea id="suggestionDescription" rows="4" maxlength="1800" placeholder="Describe el entregable o resultado esperado."></textarea>
+        </label>
+        <div class="form-actions full">
+          <button class="btn btn-dark" type="submit">Enviar propuesta</button>
+          <button class="btn btn-soft" type="button" data-close="1">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <template id="emptyStateTpl">
     <tr><td colspan="10" class="empty-state">No hay información para mostrar todavía.</td></tr>
   </template>
@@ -570,6 +625,6 @@
     <p class="noscript">Activa JavaScript para usar la bitácora y la bolsa de horas.</p>
   </noscript>
 
-  <script type="module" src="script.js?v=2026-08-03.1"></script>
+  <script type="module" src="script.js?v=2026-09-12.2"></script>
 </body>
 </html>
