@@ -28,7 +28,7 @@
   <meta name="apple-mobile-web-app-title" content="Musicala Docentes" />
 
   <title>Musicala Docentes Hub</title>
-  <link rel="stylesheet" href="./styles.css?v=2026-09-18.1" />
+  <link rel="stylesheet" href="./styles.css?v=2026-09-23.2" />
 </head>
 
 <body>
@@ -245,7 +245,25 @@
       </main>
 
       <script src="https://unpkg.com/html5-qrcode"></script>
-  <script type="module" src="./app.js?v=2026-09-18.1"></script>
+      <script>
+        if (window.location.protocol === "file:") {
+          const login = document.getElementById("view-login");
+          const card = login?.querySelector(".loginCard");
+          if (login) login.hidden = false;
+          if (card) {
+            card.innerHTML = `
+              <div class="loginBrand">
+                <div class="mark fallback" aria-hidden="true"><div class="markFallback">🌐</div></div>
+                <div class="brandText"><h1 class="brandTitle">Abrir con servidor local</h1><p class="brandSub">Docentes Hub necesita una dirección http://</p></div>
+              </div>
+              <div class="loginActions">
+                <p class="loginHint">Cierra esta pestaña y abre el archivo <strong>ABRIR DOCENTES HUB.cmd</strong> que está en esta misma carpeta.</p>
+                <p class="loginHint">El navegador bloquea Firebase y los módulos JavaScript cuando se abre directamente index.html como archivo.</p>
+              </div>`;
+          }
+        }
+      </script>
+      <script type="module" src="./app.js?v=2026-09-23.3"></script>
       <noscript>Esta app necesita JavaScript para funcionar.</noscript>
     </div>
   </div>

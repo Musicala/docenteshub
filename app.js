@@ -10,7 +10,9 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-18.1";
+const BUILD = "2026-09-23.3";
+const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
+const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
 /* Safari iOS puede superponer su barra inferior sobre los elementos fixed.
    VisualViewport entrega el área realmente visible; conservamos la diferencia
@@ -625,6 +627,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   onAuthStateChanged,
   signOut,
   setPersistence,
@@ -6568,13 +6571,56 @@ function renderCalendarUpdatesHTML() {
 
 function renderPendingBannerHTML() {
   const d = APP_STATE.hubData.pendingBitacoras;
+  if (!d) {
+    return `
+      <div class="pendingBanner pendingBannerLoading" data-slot="pendingBitacoras" aria-live="polite">
+        <span class="pendingDot">…</span>
+        <span class="pendingTxt">
+          <strong>Consultando tus bitácoras…</strong>
+          <em>Estamos conectando tus indicadores.</em>
+        </span>
+      </div>`;
+  }
+  if (d.authRequired) {
+    return `
+      <button type="button" class="pendingBanner pendingBannerConnect" data-slot="pendingBitacoras" data-connect-pending>
+        <span class="pendingDot" aria-hidden="true">↗</span>
+        <span class="pendingTxt">
+          <strong>Conecta tus indicadores de bitácoras</strong>
+          <em>Usa la misma cuenta de Google del HUB. Solo tendrás que hacerlo una vez.</em>
+        </span>
+        <span class="pendingBannerAction">Conectar</span>
+      </button>`;
+  }
+  if (d.error) {
+    return `
+      <button type="button" class="pendingBanner pendingBannerError" data-slot="pendingBitacoras" data-retry-pending>
+        <span class="pendingDot" aria-hidden="true">!</span>
+        <span class="pendingTxt">
+          <strong>No pudimos consultar tus bitácoras</strong>
+          <em>Toca para intentar de nuevo.</em>
+        </span>
+        <span class="pendingBannerAction">Reintentar</span>
+      </button>`;
+  }
   const count = d?.count ?? null;
+  const compliance = Number.isFinite(Number(d?.compliance)) ? `${Number(d.compliance)}%` : "—";
+  const rank = Number(d?.rank) > 0
+    ? `#${Number(d.rank)}${Number(d?.totalTeachers) > 0 ? ` de ${Number(d.totalTeachers)}` : ""}`
+    : "—";
+  const title = Number(count) === 0
+    ? "¡Tus bitácoras están al día!"
+    : `Tienes ${escapeHtml(slotValue(count))} bitácora${Number(count) === 1 ? "" : "s"} pendiente${Number(count) === 1 ? "" : "s"}`;
   return `
-    <button type="button" class="pendingBanner ${d ? "" : "slotEmpty"}" data-slot="pendingBitacoras" data-id="bitacoraClasesNueva">
+    <button type="button" class="pendingBanner ${Number(count) === 0 ? "is-complete" : ""}" data-slot="pendingBitacoras" data-open-pending-bitacoras
+      aria-label="${escapeHtml(title)}. Puesto ${rank}. Cumplimiento ${compliance}.">
       <span class="pendingDot">${escapeHtml(slotValue(count))}</span>
       <span class="pendingTxt">
-        <strong>Tienes ${escapeHtml(slotValue(count))} bitácoras pendientes</strong>
-        <em>Completa tus registros para mantenerte al día. ${d ? "" : slotTag}</em>
+        <strong>${title}</strong>
+        <em class="pendingBannerStats">
+          <span>Puesto <b>${escapeHtml(rank)}</b></span>
+          <span>Cumplimiento <b>${escapeHtml(compliance)}</b></span>
+        </em>
       </span>
       <span aria-hidden="true">›</span>
     </button>
@@ -6817,6 +6863,124 @@ function refreshHubDataUI() {
   document.querySelectorAll("[data-wix-bookings]").forEach((button) => {
     button.addEventListener("click", () => { window.location.href = WIX_BOOKINGS_URL; });
   });
+  document.querySelectorAll("[data-connect-pending]").forEach((button) => {
+    button.addEventListener("click", connectPendingBitacorasData);
+  });
+  document.querySelectorAll("[data-retry-pending]").forEach((button) => {
+    button.addEventListener("click", loadPendingBitacorasForActiveUser);
+  });
+  document.querySelectorAll("[data-open-pending-bitacoras]").forEach((button) => {
+    button.addEventListener("click", () => openExternal(PENDING_CLASS_LOGS_URL));
+  });
+}
+
+function pendingLogStatus(row = {}) {
+  return String(row.reconciliationStatus || "faltante").trim().toLowerCase();
+}
+
+function pendingLogSessionKey(row = {}) {
+  return [
+    row.fecha || "",
+    row.hora || "",
+    row.profesorEmail || row.profesorKey || "",
+    normalizeText(row.servicioOriginal || "clase")
+  ].join("|");
+}
+
+function summarizePendingLogRows(rows = []) {
+  const countable = rows.filter((row) => pendingLogStatus(row) !== "inasistencia");
+  const missing = countable.filter((row) => ["faltante", "parcial_grupal"].includes(pendingLogStatus(row)));
+  const pendingSessions = new Map();
+  missing.forEach((row) => {
+    const key = pendingLogSessionKey(row);
+    if (!pendingSessions.has(key)) pendingSessions.set(key, row);
+  });
+  const compliance = countable.length
+    ? Math.round(((countable.length - missing.length) / countable.length) * 1000) / 10
+    : 100;
+  return {
+    expected: countable.length,
+    missing: missing.length,
+    count: pendingSessions.size,
+    compliance,
+    items: [...pendingSessions.values()].slice(0, 8).map((row) => ({
+      title: row.servicioOriginal || "Clase",
+      group: row.estudianteNombre || "",
+      date: row.fecha || "",
+      url: OFFICIAL_CLASS_LOG_URL
+    }))
+  };
+}
+
+function pendingTeacherKey(row = {}) {
+  return String(row.profesorEmail || row.profesorKey || "").trim().toLowerCase();
+}
+
+function rankPendingTeachers(rows = [], activeEmail = "") {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    if (pendingLogStatus(row) === "inasistencia") return;
+    const key = pendingTeacherKey(row);
+    if (!key) return;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(row);
+  });
+  const ranked = [...grouped.entries()]
+    .map(([key, teacherRows]) => ({ key, ...summarizePendingLogRows(teacherRows) }))
+    .filter((teacher) => teacher.expected > 0)
+    .sort((a, b) => b.compliance - a.compliance || a.missing - b.missing || a.key.localeCompare(b.key));
+  const me = ranked.find((teacher) => teacher.key === String(activeEmail || "").toLowerCase());
+  if (!me) return { rank: null, totalTeachers: ranked.length };
+  const rank = 1 + new Set(
+    ranked.filter((teacher) => teacher.compliance > me.compliance).map((teacher) => teacher.compliance)
+  ).size;
+  return { rank, totalTeachers: ranked.length };
+}
+
+async function loadPendingBitacorasForActiveUser() {
+  const email = emailKey(APP_STATE.activeUser);
+  if (!email) return;
+  ensureStudentsServices();
+  if (emailKey(APP_STATE.studentsAuth?.currentUser) !== email) {
+    setHubData("pendingBitacoras", { authRequired: true, email });
+    return;
+  }
+  try {
+    const ownSnapshot = await getDocs(query(
+      collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION),
+      where("profesorEmail", "==", email)
+    ));
+    const ownRows = ownSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    const summary = summarizePendingLogRows(ownRows);
+    let ranking = { rank: null, totalTeachers: 0 };
+    try {
+      const allSnapshot = await getDocs(collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION));
+      ranking = rankPendingTeachers(allSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })), email);
+    } catch (rankingError) {
+      console.info("El ranking general no está disponible para este perfil.", rankingError?.code || rankingError);
+    }
+    setHubData("pendingBitacoras", {
+      ...summary,
+      ...ranking,
+      email,
+      sourceUrl: PENDING_CLASS_LOGS_URL
+    });
+  } catch (error) {
+    console.warn("No se pudieron cargar los indicadores de bitácoras", error);
+    setHubData("pendingBitacoras", { error: true, email });
+  }
+}
+
+async function connectPendingBitacorasData() {
+  try {
+    await connectStudentsMessages();
+    await loadPendingBitacorasForActiveUser();
+  } catch (error) {
+    if (error?.code !== "auth/popup-closed-by-user") {
+      console.error(error);
+      toast(error?.message || "No se pudo conectar la información de bitácoras.");
+    }
+  }
 }
 
 function wixBookingChangedAt(booking) {
@@ -7184,6 +7348,7 @@ function ensureStudentsServices() {
     onAuthStateChanged(APP_STATE.studentsAuth, (user) => {
       if (user && APP_STATE.activeUser && emailKey(user) === emailKey(APP_STATE.activeUser)) {
         startStudentMessagesBadge();
+        loadPendingBitacorasForActiveUser();
       }
     });
   }
@@ -9443,7 +9608,17 @@ async function doGoogleLogin(auth) {
       toast("Abriendo Google para iniciar sesión…");
     }
 
-    await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential) {
+      try {
+        ensureStudentsServices();
+        await ensureAuthPersistence(APP_STATE.studentsAuth);
+        await signInWithCredential(APP_STATE.studentsAuth, credential);
+      } catch (secondaryError) {
+        console.warn("La sesión académica se conectará desde el banner de bitácoras.", secondaryError);
+      }
+    }
   } catch (error) {
     const code = error?.code || "";
 
@@ -9467,7 +9642,10 @@ async function doGoogleLogin(auth) {
 async function doLogout(auth) {
   try {
     closeDrawer();
-    await signOut(auth);
+    const sessions = [signOut(auth)];
+    if (APP_STATE.studentsAuth?.currentUser) sessions.push(signOut(APP_STATE.studentsAuth));
+    await Promise.allSettled(sessions);
+    APP_STATE.hubData = { ...HUB_DATA_DEFAULTS };
   } catch (error) {
     toast("No se pudo cerrar sesión");
     console.error("Logout error:", error);
@@ -9520,6 +9698,9 @@ async function handleAuthorizedUser(user, managed = null) {
   APP_STATE.activeProfile = profile;
   APP_STATE.activeLinks = mergedLinks;
   APP_STATE.hubUserDoc = managed;
+  // Nunca reutilizar indicadores de la sesión anterior mientras llegan los del
+  // correo que acaba de entrar.
+  APP_STATE.hubData = { ...HUB_DATA_DEFAULTS };
 
   // Los admins no pasan por resolveHubAccess con lectura del doc; lo traemos
   // aparte por si también tienen áreas configuradas (no es obligatorio).
@@ -9548,6 +9729,7 @@ async function handleAuthorizedUser(user, managed = null) {
     autoCloseStaleOpenShifts({ includeAll: isAdminUser(user), silent: true }),
     loadTeacherScheduleForActiveUser(),
     loadCalendarUpdatesForActiveUser(),
+    loadPendingBitacorasForActiveUser(),
     refreshTeacherJornadaStatus()
   ];
   Promise.allSettled(backgroundLoads).then((results) => {
@@ -9604,6 +9786,7 @@ async function mount() {
       APP_STATE.activeUser = null;
       APP_STATE.activeProfile = null;
       APP_STATE.activeLinks = {};
+      APP_STATE.hubData = { ...HUB_DATA_DEFAULTS };
       APP_STATE.teacherSchedule = { loading: false, schedule: null, overrides: {} };
 
       show("login");
