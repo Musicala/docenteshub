@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-28.1";
+const BUILD = "2026-09-28.2";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8749,7 +8749,7 @@ function renderAdminContratoTerms(body, email) {
       `).join("")}
     </div>
     <div class="adminSubActions">
-      <span></span>
+      <p class="adminNote" id="contractTermsSaveFeedback" role="status" aria-live="polite">Los cambios aún no se han guardado.</p>
       <div>
         <button class="btnGhost" id="contractTermsBack" type="button">Volver</button>
         <button class="btnGhost" id="contractTermsApprove" type="button">Aprobar para firma</button>
@@ -8777,6 +8777,13 @@ function renderAdminContratoTerms(body, email) {
   $("#contractRateAdd", body)?.addEventListener("click", () => { rateList?.insertAdjacentHTML("beforeend", renderContractRateRow()); });
   rateList?.addEventListener("click", (event) => { const remove = event.target.closest("[data-contract-rate-remove]"); if (remove) remove.closest(".contractRateRow")?.remove(); });
   rateList?.addEventListener("input", (event) => { if (event.target.matches('[data-contract-rate="valor"]')) { const row = event.target.closest(".contractRateRow"); const letters = row?.querySelector('[data-contract-rate="letras"]'); if (letters) letters.value = amountToSpanishPesos(event.target.value); } });
+  const saveButton = $("#contractTermsSave", body);
+  const saveFeedback = $("#contractTermsSaveFeedback", body);
+  const markChangesPending = () => {
+    if (saveFeedback) saveFeedback.textContent = "Hay cambios sin guardar.";
+  };
+  body.querySelector(".contractTermsForm")?.addEventListener("input", markChangesPending);
+  body.querySelector(".contractTermsForm")?.addEventListener("change", markChangesPending);
 
   $("#contractTermsBack", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.termsEmail = "";
@@ -8787,7 +8794,8 @@ function renderAdminContratoTerms(body, email) {
     const values = readValues();
     // Guardar vuelve a dejar la versión en borrador: nadie firma algo que se
     // acaba de editar sin una nueva aprobación explícita.
-    await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
+    const termsRef = doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email);
+    await setDoc(termsRef, {
       ...values,
       email,
       approvalStatus: "draft",
@@ -8797,18 +8805,35 @@ function renderAdminContratoTerms(body, email) {
       updatedAtClient: Date.now(),
       updatedBy: emailKey(APP_STATE.activeUser)
     }, { merge: true });
-    return values;
+    // La escritura local no basta como confirmación: verificamos la copia que
+    // responde Firestore antes de decir que se guardó correctamente.
+    const persistedSnapshot = await getDocFromServer(termsRef);
+    if (!persistedSnapshot.exists()) throw new Error("No encontré las condiciones después de guardarlas.");
+    const persisted = persistedSnapshot.data() || {};
+    const valuesMatch = TEACHER_CONTRACT_TERM_FIELDS.every((field) =>
+      String(persisted[field.name] || "").trim() === String(values[field.name] || "").trim()
+    ) && JSON.stringify(persisted.modalidadTarifas || []) === JSON.stringify(values.modalidadTarifas || []);
+    if (!valuesMatch) throw new Error("Las condiciones guardadas no coinciden con los valores enviados.");
+    return { values, persisted };
   };
 
-  $("#contractTermsSave", body)?.addEventListener("click", async () => {
+  saveButton?.addEventListener("click", async () => {
+    const originalLabel = saveButton.textContent;
+    saveButton.disabled = true;
+    saveButton.textContent = "Guardando…";
+    if (saveFeedback) saveFeedback.textContent = "Guardando y verificando las condiciones…";
     try {
-      await save();
-      await loadContractAdminData();
+      const { values, persisted } = await save();
+      ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...values };
+      if (saveFeedback) saveFeedback.textContent = "Condiciones guardadas correctamente ✅";
       toast("Condiciones guardadas ✅");
-      renderAdminBody();
     } catch (error) {
       console.error("No se pudieron guardar las condiciones", error);
+      if (saveFeedback) saveFeedback.textContent = "No se guardaron las condiciones. Revisa tu conexión o permisos e inténtalo de nuevo.";
       toast("No pude guardar las condiciones. Revisa permisos/reglas.");
+    } finally {
+      saveButton.disabled = false;
+      saveButton.textContent = originalLabel;
     }
   });
 
