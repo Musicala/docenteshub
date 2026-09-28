@@ -95,14 +95,24 @@ const CONTRACT_MODALITY_OPTIONS = [
   "Musicala Hogar personalizado",
   "Musicala Sede y Hogar grupal"
 ];
+// Plantilla institucional para un Anexo A nuevo. Se copia al borrador visual,
+// pero no reemplaza tarifas que ya hayan sido guardadas para una docente.
+const CONTRACT_DEFAULT_RATES = [
+  { modalidad: "Musicala Virtual personalizado", valor: "30000" },
+  { modalidad: "Musicala Sede personalizado", valor: "36000" },
+  { modalidad: "Musicala Hogar personalizado", valor: "36000" },
+  { modalidad: "Musicala Sede y Hogar grupal", valor: "44000" }
+];
 
 function contractRateRows(raw = {}) {
   if (Array.isArray(raw.modalidadTarifas) && raw.modalidadTarifas.length) return raw.modalidadTarifas;
   if (raw.modalidades || raw.valorSesion || raw.valorLetras) return [{ modalidad: raw.modalidades || "", valor: raw.valorSesion || "", letras: raw.valorLetras || "" }];
-  return [{ modalidad: "", valor: "", letras: "" }];
+  return CONTRACT_DEFAULT_RATES.map((rate) => ({ ...rate }));
 }
 function amountToSpanishPesos(value) {
-  const n = Number(String(value || "").replace(/[^\d]/g, ""));
+  const digits = String(value || "").replace(/[^\d]/g, "");
+  if (!digits) return "";
+  const n = Number(digits);
   if (!Number.isSafeInteger(n) || n < 0) return "";
   const units = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
   const teens = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
