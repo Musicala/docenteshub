@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.3";
+const BUILD = "2026-10-01.4";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8698,16 +8698,19 @@ function renderAdminContrato(body) {
         toast("Esta docente aún no tiene datos de vinculación guardados.");
         return;
       }
+      // “Usar datos de vinculación” completa lo que la docente envió, pero no
+      // puede borrar condiciones que administración ya registró en el Anexo A.
+      const existingTerms = ADMIN_STATE.contract.terms?.[email] || {};
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
         email,
-        contratistaNombre: source.fullName || "",
-        contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": "),
-        contratistaDireccion: source.direccion || source.address || "",
-        contratistaTelefono: source.telefono || source.phone || "",
-        bankAccountType: source.bankAccountType || "",
-        bankName: source.bankName || "",
-        cuenta: source.cuenta || source.bankAccount || "",
-        areas: source.areas || source.artisticArea || "",
+        contratistaNombre: source.fullName || existingTerms.contratistaNombre || "",
+        contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": ") || existingTerms.contratistaDocumento || "",
+        contratistaDireccion: source.direccion || source.address || existingTerms.contratistaDireccion || "",
+        contratistaTelefono: source.telefono || source.phone || existingTerms.contratistaTelefono || "",
+        bankAccountType: source.bankAccountType || existingTerms.bankAccountType || "",
+        bankName: source.bankName || existingTerms.bankName || "",
+        cuenta: source.cuenta || source.bankAccount || existingTerms.cuenta || "",
+        areas: source.areas || source.artisticArea || existingTerms.areas || "",
         approvalStatus: "draft",
         approvedForSignature: false,
         approvedVersion: "",
