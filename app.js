@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.4";
+const BUILD = "2026-10-01.5";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8795,6 +8795,7 @@ function renderAdminContratoTerms(body, email) {
   rateList?.addEventListener("click", (event) => { const remove = event.target.closest("[data-contract-rate-remove]"); if (remove) remove.closest(".contractRateRow")?.remove(); });
   rateList?.addEventListener("input", (event) => { if (event.target.matches('[data-contract-rate="valor"]')) { const row = event.target.closest(".contractRateRow"); const letters = row?.querySelector('[data-contract-rate="letras"]'); if (letters) letters.value = amountToSpanishPesos(event.target.value); } });
   const saveButton = $("#contractTermsSave", body);
+  const approveButton = $("#contractTermsApprove", body);
   const saveFeedback = $("#contractTermsSaveFeedback", body);
   const markChangesPending = () => {
     if (saveFeedback) saveFeedback.textContent = "Hay cambios sin guardar.";
@@ -8861,19 +8862,26 @@ function renderAdminContratoTerms(body, email) {
     }
   });
 
-  $("#contractTermsApprove", body)?.addEventListener("click", async () => {
+  approveButton?.addEventListener("click", async () => {
     const values = readValues();
     const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
     const documento = buildTeacherContractDocument(contract, values);
     const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
     if (missing.length || invalidRates || documento.pendingCount) {
+      const missingLabels = missing.map((field) => field.label).slice(0, 3).join(", ");
+      if (saveFeedback) saveFeedback.textContent = `Falta completar ${missingLabels || "las condiciones o los valores institucionales"} antes de aprobar.`;
       toast("Completa las condiciones particulares y los valores institucionales antes de aprobar.");
       return;
     }
     if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) return;
+    const originalLabel = approveButton.textContent;
+    approveButton.disabled = true;
+    approveButton.textContent = "Aprobando…";
+    if (saveFeedback) saveFeedback.textContent = "Guardando y aprobando la versión para firma…";
     try {
-      await save();
-      await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
+      const { values: savedValues, persisted } = await save();
+      const termsRef = doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email);
+      await setDoc(termsRef, {
         approvalStatus: "approved",
         approvedForSignature: true,
         approvedVersion: contract.version,
@@ -8881,13 +8889,22 @@ function renderAdminContratoTerms(body, email) {
         approvedAtClient: Date.now(),
         approvedBy: emailKey(APP_STATE.activeUser)
       }, { merge: true });
-      await loadContractAdminData();
+      const approvedSnapshot = await getDocFromServer(termsRef);
+      const approvedData = approvedSnapshot.data() || {};
+      if (!approvedSnapshot.exists() || !approvedData.approvedForSignature || String(approvedData.approvedVersion || "") !== String(contract.version)) {
+        throw new Error("No pude confirmar la aprobación después de guardarla.");
+      }
+      ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...savedValues, ...approvedData };
       ADMIN_STATE.contract.termsEmail = "";
       toast("Versión aprobada. La persona ya puede revisar y firmar ✅");
       renderAdminBody();
     } catch (error) {
       console.error("No se pudo aprobar el contrato", error);
+      if (saveFeedback) saveFeedback.textContent = "No se pudo aprobar. Revisa la conexión o los permisos e inténtalo de nuevo.";
       toast("No pude aprobar la firma. Revisa permisos/reglas.");
+    } finally {
+      approveButton.disabled = false;
+      approveButton.textContent = originalLabel;
     }
   });
 }
