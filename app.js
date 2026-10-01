@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-09-28.2";
+const BUILD = "2026-10-01.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8810,9 +8810,16 @@ function renderAdminContratoTerms(body, email) {
     const persistedSnapshot = await getDocFromServer(termsRef);
     if (!persistedSnapshot.exists()) throw new Error("No encontré las condiciones después de guardarlas.");
     const persisted = persistedSnapshot.data() || {};
+    const ratesMatch = (persisted.modalidadTarifas || []).length === (values.modalidadTarifas || []).length
+      && (persisted.modalidadTarifas || []).every((rate, index) => {
+        const expected = values.modalidadTarifas[index] || {};
+        return ["modalidad", "valor", "letras"].every((field) =>
+          String(rate[field] || "").trim() === String(expected[field] || "").trim()
+        );
+      });
     const valuesMatch = TEACHER_CONTRACT_TERM_FIELDS.every((field) =>
       String(persisted[field.name] || "").trim() === String(values[field.name] || "").trim()
-    ) && JSON.stringify(persisted.modalidadTarifas || []) === JSON.stringify(values.modalidadTarifas || []);
+    ) && ratesMatch;
     if (!valuesMatch) throw new Error("Las condiciones guardadas no coinciden con los valores enviados.");
     return { values, persisted };
   };
