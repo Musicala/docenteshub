@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.2";
+const BUILD = "2026-10-01.3";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8214,7 +8214,9 @@ function renderTeacherContractView(overlay) {
       pendingHtml = `
         <section class="contractPanel">
           <h3>Contrato en revisión</h3>
-          <p>Enviaste tus datos${submitted.submittedAtClient ? ` el ${escapeHtml(longDateLabel(new Date(Number(submitted.submittedAtClient)).toISOString().slice(0, 10)))}` : ""}. Coordinación los revisa y completa tus condiciones particulares. Cuando la versión final esté aprobada podrás firmarla desde aquí.</p>
+          <p>${submitted
+            ? `Enviaste tus datos${submitted.submittedAtClient ? ` el ${escapeHtml(longDateLabel(new Date(Number(submitted.submittedAtClient)).toISOString().slice(0, 10)))}` : ""}.`
+            : "Administración ya registró los datos necesarios para preparar tu contrato."} Coordinación los revisa y completa tus condiciones particulares. Cuando la versión final esté aprobada podrás firmarla desde aquí.</p>
           <div class="supportStatus supportStatus-pending_acceptance">Pendiente de revisión</div>
         </section>`;
     } else if (vigente.pendingCount) {
