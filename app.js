@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.1";
+const BUILD = "2026-10-01.2";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8180,7 +8180,7 @@ function renderTeacherContractView(overlay) {
   const contract = getTeacherContract();
   const terms = APP_STATE.contract.terms;
   const submitted = APP_STATE.contract.data;
-  const supportProfileReady = APP_STATE.hubUserDoc?.employmentType === "support_contractor" && supportProfileComplete(APP_STATE.contract.supportProfile || {});
+  const supportProfileReady = APP_STATE.hubUserDoc?.employmentType === "support_contractor" && supportProfileComplete(contractProfileData(APP_STATE.contract.supportProfile, terms));
   const signature = APP_STATE.contract.signature;
   const approved = terms?.approvedForSignature && String(terms.approvedVersion || "") === String(contract.version);
 
@@ -8253,8 +8253,20 @@ function renderTeacherContractView(overlay) {
   wireTeacherContractSignForm(overlay, vigente);
 }
 
+// Administración confirma los datos del Anexo A en un documento distinto al
+// perfil de vinculación. Para el contrato, esas condiciones ya confirmadas son
+// una fuente válida y no deben volver a aparecer como datos pendientes.
+function contractProfileData(profile = {}, terms = APP_STATE.contract.terms || {}) {
+  return {
+    ...profile,
+    bankAccountType: profile.bankAccountType || terms.bankAccountType || "",
+    bankName: profile.bankName || terms.bankName || "",
+    bankAccount: profile.bankAccount || terms.cuenta || ""
+  };
+}
+
 function renderTeacherContractDataForm() {
-  const supportProfile = APP_STATE.contract.supportProfile || {};
+  const supportProfile = contractProfileData(APP_STATE.contract.supportProfile);
   const isSupportTeacher = APP_STATE.hubUserDoc?.employmentType === "support_contractor";
   if (isSupportTeacher) {
     return `
