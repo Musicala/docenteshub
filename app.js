@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.5";
+const BUILD = "2026-10-01.6";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8707,9 +8707,11 @@ function renderAdminContrato(body) {
         contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": ") || existingTerms.contratistaDocumento || "",
         contratistaDireccion: source.direccion || source.address || existingTerms.contratistaDireccion || "",
         contratistaTelefono: source.telefono || source.phone || existingTerms.contratistaTelefono || "",
-        bankAccountType: source.bankAccountType || existingTerms.bankAccountType || "",
-        bankName: source.bankName || existingTerms.bankName || "",
-        cuenta: source.cuenta || source.bankAccount || existingTerms.cuenta || "",
+        // Nunca se mandan vacíos al usar datos de vinculación: con merge:true,
+        // omitirlos conserva el dato bancario que administración ya confirmó.
+        ...(source.bankAccountType ? { bankAccountType: source.bankAccountType } : {}),
+        ...(source.bankName ? { bankName: source.bankName } : {}),
+        ...(source.cuenta || source.bankAccount ? { cuenta: source.cuenta || source.bankAccount } : {}),
         areas: source.areas || source.artisticArea || existingTerms.areas || "",
         approvalStatus: "draft",
         approvedForSignature: false,
@@ -8766,7 +8768,7 @@ function renderAdminContratoTerms(body, email) {
       `).join("")}
     </div>
     <div class="adminSubActions">
-      <p class="adminNote" id="contractTermsSaveFeedback" role="status" aria-live="polite">Los cambios aún no se han guardado.</p>
+      <p class="adminNote" id="contractTermsSaveFeedback" role="status" aria-live="polite">Condiciones cargadas. Guarda solo después de hacer cambios.</p>
       <div>
         <button class="btnGhost" id="contractTermsBack" type="button">Volver</button>
         <button class="btnGhost" id="contractTermsApprove" type="button">Aprobar para firma</button>
