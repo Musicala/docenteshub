@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.6";
+const BUILD = "2026-10-01.7";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8865,23 +8865,47 @@ function renderAdminContratoTerms(body, email) {
   });
 
   approveButton?.addEventListener("click", async () => {
-    const values = readValues();
-    const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
-    const documento = buildTeacherContractDocument(contract, values);
-    const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
-    if (missing.length || invalidRates || documento.pendingCount) {
-      const missingLabels = missing.map((field) => field.label).slice(0, 3).join(", ");
-      if (saveFeedback) saveFeedback.textContent = `Falta completar ${missingLabels || "las condiciones o los valores institucionales"} antes de aprobar.`;
-      toast("Completa las condiciones particulares y los valores institucionales antes de aprobar.");
-      return;
-    }
-    if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) return;
     const originalLabel = approveButton.textContent;
     approveButton.disabled = true;
-    approveButton.textContent = "Aprobando…";
-    if (saveFeedback) saveFeedback.textContent = "Guardando y aprobando la versión para firma…";
+    approveButton.textContent = "Guardando…";
+    if (saveFeedback) saveFeedback.textContent = "Guardando y verificando todas las condiciones, incluidos los datos bancarios…";
     try {
+      // El Anexo A debe quedar guardado incluso cuando la aprobación se
+      // detenga por un valor institucional pendiente en la plantilla.
       const { values: savedValues, persisted } = await save();
+      const values = savedValues;
+      ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...values };
+
+      const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
+      const documento = buildTeacherContractDocument(contract, values);
+      const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
+      const pendingInstitutional = Object.entries(contract.defaults || {})
+        .filter(([, value]) => {
+          const clean = String(value ?? "").trim();
+          return !clean || clean === "{{PENDIENTE_DEFINIR}}";
+        })
+        .map(([key]) => key);
+      if (missing.length || invalidRates || documento.pendingCount) {
+        const issues = [];
+        if (missing.length) issues.push(`Anexo A: ${missing.map((field) => field.label).join(", ")}`);
+        if (invalidRates) issues.push("completa modalidad, valor y valor en letras en cada tarifa");
+        if (documento.pendingCount) {
+          const institutionList = pendingInstitutional.length
+            ? ` Valores institucionales pendientes: ${pendingInstitutional.join(", ")}.`
+            : " El texto o los anexos del contrato todavía contienen datos institucionales pendientes.";
+          issues.push(`el contrato aún tiene ${documento.pendingCount} dato(s) institucional(es) sin definir.${institutionList}`);
+        }
+        if (saveFeedback) saveFeedback.textContent = `Condiciones guardadas como borrador ✅. Para aprobar, ${issues.join("; ")}.`;
+        toast("Las condiciones quedaron guardadas, pero el contrato aún tiene datos pendientes para aprobar.");
+        return;
+      }
+
+      if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) {
+        if (saveFeedback) saveFeedback.textContent = "Condiciones guardadas como borrador. La aprobación quedó pendiente.";
+        return;
+      }
+      approveButton.textContent = "Aprobando…";
+      if (saveFeedback) saveFeedback.textContent = "Aprobando y verificando la versión para firma…";
       const termsRef = doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email);
       await setDoc(termsRef, {
         approvalStatus: "approved",
@@ -8902,8 +8926,8 @@ function renderAdminContratoTerms(body, email) {
       renderAdminBody();
     } catch (error) {
       console.error("No se pudo aprobar el contrato", error);
-      if (saveFeedback) saveFeedback.textContent = "No se pudo aprobar. Revisa la conexión o los permisos e inténtalo de nuevo.";
-      toast("No pude aprobar la firma. Revisa permisos/reglas.");
+      if (saveFeedback) saveFeedback.textContent = `No se pudo guardar o aprobar: ${error?.message || "revisa la conexión o los permisos"}`;
+      toast("No pude guardar o aprobar las condiciones. Revisa el mensaje y vuelve a intentarlo.");
     } finally {
       approveButton.disabled = false;
       approveButton.textContent = originalLabel;
