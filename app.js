@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.7";
+const BUILD = "2026-10-01.8";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -3003,6 +3003,7 @@ const ADMIN_STATE = {
     signatures: [],
     liveSyncUnsubscribe: null,
     editingText: false,
+    editingTextReturnEmail: "",
     termsEmail: ""
   },
   scheduleTeacher: "", // email del docente seleccionado en la pestaña Horarios
@@ -8769,6 +8770,7 @@ function renderAdminContratoTerms(body, email) {
     </div>
     <div class="adminSubActions">
       <p class="adminNote" id="contractTermsSaveFeedback" role="status" aria-live="polite">Condiciones cargadas. Guarda solo después de hacer cambios.</p>
+      <p class="adminNote" id="contractTermsDefaultsHelp" hidden></p>
       <div>
         <button class="btnGhost" id="contractTermsBack" type="button">Volver</button>
         <button class="btnGhost" id="contractTermsApprove" type="button">Aprobar para firma</button>
@@ -8799,6 +8801,7 @@ function renderAdminContratoTerms(body, email) {
   const saveButton = $("#contractTermsSave", body);
   const approveButton = $("#contractTermsApprove", body);
   const saveFeedback = $("#contractTermsSaveFeedback", body);
+  const defaultsHelp = $("#contractTermsDefaultsHelp", body);
   const markChangesPending = () => {
     if (saveFeedback) saveFeedback.textContent = "Hay cambios sin guardar.";
   };
@@ -8896,6 +8899,22 @@ function renderAdminContratoTerms(body, email) {
           issues.push(`el contrato aún tiene ${documento.pendingCount} dato(s) institucional(es) sin definir.${institutionList}`);
         }
         if (saveFeedback) saveFeedback.textContent = `Condiciones guardadas como borrador ✅. Para aprobar, ${issues.join("; ")}.`;
+        if (documento.pendingCount && defaultsHelp) {
+          defaultsHelp.hidden = false;
+          defaultsHelp.innerHTML = `Estos datos son generales del contrato, no del perfil docente. Ábrelos en <strong>Contrato → Editar texto y valores → Valores institucionales</strong>. Completa solo lo que haya definido Musicala; al guardar, volverás a esta docente.`;
+          const openDefaults = document.createElement("button");
+          openDefaults.type = "button";
+          openDefaults.className = "btnGhost";
+          openDefaults.id = "contractTermsOpenDefaults";
+          openDefaults.textContent = "Abrir valores institucionales";
+          defaultsHelp.append(" ", openDefaults);
+          openDefaults.addEventListener("click", () => {
+            ADMIN_STATE.contract.editingTextReturnEmail = email;
+            ADMIN_STATE.contract.termsEmail = "";
+            ADMIN_STATE.contract.editingText = true;
+            renderAdminBody();
+          });
+        }
         toast("Las condiciones quedaron guardadas, pero el contrato aún tiene datos pendientes para aprobar.");
         return;
       }
@@ -8937,7 +8956,7 @@ function renderAdminContratoTerms(body, email) {
 
 function renderAdminContratoEditor(body, contract) {
   body.innerHTML = `
-    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Cambia la versión cuando el contenido cambie: quienes ya firmaron tendrán que firmar de nuevo.</p>
+    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Cambia la versión cuando el contenido cambie: quienes ya firmaron tendrán que firmar de nuevo. Los valores institucionales son compartidos por todos los contratos; complétalos solo con definiciones aprobadas por Musicala, no con datos personales de la docente.</p>
     <div class="supportFields">
       <label>Título<input type="text" id="contractTitle" maxlength="160" value="${escapeHtml(contract.title)}" /></label>
       <label>Versión<input type="text" id="contractVersion" maxlength="20" value="${escapeHtml(contract.version)}" /></label>
@@ -8959,7 +8978,12 @@ function renderAdminContratoEditor(body, contract) {
     </div>
   `;
 
-  $("#contractEditCancel", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = false; renderAdminBody(); });
+  $("#contractEditCancel", body)?.addEventListener("click", () => {
+    ADMIN_STATE.contract.editingText = false;
+    ADMIN_STATE.contract.termsEmail = ADMIN_STATE.contract.editingTextReturnEmail || "";
+    ADMIN_STATE.contract.editingTextReturnEmail = "";
+    renderAdminBody();
+  });
   $("#contractEditSave", body)?.addEventListener("click", async () => {
     const version = $("#contractVersion", body).value.trim();
     const title = $("#contractTitle", body).value.trim();
@@ -8986,11 +9010,20 @@ function renderAdminContratoEditor(body, contract) {
         updatedAtClient: Date.now(),
         updatedBy: emailKey(APP_STATE.activeUser)
       };
-      await setDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID), payload);
-      APP_STATE.contract.doc = normalizeTeacherContract(payload);
+      const contractRef = doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID);
+      await setDoc(contractRef, payload);
+      const savedContract = await getDocFromServer(contractRef);
+      if (!savedContract.exists()) throw new Error("No encontré el contrato después de guardarlo.");
+      const savedData = savedContract.data() || {};
+      if (String(savedData.version || "") !== version || Object.entries(defaults).some(([key, value]) => String(savedData.defaults?.[key] ?? "").trim() !== String(value ?? "").trim())) {
+        throw new Error("Los valores institucionales guardados no coinciden con los enviados.");
+      }
+      APP_STATE.contract.doc = normalizeTeacherContract(savedData);
       ADMIN_STATE.contract.editingText = false;
+      ADMIN_STATE.contract.termsEmail = ADMIN_STATE.contract.editingTextReturnEmail || "";
+      ADMIN_STATE.contract.editingTextReturnEmail = "";
       await loadContractAdminData();
-      toast("Contrato actualizado. Quienes ya firmaron verán la nueva versión como pendiente.");
+      toast("Contrato actualizado y verificado. Si se completaron los valores pendientes, vuelve a aprobar las condiciones de la docente.");
       renderAdminBody();
     } catch (error) {
       console.error("No se pudo guardar el contrato", error);
