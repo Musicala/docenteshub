@@ -10,7 +10,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-01.8";
+const BUILD = "2026-10-03.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -134,7 +134,7 @@ const TEACHER_CONTRACT_DEFAULT = {
   intro: "Este documento describe las condiciones bajo las cuales prestas tus servicios como formadora o formador independiente para las clases de Musicala, en modalidad virtual, a hogar o en nuestra sede. Léelo completo antes de aceptarlo: al firmarlo quedas obligado por su contenido.",
   body: [
     "## 1. Partes y declaraciones",
-    "1.1. Este contrato se celebra entre Musicala, en adelante EL CONTRATANTE, y la persona identificada en el Anexo A, en adelante EL CONTRATISTA.",
+    "1.1. Comparecen, por una parte, {{RAZON_SOCIAL}}, identificada con NIT {{NIT}}, legalmente constituida conforme a las leyes de la República de Colombia, actuando a través de su representante legal {{REPRESENTANTE_LEGAL}}, identificado con {{REPRESENTANTE_DOCUMENTO}}, quien en adelante se denominará EL CONTRATANTE; y por la otra, la persona identificada en el Anexo A, quien en adelante se denominará EL CONTRATISTA y declara actuar en nombre propio, de manera autónoma e independiente, sin que exista subordinación ni relación laboral alguna con EL CONTRATANTE.",
     "1.2. EL CONTRATISTA declara que cuenta con la formación, la experiencia y las condiciones necesarias para prestar los servicios de este contrato de manera autónoma e independiente.",
     "1.3. EL CONTRATISTA declara que la información y los documentos entregados en el proceso previo (identificación, RUT si aplica, certificación bancaria, soportes de formación o experiencia y afiliación a seguridad social) son veraces y están vigentes, y se obliga a informar cualquier cambio.",
     "1.4. EL CONTRATISTA declara que autorizó de manera previa, expresa y escrita la consulta de antecedentes e inhabilidades exigida para quienes trabajan con niños, niñas y adolescentes, y que esa consulta está vigente.",
@@ -154,7 +154,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "",
     "## 4. Modalidades, lugar de ejecución, plazo y programación",
     "4.1. Modalidades. Las sesiones pueden prestarse en tres modalidades, según lo acordado en el Anexo A:",
-    "a) En sede: en {{SEDE_NOMBRE}}, ubicada en {{SEDE_DIRECCION}}.",
+    "a) En sede: en {{SEDE_NOMBRE}}, ubicada en {{SEDE_DIRECCION}}",
     "b) A hogar: en el domicilio del estudiante indicado por EL CONTRATANTE. EL CONTRATISTA se presenta únicamente en la dirección informada por el canal oficial y no acuerda cambios de dirección directamente con las familias.",
     "c) Virtual: por la plataforma que EL CONTRATANTE indique, con conexión estable, cámara activa y un entorno adecuado para una clase.",
     "4.2. Reglas propias de la modalidad a hogar. La sesión se desarrolla en un espacio abierto o visible de la vivienda y con la presencia o disponibilidad de una persona adulta responsable. EL CONTRATISTA no permanece a solas con un estudiante menor de edad en un espacio cerrado. Si al llegar no se cumplen estas condiciones o el espacio es inseguro, la sesión no se realiza, se reporta el mismo día y se aplica la regla económica del Anexo B para cancelaciones no atribuibles a EL CONTRATISTA.",
@@ -168,13 +168,15 @@ const TEACHER_CONTRACT_DEFAULT = {
     "## 5. Honorarios, facturación y seguridad social",
     "5.1. Valor. EL CONTRATANTE pagará el valor por sesión efectivamente prestada que consta en el Anexo A, expresado en cifras y en letras. La sesión dura {{DURACION_SESION}} minutos. Un cambio de valor durante la ejecución exige otrosí aceptado por ambas partes: no puede modificarse de forma unilateral ni verbal.",
     "5.2. Alcance. El valor comprende lo indicado en la cláusula 2.2. Lo señalado en la cláusula 2.3 se paga aparte, según el acuerdo previo y escrito de cada actividad.",
-    "5.3. Corte y soporte. El corte es el {{FECHA_CORTE}} de cada mes. EL CONTRATISTA presentará {{DOCUMENTO_COBRO}} con el detalle de las sesiones efectivamente prestadas, que debe coincidir con los registros del aplicativo.",
-    "5.4. Pago. Dentro de {{PLAZO_PAGO}} siguientes a la presentación conforme del soporte, mediante transferencia a la cuenta {{CUENTA}}, a nombre de EL CONTRATISTA. No se realizan pagos a cuentas de terceros.",
+    "5.3. Corte y soporte. El corte es el {{FECHA_CORTE}} de cada mes. EL CONTRATISTA presentará su {{DOCUMENTO_COBRO}}, con el detalle de las sesiones efectivamente prestadas, que debe coincidir con los registros del aplicativo.",
+    "5.4. Pago. Dentro de los {{PLAZO_PAGO}} siguientes a la presentación conforme del soporte, mediante transferencia a la cuenta {{CUENTA}}, a nombre de EL CONTRATISTA. No se realizan pagos a cuentas de terceros.",
     "5.5. Retenciones. Se aplicarán las que correspondan según el régimen tributario de EL CONTRATISTA y la normativa vigente.",
-    "5.6. Seguridad social. EL CONTRATISTA es responsable de su afiliación y cotización al Sistema de Seguridad Social Integral, incluidos riesgos laborales. Cuando la normativa o la modalidad lo exijan, deberá mantener vigente su afiliación a una ARL en clase de riesgo {{ARL_RIESGO}} y entregar con cada soporte de cobro la copia de la planilla del periodo. La verificación que haga EL CONTRATANTE no lo convierte en responsable de las obligaciones propias de EL CONTRATISTA ni exonera a este de las suyas.",
+    "5.6. Seguridad social y tributos. EL CONTRATISTA declara ser responsable de su afiliación y aportes al Sistema General de Seguridad Social (salud, pensión y riesgos laborales), así como de la correcta liquidación y pago de los impuestos que resulten aplicables, y entregará la copia de la planilla del periodo cuando se le solicite. La verificación que haga EL CONTRATANTE no lo convierte en responsable de las obligaciones propias de EL CONTRATISTA ni exonera a este de las suyas.",
     "5.7. Discrepancias. Si EL CONTRATANTE objeta parte del cobro, pagará dentro del plazo ordinario los valores no controvertidos y comunicará por escrito la objeción sobre el resto con su evidencia. EL CONTRATISTA dispone de {{PLAZO_SUBSANACION}} para aclarar o subsanar. Resuelta la discrepancia, el saldo se paga en el siguiente ciclo.",
     "5.8. Sin descuentos automáticos. No se aplican multas, descuentos ni compensaciones automáticas sobre honorarios causados. Cualquier suma a cargo de EL CONTRATISTA requiere daño probado, comunicación previa y oportunidad de respuesta.",
     "5.9. Fallas del aplicativo. Si el registro de una sesión no queda por una falla técnica, la sesión no se da por no prestada: se acredita con evidencia alternativa y se paga con normalidad.",
+    "5.10. Bonificaciones. EL CONTRATANTE podrá reconocer incentivos económicos ocasionales como reconocimiento al desempeño. Son estrictamente discrecionales y excepcionales, no constituyen obligación contractual, no forman parte del valor pactado por los servicios y no generan derecho adquirido para futuras contrataciones, prórrogas ni pagos periódicos, aun cuando se hayan otorgado con anterioridad. Todo incentivo se formaliza por escrito, de manera previa o simultánea a su pago.",
+    "5.11. Naturaleza civil. Este contrato no genera vínculo laboral. EL CONTRATANTE no responde por prestaciones sociales, primas, cesantías, vacaciones ni demás beneficios propios de un contrato laboral, por cuanto este contrato es de naturaleza civil.",
     "",
     "## 6. Obligaciones de EL CONTRATISTA",
     "6.1. Prestar las sesiones acordadas en la franja, el grupo, la modalidad y el lugar pactados, iniciarlas y cerrarlas en el horario previsto, y registrar su inicio y cierre en el aplicativo.",
@@ -195,7 +197,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "7.4. Poner a disposición el aplicativo institucional y los canales oficiales y mantenerlos operativos en condiciones razonables.",
     "7.5. Informar los protocolos de seguridad, emergencia y protección de menores aplicables, y sus actualizaciones.",
     "7.6. Designar un responsable contractual como interlocutor único para requerimientos, novedades y controversias: {{SUPERVISOR}}.",
-    "7.7. Tramitar solicitudes, reclamaciones y descargos dentro de plazos razonables y por escrito.",
+    "7.7. Tramitar solicitudes, reclamaciones y aclaraciones dentro de plazos razonables y por escrito.",
     "7.8. Respetar la autonomía pedagógica de EL CONTRATISTA y abstenerse de imponer actividades no acordadas.",
     "7.9. Entregar copia de este contrato firmado con sus anexos y conservarla disponible para consulta.",
     "",
@@ -203,7 +205,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "8.1. El seguimiento verifica el cumplimiento del objeto contratado. No constituye potestad disciplinaria ni subordinación. No existen faltas, expedientes, llamados de atención ni sanciones.",
     "8.2. Evidencias de ejecución: registro de inicio y cierre de sesión, asistencia, bitácoras, informes periódicos, reportes de incidentes, cumplimiento de las muestras acordadas y retroalimentación de familias y coordinación.",
     "8.3. La calidad se valora con varias fuentes y con los indicadores del Anexo C. Ningún indicador aislado, y en particular ninguna encuesta de satisfacción, produce por sí solo la terminación del contrato.",
-    "8.4. Ante un hallazgo: se registra el hecho con su evidencia y se comunica por escrito; EL CONTRATISTA dispone de {{PLAZO_DESCARGOS}} para explicar, aclarar o corregir; si es subsanable se acuerda una acción de mejora y un plazo de verificación; verificado el resultado el hallazgo se cierra; si no se subsana, o si se trata de un evento de la cláusula 13.3, se escala como incumplimiento.",
+    "8.4. Ante un hallazgo: se registra el hecho con su evidencia y se comunica por escrito; EL CONTRATISTA dispone de {{PLAZO_ACLARACION}} para explicar, aclarar o corregir; si es subsanable se acuerda una acción de mejora y un plazo de verificación; verificado el resultado el hallazgo se cierra; si no se subsana, o si se trata de un evento de la cláusula 13.3, se escala como incumplimiento.",
     "8.5. El registro de seguimiento se denomina registro de desempeño contractual y es accesible para EL CONTRATISTA.",
     "",
     "## 9. Novedades, cancelaciones, reemplazos y fuerza mayor",
@@ -228,7 +230,7 @@ const TEACHER_CONTRACT_DEFAULT = {
     "11.2. No es confidencial la información pública, la que EL CONTRATISTA ya conocía legítimamente, ni la que deba revelarse por orden de autoridad competente o en cumplimiento del deber de reporte del Anexo D.",
     "11.3. El tratamiento de datos personales, en especial de niños, niñas y adolescentes, se sujeta al Anexo F y a la normativa vigente. EL CONTRATISTA trata esos datos únicamente para ejecutar el objeto, solo en las herramientas oficiales, y no los copia, almacena ni transfiere a medios personales.",
     "11.4. Imágenes. EL CONTRATISTA no publica imágenes de estudiantes en cuentas o medios personales ni las comparte con terceros ajenos a Musicala. La captura solo procede con la finalidad, la autorización y el alcance que EL CONTRATANTE informe por escrito. Las imágenes se cargan únicamente en el aplicativo y se eliminan de los dispositivos personales una vez cargadas.",
-    "11.5. No captación de clientela. EL CONTRATISTA no ofrece ni acuerda clases particulares u otros servicios directamente con estudiantes o familias que haya conocido por razón de este contrato, ni durante su vigencia ni dentro de {{PLAZO_NO_CAPTACION}} siguientes a su terminación.",
+    "11.5. No captación de clientela. EL CONTRATISTA no ofrece ni acuerda clases particulares u otros servicios directamente con estudiantes o familias que haya conocido por razón de este contrato, ni durante su vigencia ni dentro del {{PLAZO_NO_CAPTACION}} siguiente a su terminación.",
     "11.6. Canales oficiales. Las comunicaciones se surten por el aplicativo institucional y el correo {{CANAL_OFICIAL}}. Las ventanas de respuesta razonable son {{VENTANA_RESPUESTA}}. No se exige disponibilidad permanente ni respuesta fuera de esas ventanas, salvo emergencias que afecten la seguridad de un estudiante.",
     "11.7. La comunicación con estudiantes y familias se realiza por los canales oficiales. Queda prohibido el contacto privado con estudiantes menores de edad por cuentas o números personales, así como recibir o entregar dinero a estudiantes o familias.",
     "11.8. EL CONTRATANTE trata los datos personales de EL CONTRATISTA conforme a su política, para la ejecución, el pago, el cumplimiento de obligaciones legales y la conservación de la evidencia contractual.",
@@ -245,18 +247,19 @@ const TEACHER_CONTRACT_DEFAULT = {
     "13.2. Terminación ordinaria. Cualquiera de las partes puede terminar el contrato en cualquier momento, sin necesidad de causa y sin indemnización, avisando por escrito con {{PREAVISO}} de anticipación.",
     "13.3. Terminación inmediata, sin preaviso y sin indemnización, por estos hechos taxativos: a) conducta que ponga en riesgo la integridad física, sexual o psicológica de un estudiante; b) violencia, acoso o discriminación contra cualquier persona de la comunidad educativa; c) incumplimiento grave del Anexo D o de la cláusula 10; d) falsedad en la información o los documentos entregados; e) pérdida o vencimiento no subsanado de una habilitación obligatoria; f) apropiación de bienes o dineros, o cobro directo a estudiantes o familias; g) filtración o divulgación grave de información confidencial o de imágenes de estudiantes; h) suplantación o ejecución del servicio por un tercero no autorizado.",
     "13.4. Toda terminación se comunica por escrito, con la causal invocada y su fecha. En los casos de 13.3 se informarán los hechos y EL CONTRATISTA podrá presentar su versión por escrito; esto no suspende la terminación cuando exista riesgo para un estudiante.",
-    "13.5. Cierre. Dentro de {{PLAZO_CIERRE}} siguientes, EL CONTRATISTA entregará el informe final del proceso, la documentación pendiente y los bienes y credenciales a su cargo. EL CONTRATANTE liquidará y pagará las sesiones prestadas y las sumas causadas no controvertidas. La terminación no extingue las obligaciones de confidencialidad, protección de datos y reporte.",
+    "13.5. Cierre. Dentro de los {{PLAZO_CIERRE}} siguientes, EL CONTRATISTA entregará el informe final del proceso, la documentación pendiente y los bienes y credenciales a su cargo. EL CONTRATANTE liquidará y pagará las sesiones prestadas y las sumas causadas no controvertidas. La terminación no extingue las obligaciones de confidencialidad, protección de datos y reporte.",
     "",
     "## 14. Responsabilidad y solución de controversias",
     "14.1. Cada parte responde por los daños que cause por su culpa, debidamente probados. No se pactan multas automáticas, sanciones pecuniarias unilaterales ni indemnizaciones predeterminadas.",
     "14.2. EL CONTRATISTA responde por el cumplimiento de los estándares de seguridad del Anexo E. EL CONTRATANTE responde por las condiciones de la infraestructura de su sede y por sus protocolos de emergencia. En modalidad a hogar, las condiciones del espacio son responsabilidad de la familia; EL CONTRATISTA puede negarse a prestar la sesión en un espacio inseguro.",
-    "14.3. Las partes intentarán resolver directamente cualquier diferencia dentro de {{PLAZO_ARREGLO}} siguientes a la comunicación escrita. De no lograrse, acudirán a {{MECANISMO_CONTROVERSIAS}}.",
+    "14.3. Las partes intentarán resolver directamente cualquier diferencia dentro de los {{PLAZO_ARREGLO}} siguientes a la comunicación escrita. De no lograrse, acudirán a {{MECANISMO_CONTROVERSIAS}}.",
     "",
     "## 15. Modificaciones, integridad, notificaciones y firma electrónica",
     "15.1. Modificaciones. Solo por otrosí escrito aceptado por ambas partes, que se incorpora como nueva versión conservando el vínculo con la original. Ningún acuerdo verbal modifica este contrato, y ninguna de las partes puede cambiar unilateralmente el valor, el objeto, la modalidad, la carga o el plazo.",
     "15.2. Integridad. Este contrato y sus anexos constituyen el acuerdo íntegro entre las partes sobre la materia y reemplazan cualquier acuerdo anterior sobre el mismo objeto.",
-    "15.3. Notificaciones. A los datos del Anexo A y a los canales oficiales de la cláusula 11.6. Cualquier cambio debe informarse por escrito.",
-    "15.4. Firma electrónica. Las partes acuerdan suscribir este contrato mediante firma electrónica en el aplicativo institucional, con autenticación de la cuenta del firmante. Las partes reconocen que dicha firma es confiable y apropiada para los fines de este contrato y le atribuyen los mismos efectos jurídicos de la firma manuscrita, conforme a la Ley 527 de 1999 y sus normas reglamentarias. EL CONTRATISTA mantendrá bajo su control exclusivo las credenciales asociadas a su firma e informará de inmediato cualquier uso no autorizado. La versión firmada no se modifica: cualquier cambio posterior consta en un otrosí o en una nueva versión."
+    "15.3. Manual de Lineamientos Académicos y Operativos. Los aspectos operativos del día a día (comunicación interna, manejo de horarios, registros administrativos, reprogramaciones, uso de plataformas y protocolos de seguridad) se desarrollan en el Manual de Lineamientos Académicos y Operativos de Musicala, que hace parte integral de este contrato en lo que no se oponga a su naturaleza civil ni a lo pactado aquí. El Manual estará disponible para consulta y podrá actualizarse; toda modificación se notificará por los canales oficiales de la cláusula 11.6 y regirá hacia el futuro. En caso de contradicción entre el Manual y este contrato, prevalece este contrato.",
+    "15.4. Notificaciones. A los datos del Anexo A y a los canales oficiales de la cláusula 11.6. Cualquier cambio debe informarse por escrito.",
+    "15.5. Firma electrónica. Las partes acuerdan suscribir este contrato mediante firma electrónica en el aplicativo institucional, con autenticación de la cuenta del firmante. Las partes reconocen que dicha firma es confiable y apropiada para los fines de este contrato y le atribuyen los mismos efectos jurídicos de la firma manuscrita, conforme a la Ley 527 de 1999 y sus normas reglamentarias. EL CONTRATISTA mantendrá bajo su control exclusivo las credenciales asociadas a su firma e informará de inmediato cualquier uso no autorizado. La versión firmada no se modifica: cualquier cambio posterior consta en un otrosí o en una nueva versión."
   ].join("\n"),
   annexes: [
     {
@@ -395,38 +398,57 @@ const TEACHER_CONTRACT_DEFAULT = {
   ],
   // Valores institucionales. Los edita el admin una vez y aplican a todos los contratos.
   defaults: {
-    SEDE_NOMBRE: "{{PENDIENTE_DEFINIR}}",
-    SEDE_DIRECCION: "{{PENDIENTE_DEFINIR}}",
-    DURACION_SESION: "{{PENDIENTE_DEFINIR}}",
-    ARL_RIESGO: "{{PENDIENTE_DEFINIR}}",
-    FECHA_CORTE: "{{PENDIENTE_DEFINIR}}",
+    /* Identificación de EL CONTRATANTE, tomada del contrato firmado de 2026. */
+    RAZON_SOCIAL: "MUSICALA S.A.S.",
+    NIT: "901.632.973",
+    REPRESENTANTE_LEGAL: "Jimmy Alexander Caballero Moreno",
+    REPRESENTANTE_DOCUMENTO: "cédula de ciudadanía No. 1.030.611.753 de Bogotá D.C.",
+    CIUDAD: "Bogotá D.C.",
+
+    /* Lugar y duración */
+    SEDE_NOMBRE: "la sede de Musicala S.A.S.",
+    SEDE_DIRECCION: "Carrera 45A #103B-34, Bogotá D.C.",
+    DURACION_SESION: "60",
+
+    /* Facturación y pago */
+    FECHA_CORTE: "último día",
     DOCUMENTO_COBRO: "cuenta de cobro o factura, según su situación tributaria",
-    PLAZO_PAGO: "{{PENDIENTE_DEFINIR}}",
-    ANTICIPACION_CAMBIO: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_SUBSANACION: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_DESCARGOS: "{{PENDIENTE_DEFINIR}}",
+    PLAZO_PAGO: "cinco (5) días hábiles",
+    PLAZO_SUBSANACION: "cinco (5) días hábiles",
+
+    /* Programación y novedades */
+    ANTICIPACION_CAMBIO: "cuarenta y ocho (48) horas",
+    AVISO_CAMBIO: "cuarenta y ocho (48) horas",
+    AVISO_CANCELA: "veinticuatro (24) horas",
+    AVISO_AUSENCIA: "cuarenta y ocho (48) horas",
+    PAGO_CANCELACION: "se reconoce el cien por ciento (100%) del valor de la sesión, por tratarse de una causa no atribuible a EL CONTRATISTA",
+    REGLA_SIN_ESTUDIANTES: "la sesión se paga completa cuando el estudiante no asiste sin avisar con la anticipación prevista para la cancelación; si avisa dentro de ese plazo, la sesión se reprograma y no causa honorarios",
+    REGLA_FALLA_VIRTUAL: "si la falla es de la conexión del estudiante o de la plataforma institucional, la sesión se paga completa; si la falla es de la conexión de EL CONTRATISTA, la sesión se reprograma y se paga una sola vez",
+    REGLA_COMPARTIDA: "cada formador recibe el valor completo de la modalidad que dicta cuando acompaña la sesión de principio a fin; si se reparten el tiempo, cada uno recibe la parte proporcional al tiempo efectivamente dictado. Nunca se reduce automáticamente a la mitad",
+    TARIFA_REEMPLAZO: "el reemplazo autorizado se paga a la tarifa de la modalidad efectivamente dictada, directamente por Musicala a quien preste la sesión",
+
+    /* Seguimiento y terminación */
+    PLAZO_ACLARACION: "cinco (5) días hábiles",
+    PREAVISO: "treinta (30) días calendario",
+    PLAZO_CIERRE: "cinco (5) días hábiles",
     DIAS_FUERZA_MAYOR: "30 días calendario",
-    DURACION_CONFIDENCIALIDAD: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_NO_CAPTACION: "{{PENDIENTE_DEFINIR}}",
-    CANAL_OFICIAL: "{{PENDIENTE_DEFINIR}}",
-    CANAL_DATOS: "{{PENDIENTE_DEFINIR}}",
-    VENTANA_RESPUESTA: "{{PENDIENTE_DEFINIR}}",
-    SUPERVISOR: "{{PENDIENTE_DEFINIR}}",
-    PREAVISO: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_CIERRE: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_ARREGLO: "{{PENDIENTE_DEFINIR}}",
-    MECANISMO_CONTROVERSIAS: "{{PENDIENTE_DEFINIR}}",
-    REGLA_PI: "{{PENDIENTE_DEFINIR}}",
-    AVISO_CAMBIO: "{{PENDIENTE_DEFINIR}}",
-    AVISO_CANCELA: "{{PENDIENTE_DEFINIR}}",
-    PAGO_CANCELACION: "{{PENDIENTE_DEFINIR}}",
-    AVISO_AUSENCIA: "{{PENDIENTE_DEFINIR}}",
-    REGLA_SIN_ESTUDIANTES: "{{PENDIENTE_DEFINIR}}",
-    REGLA_FALLA_VIRTUAL: "{{PENDIENTE_DEFINIR}}",
-    TARIFA_REEMPLAZO: "{{PENDIENTE_DEFINIR}}",
-    REGLA_COMPARTIDA: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_BITACORA: "{{PENDIENTE_DEFINIR}}",
-    PLAZO_INFORME: "{{PENDIENTE_DEFINIR}}"
+
+    /* Entregables */
+    PLAZO_BITACORA: "las veinticuatro (24) horas siguientes a la sesión",
+    PLAZO_INFORME: "dentro de los primeros cinco (5) días hábiles del mes siguiente",
+
+    /* Confidencialidad, datos y canales */
+    DURACION_CONFIDENCIALIDAD: "tres (3) años",
+    PLAZO_NO_CAPTACION: "un (1) año",
+    CANAL_OFICIAL: "imusicala@gmail.com",
+    CANAL_DATOS: "imusicala@gmail.com",
+    VENTANA_RESPUESTA: "de lunes a viernes entre las 8:00 y las 18:00, y los sábados entre las 8:00 y las 13:00",
+    SUPERVISOR: "la coordinación académica de Musicala",
+
+    /* Propiedad intelectual y controversias */
+    REGLA_PI: "siguen siendo de EL CONTRATISTA, quien concede a Musicala una licencia no exclusiva, gratuita e indefinida para usarlos dentro de sus programas de formación, con reconocimiento de su autoría",
+    PLAZO_ARREGLO: "quince (15) días hábiles",
+    MECANISMO_CONTROVERSIAS: "la conciliación en derecho ante un centro de conciliación autorizado de Bogotá D.C., sin perjuicio de que cualquiera de las partes acuda directamente a la jurisdicción ordinaria civil"
   }
 };
 
@@ -7898,6 +7920,21 @@ function canSeeTeacherContract(email = emailKey(APP_STATE.activeUser)) {
 }
 
 /* ---- Plantilla del contrato ---- */
+// Mezcla los valores institucionales guardados con los que trae la app. Un
+// valor guardado solo gana si tiene contenido real: "" y "{{PENDIENTE_DEFINIR}}"
+// se tratan como "nunca se diligenció" y ceden al valor de la plantilla.
+function mergeContractDefaults(saved) {
+  const merged = { ...TEACHER_CONTRACT_DEFAULT.defaults };
+  if (saved && typeof saved === "object") {
+    Object.entries(saved).forEach(([key, value]) => {
+      const clean = String(value ?? "").trim();
+      if (!clean || clean === "{{PENDIENTE_DEFINIR}}") return;
+      merged[key] = clean;
+    });
+  }
+  return merged;
+}
+
 function normalizeTeacherContract(raw = {}) {
   const annexes = (Array.isArray(raw.annexes) && raw.annexes.length ? raw.annexes : TEACHER_CONTRACT_DEFAULT.annexes)
     .map((item) => ({
@@ -7914,7 +7951,10 @@ function normalizeTeacherContract(raw = {}) {
     intro: String(raw.intro !== undefined ? raw.intro : TEACHER_CONTRACT_DEFAULT.intro),
     body: String(raw.body || TEACHER_CONTRACT_DEFAULT.body),
     annexes,
-    defaults: { ...TEACHER_CONTRACT_DEFAULT.defaults, ...(raw.defaults && typeof raw.defaults === "object" ? raw.defaults : {}) },
+    // Un valor guardado que quedó vacío o sin definir no debe tapar el valor
+    // institucional que trae la app: si así fuera, actualizar la plantilla no
+    // serviría de nada en cuanto alguien hubiera guardado una sola vez.
+    defaults: mergeContractDefaults(raw.defaults),
     updatedAtClient: raw.updatedAtClient || 0,
     updatedBy: String(raw.updatedBy || "")
   };
@@ -7982,8 +8022,9 @@ function buildTeacherContractAnnexA(values) {
     grupos.get(field.group).push(`${field.label}: ${values[teacherContractVariableName(field.name)]}`);
   });
 
+  lines.push(`Contratante: ${values.RAZON_SOCIAL}, NIT ${values.NIT}`);
   lines.push(`Duración de la sesión: ${values.DURACION_SESION} minutos`);
-  lines.push(`Sede de Musicala: ${values.SEDE_NOMBRE}`);
+  lines.push(`Sede de Musicala: ${values.SEDE_DIRECCION}`);
   lines.push(`Responsable contractual: ${values.SUPERVISOR}`);
 
   grupos.forEach((items, grupo) => {
