@@ -8672,7 +8672,7 @@ function renderAdminContrato(body) {
               <small>${escapeHtml(estado)}</small>
             </div>
             <div class="customBtnActions">
-              ${source || isSupportTeacher ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">${source ? "Usar datos de vinculación" : "Consultar y usar datos"}</button>` : ""}
+              ${!firmo && (source || isSupportTeacher) ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">${source ? (term ? "Actualizar desde vinculación" : "Cargar datos de vinculación") : "Consultar y usar datos"}</button>` : ""}
               <button class="btnGhost" type="button" data-contract-terms="${escapeHtml(item.email)}">${term ? "Editar" : "Diligenciar"}</button>
             </div>
           </div>`;
