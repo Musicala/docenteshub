@@ -1,3 +1,10 @@
+import { prepareTeacherContract2026_2, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js";
+import {
+  DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
+  mergeRequirements, effectiveStatus, dossierSummary,
+  validateDossierFile, safeDossierFileName, teacherMessage, addMonths
+} from "./modules/contract-dossier.js";
+
 /* Musicala · Docentes Hub
    - Login con Google (Firebase Auth)
    - Hub exclusivo para Docentes (lista blanca por correo)
@@ -10,7 +17,7 @@
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-03.1";
+const BUILD = "2026-10-04.3";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -87,7 +94,27 @@ const TEACHER_CONTRACT_TERM_FIELDS = [
   { name: "bankName", label: "Banco o entidad financiera", group: "Economía" },
   { name: "cuenta", label: "Número de cuenta de la docente", group: "Economía" }
 ];
-const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set(["contratistaDireccion"]);
+const TEACHER_CONTRACT_2026_2_TERM_FIELDS = [
+  { name: "arlNombre", label: "ARL informada por EL CONTRATISTA", group: "Seguridad social" },
+  { name: "arlRiskClass", label: "Clase de riesgo verificada", group: "Seguridad social", type: "select", options: ["1", "2", "3", "4", "5"] },
+  { name: "arlAffiliationDate", label: "Fecha de afiliación o novedad ARL", group: "Seguridad social", type: "date" },
+  { name: "arlCoverageStartDate", label: "Inicio de cobertura verificado", group: "Seguridad social", type: "date" },
+  { name: "accountHolderName", label: "Titular de la cuenta de pago", group: "Economía" },
+  { name: "accountHolderDocument", label: "Documento del titular de la cuenta", group: "Economía" },
+  { name: "identityExceptionConfirmed", label: "Confirmación reforzada si coincide el documento del representante", group: "Validaciones", type: "select", options: ["", "Sí"] },
+  { name: "identityExceptionReason", label: "Motivo y verificación de coincidencia de identidad", group: "Validaciones", type: "textarea" },
+  { name: "accountExceptionConfirmed", label: "Tratamiento legal confirmado si la cuenta es de otra persona", group: "Validaciones", type: "select", options: ["", "Sí"] },
+  { name: "accountExceptionReason", label: "Motivo, soporte y base legal de excepción de cuenta", group: "Validaciones", type: "textarea" }
+];
+function teacherContractFieldsFor(contract) {
+  return String(contract?.version || "") === "2026.2"
+    ? [...TEACHER_CONTRACT_TERM_FIELDS.filter((field) => field.name !== "franjas").map((field) => field.name === "cuenta" ? { ...field, label: "Número de cuenta de EL CONTRATISTA" } : field), ...TEACHER_CONTRACT_2026_2_TERM_FIELDS]
+    : TEACHER_CONTRACT_TERM_FIELDS;
+}
+const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set([
+  "contratistaDireccion", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate",
+  "identityExceptionConfirmed", "identityExceptionReason", "accountExceptionConfirmed", "accountExceptionReason"
+]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
 const CONTRACT_MODALITY_OPTIONS = [
   "Musicala Virtual personalizado",
@@ -688,6 +715,13 @@ import {
   deleteDoc,
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytesResumable,
+  getBlob,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 /* ============================================================================
    4) HELPERS BASE
@@ -720,6 +754,13 @@ const APP_STATE = {
     open: false,
     record: null
   },
+  storage: null,
+  // Expediente documental: catálogo y caché por persona.
+  dossier: {
+    requirements: [],
+    requirementsLoaded: false,
+    cache: {}
+  },
   // Contrato de prestación de servicios de la sesión activa.
   contract: {
     access: { allowedEmails: [] },
@@ -732,6 +773,7 @@ const APP_STATE = {
     dataLoaded: false,
     signature: null,
     signatureLoaded: false,
+    history: [],
     supportProfile: null
   }
 };
@@ -3016,6 +3058,13 @@ const ADMIN_STATE = {
   supportAcceptances: {},
   hubUsers: {},        // { email: hubUserDoc } gestionados en Firestore
   customButtons: [],   // botones personalizados creados desde el panel
+  dossier: {           // pestaña Contrato: expedientes documentales
+    states: {},
+    versions: {},
+    filter: "todos",
+    search: "",
+    openEmail: ""
+  },
   contract: {          // pestaña Contrato: plantilla, acceso, Anexo A y firmas
     doc: null,
     allowedEmails: [],
@@ -3563,6 +3612,14 @@ function longDateLabel(dateStr) {
     day: "numeric",
     month: "long"
   }).format(dt);
+}
+
+function contractTimestampLabel(value, fallbackMs = 0) {
+  const date = value?.toDate?.() || (value instanceof Date ? value : Number(fallbackMs) ? new Date(Number(fallbackMs)) : null);
+  if (!date || Number.isNaN(date.getTime())) return "hora registrada por el servidor no disponible";
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota", dateStyle: "long", timeStyle: "short", hour12: true
+  }).format(date);
 }
 
 async function loadTeacherScheduleForActiveUser() {
@@ -7994,7 +8051,7 @@ function buildTeacherContractVariables(contract, terms) {
     values[key] = (!clean || clean === "{{PENDIENTE_DEFINIR}}") ? TEACHER_CONTRACT_PENDING_LABEL : clean;
   });
 
-  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+  teacherContractFieldsFor(contract).forEach((field) => {
     const raw = String(terms?.[field.name] ?? "").trim();
     let value = raw;
     if (!value) value = OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
@@ -8013,11 +8070,11 @@ function resolveTeacherContractText(text, values) {
   });
 }
 
-function buildTeacherContractAnnexA(values) {
+function buildTeacherContractAnnexA(values, contract) {
   const lines = ["## Datos del contrato"];
   const grupos = new Map();
 
-  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+  teacherContractFieldsFor(contract).forEach((field) => {
     if (!grupos.has(field.group)) grupos.set(field.group, []);
     grupos.get(field.group).push(`${field.label}: ${values[teacherContractVariableName(field.name)]}`);
   });
@@ -8050,7 +8107,7 @@ function buildTeacherContractDocument(contract = getTeacherContract(), terms = n
   const values = buildTeacherContractVariables(contract, terms);
   const sections = [
     { id: "CONTRATO", title: contract.title, body: resolveTeacherContractText(contract.body, values), declaration: "" },
-    { id: "A", title: "Anexo A. Condiciones particulares", body: buildTeacherContractAnnexA(values), declaration: "" },
+    { id: "A", title: "Anexo A. Condiciones particulares", body: buildTeacherContractAnnexA(values, contract), declaration: "" },
     ...contract.annexes.map((annex) => ({
       id: annex.id,
       title: annex.title,
@@ -8114,6 +8171,17 @@ async function loadMyTeacherContractSignature(force = false) {
   return APP_STATE.contract.signature;
 }
 
+async function loadMyTeacherContractHistory() {
+  const email = emailKey(APP_STATE.activeUser);
+  const versions = ["2026.1"];
+  const snapshots = await Promise.all(versions.map((version) =>
+    getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, version)))
+      .then((snap) => snap.exists() ? { id: snap.id, ...snap.data() } : null)
+  ));
+  APP_STATE.contract.history = snapshots.filter(Boolean);
+  return APP_STATE.contract.history;
+}
+
 // Huella del documento firmado. Permite comprobar después que el texto no
 // cambió: la copia se arma desde el snapshot, no desde la plantilla vigente.
 async function computeTeacherContractHash(text) {
@@ -8160,10 +8228,10 @@ function renderTeacherContractSections(documento) {
 
 // Overlay ancho propio: el modal del menú lateral es demasiado angosto para
 // leer un contrato con anexos.
-function openContractOverlay(title, bodyHtml) {
-  $("#contractOverlay")?.remove();
+function openContractOverlay(title, bodyHtml, overlayId = "contractOverlay") {
+  $(`#${overlayId}`)?.remove();
   const overlay = document.createElement("div");
-  overlay.id = "contractOverlay";
+  overlay.id = overlayId;
   overlay.className = "contractOverlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
@@ -8211,6 +8279,9 @@ async function openTeacherContract() {
     ]);
     // La firma depende de la versión vigente, por eso se lee después.
     await loadMyTeacherContractSignature(true);
+    await loadDossierRequirements();
+    await loadDossierFor(emailKey(APP_STATE.activeUser), { force: true });
+    if (String(getTeacherContract().version) === "2026.2") await loadMyTeacherContractHistory();
   } catch (error) {
     console.error("No se pudo abrir el contrato", error);
   }
@@ -8231,6 +8302,13 @@ function renderTeacherContractView(overlay) {
     ? { version: signature.version, title: signature.snapshot.title, intro: signature.snapshot.intro, sections: signature.snapshot.sections, pendingCount: 0 }
     : buildTeacherContractDocument(contract, terms);
   const vigente = buildTeacherContractDocument(contract, terms);
+  const historicalHtml = (APP_STATE.contract.history || []).map((item) => `
+    <section class="contractPanel">
+      <h3>Versión anterior conservada: ${escapeHtml(String(item.version))}</h3>
+      <p>${escapeHtml(item.fullName || "")} · aceptada y firmada el ${escapeHtml(contractTimestampLabel(item.acceptedAt || item.signedAt, item.acceptedAtClient || item.signedAtClient))} (hora Colombia)</p>
+      <p class="adminNote">Esta copia se reconstruye desde el snapshot de esa firma; no usa la plantilla nueva.</p>
+      <button class="btnGhost" type="button" data-contract-history-print="${escapeHtml(item.id)}">Descargar copia firmada ${escapeHtml(String(item.version))}</button>
+    </section>`).join("");
 
   let actionHtml = "";
   if (signature) {
@@ -8240,7 +8318,7 @@ function renderTeacherContractView(overlay) {
         <h3>Contrato firmado</h3>
         <div class="supportStatus ${alDia ? "supportStatus-accepted" : "supportStatus-incomplete"}">Versión ${escapeHtml(String(signature.version))}</div>
         <p>${escapeHtml(signature.fullName || "")} · documento ${escapeHtml(signature.documentId || "")}</p>
-        <p>${escapeHtml(signature.email || "")} · firmado el ${escapeHtml(longDateLabel(signature.signedDate))}</p>
+        <p>${escapeHtml(signature.email || "")} · aceptado y firmado el ${escapeHtml(contractTimestampLabel(signature.acceptedAt || signature.signedAt, signature.acceptedAtClient || signature.signedAtClient))} (hora Colombia)</p>
         ${signature.contentHash ? `<p class="adminNote">Huella del documento: <code>${escapeHtml(String(signature.contentHash).slice(0, 16))}…</code></p>` : ""}
         <p class="adminNote">${alDia
           ? "Guardamos copia íntegra del documento que aceptaste. Lo que descargues sale de esa copia, no de la plantilla vigente."
@@ -8272,8 +8350,14 @@ function renderTeacherContractView(overlay) {
     }
   }
 
+  const requirements = getDossierRequirements();
+  const miExpediente = APP_STATE.dossier.cache[emailKey(APP_STATE.activeUser)] || { states: {}, versions: {} };
+  const resumenExpediente = dossierSummary(requirements, miExpediente.states, dossierToday(), { hasSignedContract: Boolean(signature) });
+
   const body = $(".contractCardBody", overlay);
   body.innerHTML = `
+    ${renderDossierProgressCard(resumenExpediente, { title: "Tu proceso de contratación" })}
+    <div class="dossierGroups">${renderDossierGroups(requirements, miExpediente.states, miExpediente.versions, { admin: false, hasSignedContract: Boolean(signature) })}</div>
     <section class="contractPanel">
       <div class="contractDocHead">
         <div>
@@ -8290,9 +8374,23 @@ function renderTeacherContractView(overlay) {
     </section>
     ${actionHtml}
     ${pendingHtml}
+    ${historicalHtml}
   `;
 
+  wireDossierActions(body, {
+    email: emailKey(APP_STATE.activeUser),
+    admin: false,
+    onChange: async () => { await loadDossierFor(emailKey(APP_STATE.activeUser), { force: true }); renderTeacherContractView(overlay); }
+  });
   $("#contractPrint", overlay)?.addEventListener("click", () => printTeacherContract(documento, signature));
+  overlay.querySelectorAll("[data-contract-history-print]").forEach((button) => button.addEventListener("click", async () => {
+    const item = APP_STATE.contract.history.find((entry) => entry.id === button.dataset.contractHistoryPrint);
+    if (!item?.snapshot?.sections?.length) { toast("No encontré la copia histórica completa."); return; }
+    const historicDocument = { version: item.version, title: item.snapshot.title, intro: item.snapshot.intro, sections: item.snapshot.sections };
+    const expectedHash = await computeTeacherContractHash(teacherContractSnapshotText(historicDocument));
+    if (item.contentHash && expectedHash !== item.contentHash) { toast("La huella de la copia histórica no coincide. No la voy a presentar como verificada."); return; }
+    printTeacherContract(historicDocument, item);
+  }));
   wireTeacherContractDataForm(overlay);
   wireTeacherContractSignForm(overlay, vigente);
 }
@@ -8461,6 +8559,18 @@ function wireTeacherContractSignForm(overlay, documento) {
       toast("Escribe tu nombre completo y tu número de documento.");
       return;
     }
+    if (contract.version === "2026.2") {
+      const formalization = validateTeacherContractFormalization({
+        terms,
+        representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO,
+        today: bogotaParts().date,
+        signatureDate: bogotaParts().date
+      });
+      if (!formalization.valid) {
+        toast(formalization.errors[0]);
+        return;
+      }
+    }
     const statements = teacherContractStatements(documento);
     const accepted = [];
     for (const statement of statements) {
@@ -8476,7 +8586,16 @@ function wireTeacherContractSignForm(overlay, documento) {
       const snapshotText = teacherContractSnapshotText(documento);
       const contentHash = await computeTeacherContractHash(snapshotText);
       const email = emailKey(APP_STATE.activeUser);
+      if (!contentHash) throw new Error("No se pudo calcular la huella SHA-256 del documento.");
+      const contractId = crypto.randomUUID();
+      let parentContractId = null;
+      if (contract.version === "2026.2") {
+        const parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, "2026.1")));
+        if (parentSnap.exists()) parentContractId = parentSnap.data()?.contractId || parentSnap.id;
+      }
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, contract.version)), {
+        contractId,
+        parentContractId,
         uid: APP_STATE.activeUser.uid,
         email,
         fullName: values.fullName,
@@ -8484,6 +8603,11 @@ function wireTeacherContractSignForm(overlay, documento) {
         version: contract.version,
         contractTitle: documento.title,
         accepted: true,
+        documentReadConfirmed: true,
+        readConfirmedAt: serverTimestamp(),
+        readConfirmedAtClient: Date.now(),
+        manualVersion: contract.version === "2026.2" ? contract.defaults?.MANUAL_VERSION || null : null,
+        manualReadConfirmed: contract.version === "2026.2" ? true : null,
         acceptedStatements: accepted,
         // Snapshot íntegro de lo que la persona vio y aceptó.
         snapshot: {
@@ -8494,7 +8618,11 @@ function wireTeacherContractSignForm(overlay, documento) {
         },
         contentHash,
         signedAt: serverTimestamp(),
+        acceptedAt: serverTimestamp(),
         signedAtClient: Date.now(),
+        acceptedAtClient: Date.now(),
+        acceptedByUserId: APP_STATE.activeUser.uid,
+        acceptedByEmail: email,
         signedDate: bogotaParts().date,
         timezone: "America/Bogota",
         userAgent: String(navigator.userAgent || "").slice(0, 300)
@@ -8517,21 +8645,23 @@ function printTeacherContract(documento, signature = null) {
   win.document.write(`
     <html><head><meta charset="utf-8"><title>${escapeHtml(documento.title)}</title>
     <style>
-      body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#10223a;line-height:1.55;}
-      h1{font-size:20px;} h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #ccc;padding-top:14px;}
-      h4{margin:16px 0 4px;font-size:14px;} p{margin:6px 0;}
-      .evidence{margin-top:28px;padding:14px 16px;border:1px solid #ccc;border-radius:10px;font-size:13px;}
+      @page{size:letter;margin:18mm 17mm 20mm;}
+      body{font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;padding:0;color:#10223a;line-height:1.5;font-size:11pt;}
+      h1{font-size:20px;line-height:1.2;margin:0 0 14px;} h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #ccc;padding-top:14px;page-break-after:avoid;break-after:avoid;}
+      h4{margin:16px 0 4px;font-size:14px;page-break-after:avoid;break-after:avoid;} p{margin:6px 0;orphans:3;widows:3;}
+      .evidence{margin-top:28px;padding:14px 16px;border:1px solid #ccc;border-radius:8px;font-size:13px;page-break-inside:avoid;break-inside:avoid;}
       code{font-size:11px;word-break:break-all;}
+      @media print{html,body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .contractAnnexRow,.evidence{page-break-inside:avoid;break-inside:avoid;}}
     </style></head><body>
     <h1>${escapeHtml(documento.title)}</h1>
     <p><em>Versión ${escapeHtml(documento.version)}</em></p>
     <p>${escapeHtml(documento.intro)}</p>
-    ${documento.sections.map((section) => `<h2>${escapeHtml(section.title)}</h2>${renderTeacherContractBody(section.body)}`).join("")}
+    ${documento.sections.map((section, index) => `${index === 0 ? "" : `<h2>${escapeHtml(section.title)}</h2>`}${renderTeacherContractBody(section.body)}`).join("")}
     ${signature ? `<div class="evidence">
       <strong>Constancia de aceptación</strong>
       <p>${escapeHtml(signature.fullName || "")} - documento ${escapeHtml(signature.documentId || "")}</p>
       <p>${escapeHtml(signature.email || "")}</p>
-      <p>Firmado el ${escapeHtml(longDateLabel(signature.signedDate))} - versión ${escapeHtml(String(signature.version))}</p>
+      <p>Aceptado y firmado el ${escapeHtml(contractTimestampLabel(signature.acceptedAt || signature.signedAt, signature.acceptedAtClient || signature.signedAtClient))} (hora Colombia) - versión ${escapeHtml(String(signature.version))}</p>
       ${(signature.acceptedStatements || []).map((item) => `<p>· ${escapeHtml(item.exactText)}</p>`).join("")}
       ${signature.contentHash ? `<p>Huella SHA-256 del documento firmado:<br><code>${escapeHtml(signature.contentHash)}</code></p>` : ""}
       <p><em>Copia del documento firmado. Generada el ${escapeHtml(longDateLabel(bogotaParts().date))}.</em></p>
@@ -8539,6 +8669,7 @@ function printTeacherContract(documento, signature = null) {
     </body></html>
   `);
   win.document.close();
+  win.document.title = `${documento.title} - versión ${documento.version}`;
   win.focus();
   win.print();
 }
@@ -8563,6 +8694,8 @@ async function loadContractAdminData() {
   ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.supportProfiles = Object.fromEntries(supportProfilesSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  await loadDossierRequirements(true);
+  await loadAllDossiers();
   // La lista de acceso también manda sobre la sesión actual.
   APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
   APP_STATE.contract.accessLoaded = true;
@@ -8608,6 +8741,7 @@ function renderAdminContrato(body) {
 
   if (ADMIN_STATE.contract.editingText) return renderAdminContratoEditor(body, contract);
   if (editingEmail) return renderAdminContratoTerms(body, editingEmail);
+  if (ADMIN_STATE.dossier.openEmail) return renderAdminDossierTeacher(body, ADMIN_STATE.dossier.openEmail);
 
   const vistaPrevia = buildTeacherContractDocument(contract, null);
 
@@ -8618,6 +8752,8 @@ function renderAdminContrato(body) {
       <span></span>
       <div><button class="btnGhost" id="contractEditText" type="button">Editar texto y valores</button></div>
     </div>
+
+    ${renderAdminDossierTable(body)}
 
     <h3 class="contractAdminTitle">Acceso adicional al contrato</h3>
     <p class="adminNote">Las Docentes de apoyo siempre pueden leer su contrato individual desde “Mi vinculación como Docente de apoyo”. Esta lista solo da el mismo acceso a otras docentes; no cambia la firma ni diligencia datos.</p>
@@ -8686,12 +8822,13 @@ function renderAdminContrato(body) {
         <div class="customBtnInfo">
           <strong>${escapeHtml(item.fullName || item.email)}</strong>
           <small>${escapeHtml(item.email || "")} · documento ${escapeHtml(item.documentId || "")}</small>
-          <small>Firmado el ${escapeHtml(longDateLabel(item.signedDate))}${item.contentHash ? ` · huella ${escapeHtml(String(item.contentHash).slice(0, 12))}…` : ""}</small>
+          <small>Aceptado y firmado el ${escapeHtml(contractTimestampLabel(item.acceptedAt || item.signedAt, item.acceptedAtClient || item.signedAtClient))} (hora Colombia)${item.contentHash ? ` · huella ${escapeHtml(String(item.contentHash).slice(0, 12))}…` : ""}</small>
         </div>
       </div>`).join("")}</div>` : '<p class="adminNote">Aún no hay firmas de esta versión.</p>'}
     <p class="adminNote">Este documento es un borrador operativo, no un concepto jurídico: debe revisarlo un abogado antes de usarse como contrato definitivo.</p>
   `;
 
+  wireAdminDossierTable(body);
   $("#contractEditText", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = true; renderAdminBody(); });
   $("#contractAllowClear", body)?.addEventListener("click", () => {
     body.querySelectorAll("[data-contract-allow]").forEach((input) => { input.checked = false; });
@@ -8780,9 +8917,10 @@ function renderAdminContrato(body) {
 function renderAdminContratoTerms(body, email) {
   const contract = ADMIN_STATE.contract.doc || getTeacherContract();
   const draft = ADMIN_STATE.contract.terms?.[email] || {};
+  const contractFields = teacherContractFieldsFor(contract);
   const label = getAdminTeacherOptions().find((item) => item.email === email)?.label || email;
   const grupos = new Map();
-  TEACHER_CONTRACT_TERM_FIELDS.forEach((field) => {
+  contractFields.forEach((field) => {
     if (!grupos.has(field.group)) grupos.set(field.group, []);
     grupos.get(field.group).push(field);
   });
@@ -8802,7 +8940,7 @@ function renderAdminContratoTerms(body, email) {
             if (field.type === "textarea") return `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(value)}</textarea></label>`;
             if (field.type === "select") {
               const options = Array.from(new Set([...(field.options || []), ...(value && !(field.options || []).includes(value) ? [value] : [])]));
-              return `<label>${escapeHtml(field.label)}<select data-contract-term="${escapeHtml(field.name)}"><option value="">Selecciona una modalidad</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+              return `<label>${escapeHtml(field.label)}<select data-contract-term="${escapeHtml(field.name)}"><option value="">Selecciona</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
             }
             return `<label>${escapeHtml(field.label)}<input type="${escapeHtml(field.type || "text")}" data-contract-term="${escapeHtml(field.name)}" value="${escapeHtml(value)}" /></label>`;
           }).join("")}
@@ -8862,6 +9000,10 @@ function renderAdminContratoTerms(body, email) {
     await setDoc(termsRef, {
       ...values,
       email,
+      ...((values.identityExceptionConfirmed === "Sí" || values.accountExceptionConfirmed === "Sí") ? {
+        identityReviewAt: serverTimestamp(),
+        identityReviewBy: emailKey(APP_STATE.activeUser)
+      } : {}),
       approvalStatus: "draft",
       approvedForSignature: false,
       approvedVersion: "",
@@ -8881,7 +9023,7 @@ function renderAdminContratoTerms(body, email) {
           String(rate[field] || "").trim() === String(expected[field] || "").trim()
         );
       });
-    const valuesMatch = TEACHER_CONTRACT_TERM_FIELDS.every((field) =>
+    const valuesMatch = contractFields.every((field) =>
       String(persisted[field.name] || "").trim() === String(values[field.name] || "").trim()
     ) && ratesMatch;
     if (!valuesMatch) throw new Error("Las condiciones guardadas no coinciden con los valores enviados.");
@@ -8920,8 +9062,11 @@ function renderAdminContratoTerms(body, email) {
       const values = savedValues;
       ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...values };
 
-      const missing = TEACHER_CONTRACT_TERM_FIELDS.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
+      const missing = contractFields.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
       const documento = buildTeacherContractDocument(contract, values);
+      const formalization = contract.version === "2026.2"
+        ? validateTeacherContractFormalization({ terms: values, representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO, today: bogotaParts().date, signatureDate: bogotaParts().date })
+        : { valid: true, errors: [] };
       const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
       const pendingInstitutional = Object.entries(contract.defaults || {})
         .filter(([, value]) => {
@@ -8929,7 +9074,7 @@ function renderAdminContratoTerms(body, email) {
           return !clean || clean === "{{PENDIENTE_DEFINIR}}";
         })
         .map(([key]) => key);
-      if (missing.length || invalidRates || documento.pendingCount) {
+      if (missing.length || invalidRates || documento.pendingCount || !formalization.valid) {
         const issues = [];
         if (missing.length) issues.push(`Anexo A: ${missing.map((field) => field.label).join(", ")}`);
         if (invalidRates) issues.push("completa modalidad, valor y valor en letras en cada tarifa");
@@ -8939,6 +9084,7 @@ function renderAdminContratoTerms(body, email) {
             : " El texto o los anexos del contrato todavía contienen datos institucionales pendientes.";
           issues.push(`el contrato aún tiene ${documento.pendingCount} dato(s) institucional(es) sin definir.${institutionList}`);
         }
+        if (!formalization.valid) issues.push(...formalization.errors);
         if (saveFeedback) saveFeedback.textContent = `Condiciones guardadas como borrador ✅. Para aprobar, ${issues.join("; ")}.`;
         if (documento.pendingCount && defaultsHelp) {
           defaultsHelp.hidden = false;
@@ -8997,12 +9143,14 @@ function renderAdminContratoTerms(body, email) {
 
 function renderAdminContratoEditor(body, contract) {
   body.innerHTML = `
-    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Cambia la versión cuando el contenido cambie: quienes ya firmaron tendrán que firmar de nuevo. Los valores institucionales son compartidos por todos los contratos; complétalos solo con definiciones aprobadas por Musicala, no con datos personales de la docente.</p>
+    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Los contratos firmados permanecen en su copia y versión originales. Preparar la versión 2026.2 solo carga un borrador en este editor; no lo guarda ni lo activa hasta que coordinación lo revise y guarde expresamente.</p>
+    <div class="adminSubActions"><span></span><button class="btnGhost" id="contractPrepare20262" type="button">Preparar borrador 2026.2</button></div>
     <div class="supportFields">
       <label>Título<input type="text" id="contractTitle" maxlength="160" value="${escapeHtml(contract.title)}" /></label>
       <label>Versión<input type="text" id="contractVersion" maxlength="20" value="${escapeHtml(contract.version)}" /></label>
       <label class="contractFieldWide">Introducción<textarea id="contractIntro" rows="3" maxlength="900">${escapeHtml(contract.intro)}</textarea></label>
       <label class="contractFieldWide">Cuerpo del contrato<textarea id="contractBody" rows="18">${escapeHtml(contract.body)}</textarea></label>
+      <label class="contractFieldWide">Anexos (JSON)<textarea id="contractAnnexes" rows="12">${escapeHtml(JSON.stringify(contract.annexes, null, 2))}</textarea></label>
     </div>
     <h4 class="contractAdminTitle">Valores institucionales</h4>
     <div class="supportFields">
@@ -9019,6 +9167,28 @@ function renderAdminContratoEditor(body, contract) {
     </div>
   `;
 
+  $("#contractPrepare20262", body)?.addEventListener("click", () => {
+    try {
+      const source = {
+        ...contract,
+        title: $("#contractTitle", body).value.trim(),
+        intro: $("#contractIntro", body).value.trim(),
+        body: $("#contractBody", body).value,
+        annexes: JSON.parse($("#contractAnnexes", body).value)
+      };
+      const draft = prepareTeacherContract2026_2(source);
+      $("#contractVersion", body).value = draft.version;
+      $("#contractTitle", body).value = draft.title;
+      $("#contractIntro", body).value = draft.intro;
+      $("#contractBody", body).value = draft.body;
+      $("#contractAnnexes", body).value = JSON.stringify(draft.annexes, null, 2);
+      toast("Borrador 2026.2 cargado en el editor. Revísalo; aún no se ha guardado ni activado.");
+    } catch (error) {
+      console.error("No se pudo preparar el borrador 2026.2", error);
+      toast("No pude preparar el borrador. Revisa que el campo de anexos tenga JSON válido.");
+    }
+  });
+
   $("#contractEditCancel", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.editingText = false;
     ADMIN_STATE.contract.termsEmail = ADMIN_STATE.contract.editingTextReturnEmail || "";
@@ -9029,6 +9199,12 @@ function renderAdminContratoEditor(body, contract) {
     const version = $("#contractVersion", body).value.trim();
     const title = $("#contractTitle", body).value.trim();
     const text = $("#contractBody", body).value.trim();
+    let annexes;
+    try { annexes = JSON.parse($("#contractAnnexes", body).value); }
+    catch (_) { toast("Los anexos deben tener formato JSON válido."); return; }
+    if (!Array.isArray(annexes) || annexes.some((item) => !item?.id || !item?.title || typeof item?.body !== "string")) {
+      toast("Cada anexo debe tener id, título y cuerpo de texto."); return;
+    }
     if (!version || !title || !text) { toast("Completa versión, título y contenido."); return; }
     // El id de cada firma es "correo__version" y las reglas de Firestore lo
     // verifican. Si la versión trae espacios o signos, el id no coincidiría y
@@ -9045,7 +9221,7 @@ function renderAdminContratoEditor(body, contract) {
         title,
         intro: $("#contractIntro", body).value.trim(),
         body: text,
-        annexes: contract.annexes,
+        annexes,
         defaults,
         updatedAt: serverTimestamp(),
         updatedAtClient: Date.now(),
@@ -9072,6 +9248,724 @@ function renderAdminContratoEditor(body, contract) {
     }
   });
 }
+
+/* ============================================================================
+   EXPEDIENTE DIGITAL DE CONTRATACIÓN · DATOS Y VISTAS
+   ----------------------------------------------------------------------------
+   La lógica de estados, progreso y vencimientos vive en
+   modules/contract-dossier.js. Aquí solo está lo que necesita Firebase o el DOM.
+
+   Colecciones:
+     contractRequirements/{requirementId}   catálogo configurable (global)
+     teacherDocFiles/{email__requirementId} estado del requisito por persona
+     teacherDocFileVersions/{versionId}     versiones; se crean y no se tocan más
+     teacherDocAuditLog/{eventId}           rastro de quién hizo qué y cuándo
+
+   Storage: contract-files/{email}/{requirementId}/{versionId}/{archivo}
+
+   Regla de oro: nunca se borra nada. Una corrección genera una versión nueva y
+   la anterior queda en el historial.
+============================================================================ */
+const DOSSIER_REQUIREMENTS_COLLECTION = "contractRequirements";
+const DOSSIER_FILES_COLLECTION = "teacherDocFiles";
+const DOSSIER_VERSIONS_COLLECTION = "teacherDocFileVersions";
+const DOSSIER_AUDIT_COLLECTION = "teacherDocAuditLog";
+const DOSSIER_STORAGE_ROOT = "contract-files";
+
+function dossierStateId(email, requirementId) {
+  return `${String(email || "").toLowerCase()}__${String(requirementId || "")}`;
+}
+
+function dossierToday() {
+  return bogotaParts().date;
+}
+
+function getDossierRequirements() {
+  return APP_STATE.dossier.requirements.length ? APP_STATE.dossier.requirements : mergeRequirements([]);
+}
+
+/* ---- Catálogo ---- */
+async function loadDossierRequirements(force = false) {
+  if (APP_STATE.dossier.requirementsLoaded && !force) return getDossierRequirements();
+  try {
+    const snap = await getDocs(collection(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION));
+    APP_STATE.dossier.requirements = mergeRequirements(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+  } catch (error) {
+    // Sin catálogo guardado o sin permiso: se usa el del código, que ya sirve.
+    console.warn("No se pudo leer el catálogo de requisitos:", error);
+    APP_STATE.dossier.requirements = mergeRequirements([]);
+  }
+  APP_STATE.dossier.requirementsLoaded = true;
+  return APP_STATE.dossier.requirements;
+}
+
+/* ---- Expediente de una persona ---- */
+async function loadDossierFor(email, { force = false } = {}) {
+  const key = String(email || "").toLowerCase();
+  if (!key) return { states: {}, versions: {} };
+  if (!force && APP_STATE.dossier.cache[key]) return APP_STATE.dossier.cache[key];
+
+  const states = {};
+  const versions = {};
+  try {
+    const [stateSnap, versionSnap] = await Promise.all([
+      getDocs(query(collection(APP_STATE.db, DOSSIER_FILES_COLLECTION), where("teacherEmail", "==", key))),
+      getDocs(query(collection(APP_STATE.db, DOSSIER_VERSIONS_COLLECTION), where("teacherEmail", "==", key)))
+    ]);
+    stateSnap.docs.forEach((item) => {
+      const data = item.data() || {};
+      if (data.requirementId) states[data.requirementId] = { id: item.id, ...data };
+    });
+    versionSnap.docs.forEach((item) => {
+      const data = item.data() || {};
+      if (!data.requirementId) return;
+      if (!versions[data.requirementId]) versions[data.requirementId] = [];
+      versions[data.requirementId].push({ id: item.id, ...data });
+    });
+    // Más reciente primero. Se ordena aquí para no exigir un índice compuesto.
+    Object.values(versions).forEach((list) => list.sort((a, b) => Number(b.uploadedAtClient || 0) - Number(a.uploadedAtClient || 0)));
+  } catch (error) {
+    console.warn("No se pudo leer el expediente:", error);
+  }
+
+  const dossier = { states, versions, loadedAt: Date.now() };
+  APP_STATE.dossier.cache[key] = dossier;
+  return dossier;
+}
+
+/* ---- Auditoría ----
+   Nunca interrumpe la operación: si falla el registro, la acción ya ocurrió y
+   es peor dejar a la persona sin saber qué pasó. */
+async function logDossierEvent(eventType, payload = {}) {
+  try {
+    await addDoc(collection(APP_STATE.db, DOSSIER_AUDIT_COLLECTION), {
+      eventType: String(eventType || ""),
+      teacherEmail: String(payload.teacherEmail || "").toLowerCase(),
+      requirementId: String(payload.requirementId || ""),
+      documentVersionId: String(payload.versionId || ""),
+      performedBy: emailKey(APP_STATE.activeUser),
+      performedByRole: isAdminUser() ? "admin" : "teacher",
+      previousState: String(payload.previousState || ""),
+      newState: String(payload.newState || ""),
+      notes: String(payload.notes || "").slice(0, 1000),
+      createdAt: serverTimestamp(),
+      createdAtClient: Date.now()
+    });
+  } catch (error) {
+    console.warn("No se pudo registrar el evento de auditoría:", error);
+  }
+}
+
+/* ---- Carga de un documento ----
+   El id de la versión se genera antes de subir para que la carpeta de Storage
+   y el documento de Firestore coincidan siempre. */
+function newDossierVersionId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function uploadDossierDocument({ email, requirement, file, onProgress }) {
+  const teacherEmail = String(email || "").toLowerCase();
+  const admin = isAdminUser();
+  if (!teacherEmail) throw new Error("Falta la persona del expediente.");
+  if (!admin && teacherEmail !== emailKey(APP_STATE.activeUser)) throw new Error("Solo puedes cargar documentos en tu propio expediente.");
+  if (!admin && !requirement.allowTeacherUpload) throw new Error("Este documento lo gestiona Musicala.");
+
+  const invalid = validateDossierFile(file, requirement);
+  if (invalid) throw new Error(invalid);
+
+  const versionId = newDossierVersionId();
+  const fileName = safeDossierFileName(file.name);
+  const storagePath = `${DOSSIER_STORAGE_ROOT}/${teacherEmail}/${requirement.id}/${versionId}/${fileName}`;
+
+  await new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef(APP_STATE.storage, storagePath), file, {
+      contentType: file.type,
+      cacheControl: "private, max-age=0, no-store"
+    });
+    task.on("state_changed",
+      (snap) => { if (onProgress && snap.totalBytes) onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)); },
+      reject,
+      resolve
+    );
+  });
+
+  const previous = APP_STATE.dossier.cache[teacherEmail]?.versions?.[requirement.id] || [];
+  const versionNumber = previous.length + 1;
+  const uploadedByRole = admin ? "admin" : "teacher";
+  const origin = admin ? "musicala" : "docente";
+
+  // La versión se escribe una vez y ya no se modifica: es la pieza que da
+  // trazabilidad al expediente.
+  await setDoc(doc(APP_STATE.db, DOSSIER_VERSIONS_COLLECTION, versionId), {
+    teacherEmail,
+    requirementId: requirement.id,
+    requirementName: requirement.name,
+    fileName: file.name,
+    storagePath,
+    mimeType: file.type,
+    fileSize: file.size,
+    version: versionNumber,
+    origin,
+    uploadedBy: emailKey(APP_STATE.activeUser),
+    uploadedByRole,
+    uploadedAt: serverTimestamp(),
+    uploadedAtClient: Date.now(),
+    statusAtUpload: "cargado"
+  });
+
+  const stateId = dossierStateId(teacherEmail, requirement.id);
+  const previousState = APP_STATE.dossier.cache[teacherEmail]?.states?.[requirement.id]?.status || "pendiente";
+  await setDoc(doc(APP_STATE.db, DOSSIER_FILES_COLLECTION, stateId), {
+    teacherEmail,
+    requirementId: requirement.id,
+    status: "cargado",
+    applies: true,
+    currentVersionId: versionId,
+    versionCount: versionNumber,
+    lastUploadAt: serverTimestamp(),
+    lastUploadAtClient: Date.now(),
+    lastUploadBy: emailKey(APP_STATE.activeUser),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+
+  await logDossierEvent(previous.length ? "document_new_version" : "document_uploaded", {
+    teacherEmail, requirementId: requirement.id, versionId,
+    previousState, newState: "cargado",
+    notes: `${file.name} · versión ${versionNumber}`
+  });
+
+  await loadDossierFor(teacherEmail, { force: true });
+  return versionId;
+}
+
+/* ---- Revisión administrativa ---- */
+async function setDossierReview({ email, requirement, status, notes = "", issueDate = "", expirationDate = "", applies = true }) {
+  if (!isAdminUser()) throw new Error("Solo coordinación puede revisar documentos.");
+  const teacherEmail = String(email || "").toLowerCase();
+  const stateId = dossierStateId(teacherEmail, requirement.id);
+  const previousState = APP_STATE.dossier.cache[teacherEmail]?.states?.[requirement.id]?.status || "pendiente";
+
+  await setDoc(doc(APP_STATE.db, DOSSIER_FILES_COLLECTION, stateId), {
+    teacherEmail,
+    requirementId: requirement.id,
+    status,
+    applies,
+    adminNotes: String(notes || "").slice(0, 1000),
+    issueDate: String(issueDate || ""),
+    expirationDate: String(expirationDate || ""),
+    reviewedBy: emailKey(APP_STATE.activeUser),
+    reviewedAt: serverTimestamp(),
+    reviewedAtClient: Date.now(),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+
+  const eventByStatus = {
+    aprobado: "document_approved",
+    requiere_correccion: "document_correction_requested",
+    en_revision: "document_in_review",
+    no_aplica: "requirement_not_applicable"
+  };
+  await logDossierEvent(eventByStatus[status] || "document_status_changed", {
+    teacherEmail, requirementId: requirement.id,
+    versionId: APP_STATE.dossier.cache[teacherEmail]?.states?.[requirement.id]?.currentVersionId || "",
+    previousState, newState: status, notes
+  });
+
+  await loadDossierFor(teacherEmail, { force: true });
+}
+
+/* ---- Visor ----
+   Se intenta descargar el archivo autenticado (getBlob respeta las reglas y no
+   deja una URL pública dando vueltas). Si el bucket no tiene CORS para este
+   origen, se cae a getDownloadURL, que sigue exigiendo permiso al generarse y
+   nunca se guarda en Firestore. */
+async function resolveDossierFileUrl(version) {
+  const fileRef = storageRef(APP_STATE.storage, version.storagePath);
+  try {
+    const blob = await getBlob(fileRef);
+    return { url: URL.createObjectURL(blob), revoke: true };
+  } catch (error) {
+    console.warn("Descarga autenticada no disponible, se usa enlace temporal:", error?.code || error);
+    return { url: await getDownloadURL(fileRef), revoke: false };
+  }
+}
+
+async function openDossierViewer(version, requirement, state = {}) {
+  // Capa aparte para no cerrar el expediente que hay detrás.
+  const overlay = openContractOverlay(requirement?.name || "Documento", '<p class="adminNote">Abriendo el documento…</p>', "dossierViewerOverlay");
+  let resolved = null;
+  try {
+    resolved = await resolveDossierFileUrl(version);
+  } catch (error) {
+    console.error("No se pudo abrir el documento", error);
+    $(".contractCardBody", overlay).innerHTML = '<p class="adminNote">No pudimos abrir este documento. Intenta de nuevo.</p>';
+    return;
+  }
+  if (!document.body.contains(overlay)) {
+    if (resolved.revoke) URL.revokeObjectURL(resolved.url);
+    return;
+  }
+
+  const isPdf = String(version.mimeType || "").includes("pdf");
+  const status = effectiveStatus(requirement, state, dossierToday());
+  const meta = DOSSIER_STATUS_META[status] || DOSSIER_STATUS_META.pendiente;
+  const body = $(".contractCardBody", overlay);
+  body.innerHTML = `
+    <section class="contractPanel dossierViewerMeta">
+      <div class="dossierViewerHead">
+        <div>
+          <h3>${escapeHtml(version.fileName || requirement.name)}</h3>
+          <p class="supportIntro">${escapeHtml(requirement.name)} · versión ${escapeHtml(String(version.version || 1))}</p>
+        </div>
+        <span class="dossierChip dossierChip-${meta.tone}">${meta.icon} ${escapeHtml(meta.label)}</span>
+      </div>
+      <div class="dossierMetaGrid">
+        <div><span>Cargado</span><strong>${escapeHtml(contractTimestampLabel(version.uploadedAt, version.uploadedAtClient))}</strong></div>
+        <div><span>Cargado por</span><strong>${escapeHtml(version.uploadedBy || "")} (${escapeHtml(version.uploadedByRole === "admin" ? "Musicala" : "docente")})</strong></div>
+        <div><span>Tipo</span><strong>${escapeHtml(version.mimeType || "—")}</strong></div>
+        <div><span>Tamaño</span><strong>${escapeHtml(((Number(version.fileSize) || 0) / 1024 / 1024).toFixed(2))} MB</strong></div>
+        ${state.reviewedBy ? `<div><span>Revisado por</span><strong>${escapeHtml(state.reviewedBy)}</strong></div>` : ""}
+        ${state.reviewedAtClient ? `<div><span>Fecha de revisión</span><strong>${escapeHtml(contractTimestampLabel(state.reviewedAt, state.reviewedAtClient))}</strong></div>` : ""}
+        ${state.expirationDate ? `<div><span>Vence</span><strong>${escapeHtml(longDateLabel(state.expirationDate))}</strong></div>` : ""}
+      </div>
+      ${state.adminNotes ? `<p class="dossierNote">💬 ${escapeHtml(state.adminNotes)}</p>` : ""}
+      <div class="contractActions">
+        <a class="btnGoogle" href="${escapeHtml(resolved.url)}" download="${escapeHtml(version.fileName || "documento")}" target="_blank" rel="noopener noreferrer">Descargar</a>
+      </div>
+    </section>
+    <section class="contractPanel dossierPreviewPanel">
+      ${isPdf
+        ? `<iframe class="dossierPreview" src="${escapeHtml(resolved.url)}" title="Vista previa del documento"></iframe>`
+        : `<a href="${escapeHtml(resolved.url)}" target="_blank" rel="noopener noreferrer"><img class="dossierPreviewImg" src="${escapeHtml(resolved.url)}" alt="Vista previa de ${escapeHtml(requirement.name)}" /></a>
+           <p class="adminNote">Toca la imagen para ampliarla.</p>`}
+    </section>
+  `;
+
+  if (resolved.revoke) {
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(overlay)) { URL.revokeObjectURL(resolved.url); observer.disconnect(); }
+    });
+    observer.observe(document.body, { childList: true });
+  }
+}
+
+/* ---- Bloque de la docente ---- */
+function renderDossierProgressCard(summary, { title = "Expediente de contratación" } = {}) {
+  const meta = DOSSIER_SUMMARY_META[summary.estado] || DOSSIER_SUMMARY_META.documentacion_pendiente;
+  const { listos, total, percent, pendientes } = summary.progress;
+  return `
+    <section class="contractPanel dossierSummary">
+      <div class="dossierSummaryHead">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          <p class="supportIntro">${listos} de ${total} requisitos completados</p>
+        </div>
+        <span class="dossierChip dossierChip-${meta.tone}">${escapeHtml(meta.label)}</span>
+      </div>
+      <div class="dossierBar" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100" aria-label="Avance del expediente">
+        <div class="dossierBarFill dossierBarFill-${meta.tone}" style="width:${percent}%"></div>
+      </div>
+      <p class="dossierPercent">${percent}%</p>
+      ${pendientes.length ? `<div class="dossierPending"><strong>Pendientes:</strong><ul>${pendientes.slice(0, 6).map((item) => `<li>${escapeHtml(item.name)}</li>`).join("")}</ul></div>` : '<p class="adminNote">No tienes requisitos pendientes. 🎉</p>'}
+      ${summary.alerts.length ? `<div class="dossierAlerts">${summary.alerts.map((item) => `<p>${item.status === "vencido" ? "🔴" : "🟡"} <strong>${escapeHtml(item.name)}</strong> ${item.status === "vencido" ? "venció" : "vence"} el ${escapeHtml(longDateLabel(item.expirationDate))}</p>`).join("")}</div>` : ""}
+    </section>`;
+}
+
+function renderDossierRequirementCard(requirement, state, versions, { admin = false } = {}) {
+  const status = effectiveStatus(requirement, state, dossierToday());
+  const meta = DOSSIER_STATUS_META[status] || DOSSIER_STATUS_META.pendiente;
+  const current = versions[0] || null;
+  const historial = versions.slice(1);
+  const canUpload = admin ? requirement.allowAdminUpload : (requirement.allowTeacherUpload && status !== "no_aplica");
+  const mensaje = admin ? "" : teacherMessage(requirement, status);
+
+  return `
+    <article class="dossierItem dossierItem-${meta.tone}" data-dossier-req="${escapeHtml(requirement.id)}">
+      <div class="dossierItemHead">
+        <div class="dossierItemTitle">
+          <strong>${escapeHtml(requirement.name)}</strong>
+          ${requirement.required ? "" : '<span class="dossierOptional">Opcional</span>'}
+        </div>
+        <span class="dossierChip dossierChip-${meta.tone}">${meta.icon} ${escapeHtml(meta.label)}</span>
+      </div>
+      ${mensaje ? `<p class="dossierMessage">${escapeHtml(mensaje)}</p>` : ""}
+      ${state.adminNotes && (status === "requiere_correccion" || admin) ? `<p class="dossierNote">💬 ${escapeHtml(state.adminNotes)}</p>` : ""}
+      <div class="dossierItemMeta">
+        ${current ? `<span>Versión ${escapeHtml(String(current.version))} · ${escapeHtml(contractTimestampLabel(current.uploadedAt, current.uploadedAtClient))}</span>` : "<span>Sin documentos cargados</span>"}
+        ${state.expirationDate ? `<span>Vence el ${escapeHtml(longDateLabel(state.expirationDate))}</span>` : ""}
+        ${current && current.origin === "musicala" ? "<span>Registrado por Musicala</span>" : ""}
+      </div>
+      <details class="dossierWhy"><summary>¿Por qué necesitamos este documento?</summary><p>${escapeHtml(requirement.why || requirement.description)}</p></details>
+      <div class="dossierItemActions">
+        ${current ? `<button class="btnGhost compactBtn" type="button" data-dossier-view="${escapeHtml(requirement.id)}">Ver documento</button>` : ""}
+        ${canUpload ? `<button class="btnGhost compactBtn" type="button" data-dossier-upload="${escapeHtml(requirement.id)}">${current ? "Subir nueva versión" : "Subir documento"}</button>` : ""}
+        ${admin ? `<button class="btnGhost compactBtn" type="button" data-dossier-review="${escapeHtml(requirement.id)}">Revisar</button>` : ""}
+        ${historial.length ? `<button class="btnGhost compactBtn" type="button" data-dossier-history="${escapeHtml(requirement.id)}">Historial (${historial.length})</button>` : ""}
+      </div>
+      <div class="dossierHistory" data-dossier-history-for="${escapeHtml(requirement.id)}" hidden>
+        ${historial.map((item) => `<div class="dossierHistoryRow"><span>Versión ${escapeHtml(String(item.version))} · ${escapeHtml(contractTimestampLabel(item.uploadedAt, item.uploadedAtClient))}</span><button class="btnGhost compactBtn" type="button" data-dossier-view-version="${escapeHtml(item.id)}">Ver</button></div>`).join("")}
+      </div>
+      <div class="dossierUploadSlot" data-dossier-slot="${escapeHtml(requirement.id)}"></div>
+    </article>`;
+}
+
+function renderDossierGroups(requirements, states, versions, { admin = false, hasSignedContract = false } = {}) {
+  const visibles = requirements.filter((req) => {
+    if (!req.active) return false;
+    // Lo recurrente solo tiene sentido una vez hay contrato firmado.
+    if (req.stage === "recurring" && !hasSignedContract && !admin) return false;
+    return true;
+  });
+
+  return DOSSIER_CATEGORIES.map((cat) => {
+    const items = visibles.filter((req) => req.category === cat.id);
+    if (!items.length) return "";
+    return `
+      <section class="contractPanel dossierGroup">
+        <h3>${cat.icon} ${escapeHtml(cat.label)}</h3>
+        <div class="dossierList">
+          ${items.map((req) => renderDossierRequirementCard(req, states[req.id] || {}, versions[req.id] || [], { admin })).join("")}
+        </div>
+      </section>`;
+  }).join("");
+}
+
+function wireDossierActions(root, { email, admin = false, onChange }) {
+  const requirements = getDossierRequirements();
+  const dossier = APP_STATE.dossier.cache[String(email || "").toLowerCase()] || { states: {}, versions: {} };
+  const reqById = (id) => requirements.find((item) => item.id === id);
+
+  root.querySelectorAll("[data-dossier-history]").forEach((button) => button.addEventListener("click", () => {
+    const panel = root.querySelector(`[data-dossier-history-for="${button.dataset.dossierHistory}"]`);
+    if (panel) panel.hidden = !panel.hidden;
+  }));
+
+  root.querySelectorAll("[data-dossier-view]").forEach((button) => button.addEventListener("click", () => {
+    const id = button.dataset.dossierView;
+    const version = (dossier.versions[id] || [])[0];
+    if (version) openDossierViewer(version, reqById(id), dossier.states[id] || {});
+  }));
+
+  root.querySelectorAll("[data-dossier-view-version]").forEach((button) => button.addEventListener("click", () => {
+    const versionId = button.dataset.dossierViewVersion;
+    for (const [reqId, list] of Object.entries(dossier.versions)) {
+      const found = list.find((item) => item.id === versionId);
+      if (found) { openDossierViewer(found, reqById(reqId), dossier.states[reqId] || {}); return; }
+    }
+  }));
+
+  root.querySelectorAll("[data-dossier-upload]").forEach((button) => button.addEventListener("click", () => {
+    const id = button.dataset.dossierUpload;
+    const requirement = reqById(id);
+    const slot = root.querySelector(`[data-dossier-slot="${id}"]`);
+    if (!requirement || !slot) return;
+    slot.innerHTML = `
+      <div class="dossierUploader">
+        <input type="file" accept="${escapeHtml((requirement.acceptedFileTypes || []).join(","))}" data-dossier-file />
+        <p class="adminNote">PDF, JPG o PNG · máximo ${requirement.maxFileMb} MB</p>
+        <div class="dossierUploadBar" hidden><div class="dossierUploadFill"></div></div>
+        <p class="dossierUploadMsg" hidden></p>
+      </div>`;
+    const input = $("[data-dossier-file]", slot);
+    input.click();
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const invalid = validateDossierFile(file, requirement);
+      const msg = $(".dossierUploadMsg", slot);
+      const bar = $(".dossierUploadBar", slot);
+      const fill = $(".dossierUploadFill", slot);
+      if (invalid) { msg.hidden = false; msg.textContent = invalid; msg.className = "dossierUploadMsg dossierUploadMsg-error"; return; }
+      input.disabled = true;
+      bar.hidden = false;
+      msg.hidden = false;
+      msg.className = "dossierUploadMsg";
+      msg.textContent = "Subiendo…";
+      try {
+        await uploadDossierDocument({
+          email, requirement, file,
+          onProgress: (percent) => { fill.style.width = `${percent}%`; msg.textContent = `Subiendo… ${percent}%`; }
+        });
+        toast("Documento recibido correctamente ✅");
+        if (onChange) await onChange();
+      } catch (error) {
+        console.error("No se pudo subir el documento", error);
+        msg.className = "dossierUploadMsg dossierUploadMsg-error";
+        msg.textContent = error?.message || "No pudimos subir el documento. Intenta de nuevo.";
+        input.disabled = false;
+      }
+    }, { once: true });
+  }));
+
+  if (!admin) return;
+
+  root.querySelectorAll("[data-dossier-review]").forEach((button) => button.addEventListener("click", () => {
+    const requirement = reqById(button.dataset.dossierReview);
+    if (requirement) openDossierReviewDialog({ email, requirement, state: dossier.states[requirement.id] || {}, onChange });
+  }));
+}
+
+/* ---- Diálogo de revisión (solo coordinación) ---- */
+function openDossierReviewDialog({ email, requirement, state, onChange }) {
+  const dialog = document.createElement("div");
+  dialog.className = "adminSubModal";
+  dialog.innerHTML = `
+    <div class="adminSubCard adminSubCardWide" role="dialog" aria-modal="true">
+      <h3>Revisar · ${escapeHtml(requirement.name)}</h3>
+      <p class="adminSubSub">${escapeHtml(email)}</p>
+      <label>Decisión
+        <select id="dossierStatus">
+          <option value="en_revision" ${state.status === "en_revision" ? "selected" : ""}>En revisión</option>
+          <option value="aprobado" ${state.status === "aprobado" ? "selected" : ""}>Aprobado</option>
+          <option value="requiere_correccion" ${state.status === "requiere_correccion" ? "selected" : ""}>Requiere corrección</option>
+          <option value="no_aplica" ${state.applies === false ? "selected" : ""}>No aplica</option>
+        </select>
+      </label>
+      ${requirement.hasExpiration ? `
+        <label>Fecha de expedición<input type="date" id="dossierIssue" value="${escapeHtml(state.issueDate || "")}" /></label>
+        <label>Fecha de vencimiento<input type="date" id="dossierExpiry" value="${escapeHtml(state.expirationDate || "")}" /></label>
+        ${requirement.renewalMonths ? `<p class="adminNote">Si registras la expedición, calculamos el vencimiento a ${requirement.renewalMonths} meses.</p>` : ""}
+      ` : ""}
+      <label>Observación para la docente<textarea id="dossierNotes" rows="3" maxlength="1000" placeholder="Ej.: Vuelve a cargar el RUT, el documento adjunto corresponde a una versión anterior.">${escapeHtml(state.adminNotes || "")}</textarea></label>
+      <p class="adminNote" id="dossierReviewHint" hidden>La observación es obligatoria cuando pides una corrección: es lo que la docente va a leer.</p>
+      <div class="adminSubActions">
+        <span></span>
+        <div>
+          <button class="btnGhost" id="dossierCancel" type="button">Cancelar</button>
+          <button class="btnGoogle" id="dossierSave" type="button">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(dialog);
+  const close = () => dialog.remove();
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  $("#dossierCancel", dialog)?.addEventListener("click", close);
+
+  const issue = $("#dossierIssue", dialog);
+  const expiry = $("#dossierExpiry", dialog);
+  if (issue && expiry && requirement.renewalMonths) {
+    issue.addEventListener("change", () => {
+      if (issue.value && !expiry.value) expiry.value = addMonths(issue.value, requirement.renewalMonths);
+    });
+  }
+
+  $("#dossierSave", dialog)?.addEventListener("click", async () => {
+    const status = $("#dossierStatus", dialog).value;
+    const notes = $("#dossierNotes", dialog).value.trim();
+    if (status === "requiere_correccion" && !notes) {
+      $("#dossierReviewHint", dialog).hidden = false;
+      return;
+    }
+    const button = $("#dossierSave", dialog);
+    button.disabled = true;
+    button.textContent = "Guardando…";
+    try {
+      await setDossierReview({
+        email, requirement,
+        status: status === "no_aplica" ? "no_aplica" : status,
+        applies: status !== "no_aplica",
+        notes,
+        issueDate: issue?.value || "",
+        expirationDate: expiry?.value || ""
+      });
+      toast("Revisión guardada ✅");
+      close();
+      if (onChange) await onChange();
+    } catch (error) {
+      console.error("No se pudo guardar la revisión", error);
+      toast(error?.message || "No pude guardar la revisión.");
+      button.disabled = false;
+      button.textContent = "Guardar";
+    }
+  });
+}
+
+
+/* ---- Expedientes en el panel administrativo ---- */
+const DOSSIER_ADMIN_FILTERS = [
+  { id: "todos", label: "Todos" },
+  { id: "completo", label: "Expediente completo" },
+  { id: "pendiente", label: "Documentación pendiente" },
+  { id: "por_revisar", label: "Documentos por revisar" },
+  { id: "correccion", label: "Requiere corrección" },
+  { id: "contrato_pendiente", label: "Contrato pendiente" },
+  { id: "contrato_vigente", label: "Contrato vigente" },
+  { id: "vencidos", label: "Documentos vencidos" }
+];
+
+// Carga el expediente de todo el equipo de una sola vez: es una lectura por
+// colección, no una por docente.
+async function loadAllDossiers() {
+  const states = {};
+  const versions = {};
+  try {
+    const [stateSnap, versionSnap] = await Promise.all([
+      getDocs(collection(APP_STATE.db, DOSSIER_FILES_COLLECTION)),
+      getDocs(collection(APP_STATE.db, DOSSIER_VERSIONS_COLLECTION))
+    ]);
+    stateSnap.docs.forEach((item) => {
+      const data = item.data() || {};
+      const email = String(data.teacherEmail || "").toLowerCase();
+      if (!email || !data.requirementId) return;
+      if (!states[email]) states[email] = {};
+      states[email][data.requirementId] = { id: item.id, ...data };
+    });
+    versionSnap.docs.forEach((item) => {
+      const data = item.data() || {};
+      const email = String(data.teacherEmail || "").toLowerCase();
+      if (!email || !data.requirementId) return;
+      if (!versions[email]) versions[email] = {};
+      if (!versions[email][data.requirementId]) versions[email][data.requirementId] = [];
+      versions[email][data.requirementId].push({ id: item.id, ...data });
+    });
+    Object.values(versions).forEach((byReq) =>
+      Object.values(byReq).forEach((list) => list.sort((a, b) => Number(b.uploadedAtClient || 0) - Number(a.uploadedAtClient || 0))));
+  } catch (error) {
+    console.warn("No se pudieron leer los expedientes:", error);
+  }
+  ADMIN_STATE.dossier.states = states;
+  ADMIN_STATE.dossier.versions = versions;
+  // El caché compartido evita volver a leer al abrir un expediente concreto.
+  Object.keys(states).forEach((email) => {
+    APP_STATE.dossier.cache[email] = { states: states[email] || {}, versions: versions[email] || {}, loadedAt: Date.now() };
+  });
+}
+
+function teacherHasSignedContract(email) {
+  const key = String(email || "").toLowerCase();
+  return (ADMIN_STATE.contract.signatures || []).some((item) => String(item.email || "").toLowerCase() === key);
+}
+
+function dossierRowsForAdmin() {
+  const requirements = getDossierRequirements();
+  const today = dossierToday();
+  return getAdminTeacherOptions().map((person) => {
+    const states = ADMIN_STATE.dossier.states[person.email] || {};
+    const summary = dossierSummary(requirements, states, today, { hasSignedContract: teacherHasSignedContract(person.email) });
+    const versions = ADMIN_STATE.dossier.versions[person.email] || {};
+    const ultima = Object.values(versions).flat().reduce((max, item) => Math.max(max, Number(item.uploadedAtClient || 0)), 0);
+    return { ...person, summary, ultima, firmado: teacherHasSignedContract(person.email) };
+  });
+}
+
+function dossierRowMatchesFilter(row, filter) {
+  const s = row.summary;
+  switch (filter) {
+    case "completo": return s.progress.total > 0 && s.progress.listos === s.progress.total;
+    case "pendiente": return s.progress.pendientes.length > 0;
+    case "por_revisar": return s.porRevisar > 0;
+    case "correccion": return s.correcciones > 0;
+    case "contrato_pendiente": return !row.firmado;
+    case "contrato_vigente": return row.firmado;
+    case "vencidos": return s.vencidos > 0;
+    default: return true;
+  }
+}
+
+function renderAdminDossierTable(body) {
+  const filtro = ADMIN_STATE.dossier.filter || "todos";
+  const busqueda = String(ADMIN_STATE.dossier.search || "").trim().toLowerCase();
+  const rows = dossierRowsForAdmin()
+    .filter((row) => dossierRowMatchesFilter(row, filtro))
+    .filter((row) => !busqueda || row.label.toLowerCase().includes(busqueda) || row.email.toLowerCase().includes(busqueda));
+
+  const sinRevisar = dossierRowsForAdmin().reduce((total, row) => total + row.summary.porRevisar, 0);
+
+  return `
+    <h3 class="contractAdminTitle">Expedientes de contratación</h3>
+    <p class="adminNote">${rows.length} docente(s) en la vista · ${sinRevisar} documento(s) esperando revisión en todo el equipo.</p>
+    <div class="dossierFilters">
+      ${DOSSIER_ADMIN_FILTERS.map((item) => `<button class="dossierFilterChip ${filtro === item.id ? "isActive" : ""}" type="button" data-dossier-filter="${item.id}">${escapeHtml(item.label)}</button>`).join("")}
+    </div>
+    <div class="dossierSearch">
+      <input type="search" id="dossierSearchInput" placeholder="Buscar por nombre o correo…" value="${escapeHtml(ADMIN_STATE.dossier.search || "")}" aria-label="Buscar docente" />
+    </div>
+    <div class="dossierTable">
+      ${rows.length ? rows.map((row) => {
+        const meta = DOSSIER_SUMMARY_META[row.summary.estado] || DOSSIER_SUMMARY_META.documentacion_pendiente;
+        return `
+          <article class="dossierRow" data-dossier-open="${escapeHtml(row.email)}" tabindex="0" role="button" aria-label="Abrir expediente de ${escapeHtml(row.label)}">
+            <div class="dossierRowMain">
+              <strong>${escapeHtml(row.label)}</strong>
+              <small>${escapeHtml(row.email)}</small>
+            </div>
+            <div class="dossierRowState">
+              <span class="dossierChip dossierChip-${meta.tone}">${escapeHtml(meta.label)}</span>
+              <div class="dossierBar dossierBarSmall"><div class="dossierBarFill dossierBarFill-${meta.tone}" style="width:${row.summary.progress.percent}%"></div></div>
+              <small>${row.summary.progress.listos} de ${row.summary.progress.total} · ${row.summary.progress.percent}%</small>
+            </div>
+            <div class="dossierRowFacts">
+              <small>${row.summary.progress.pendientes.length} pendiente(s)</small>
+              <small>${row.summary.porRevisar} por revisar</small>
+              ${row.summary.vencidos ? `<small class="dossierRowAlert">${row.summary.vencidos} vencido(s)</small>` : ""}
+              ${row.summary.correcciones ? `<small class="dossierRowAlert">${row.summary.correcciones} en corrección</small>` : ""}
+              <small>${row.firmado ? "Contrato firmado" : "Contrato pendiente"}</small>
+              <small>${row.ultima ? escapeHtml(contractTimestampLabel(null, row.ultima)) : "Sin cargas"}</small>
+            </div>
+          </article>`;
+      }).join("") : '<p class="adminNote">Ningún docente coincide con este filtro.</p>'}
+    </div>`;
+}
+
+function wireAdminDossierTable(body) {
+  body.querySelectorAll("[data-dossier-filter]").forEach((chip) => chip.addEventListener("click", () => {
+    ADMIN_STATE.dossier.filter = chip.dataset.dossierFilter;
+    renderAdminBody();
+  }));
+  const search = $("#dossierSearchInput", body);
+  if (search) {
+    search.addEventListener("input", () => {
+      ADMIN_STATE.dossier.search = search.value;
+      const table = $(".dossierTable", body);
+      if (!table) return;
+      // Se repinta solo la tabla para no perder el foco del buscador.
+      const temp = document.createElement("div");
+      temp.innerHTML = renderAdminDossierTable(body);
+      table.replaceWith($(".dossierTable", temp));
+      wireAdminDossierRows(body);
+    });
+  }
+  wireAdminDossierRows(body);
+}
+
+function wireAdminDossierRows(body) {
+  body.querySelectorAll("[data-dossier-open]").forEach((row) => {
+    const open = () => {
+      ADMIN_STATE.dossier.openEmail = row.dataset.dossierOpen;
+      renderAdminBody();
+      $("#adminBody", adminPanelModal)?.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+  });
+}
+
+function renderAdminDossierTeacher(body, email) {
+  const requirements = getDossierRequirements();
+  const dossier = APP_STATE.dossier.cache[email] || { states: {}, versions: {} };
+  const person = getAdminTeacherOptions().find((item) => item.email === email) || { label: email, email };
+  const summary = dossierSummary(requirements, dossier.states, dossierToday(), { hasSignedContract: teacherHasSignedContract(email) });
+
+  body.innerHTML = `
+    <div class="adminSubActions">
+      <span></span>
+      <div><button class="btnGhost" id="dossierBack" type="button">Volver a expedientes</button></div>
+    </div>
+    <p class="adminMeta"><strong>${escapeHtml(person.label)}</strong> · ${escapeHtml(email)}</p>
+    ${renderDossierProgressCard(summary, { title: "Expediente de contratación" })}
+    ${summary.readyToContract ? '<p class="dossierReady">✅ Requisitos previos completos: esta persona está lista para contratación.</p>' : ""}
+    <div class="dossierGroups">
+      ${renderDossierGroups(requirements, dossier.states, dossier.versions, { admin: true, hasSignedContract: teacherHasSignedContract(email) })}
+    </div>`;
+
+  $("#dossierBack", body)?.addEventListener("click", () => { ADMIN_STATE.dossier.openEmail = ""; renderAdminBody(); });
+  wireDossierActions(body, {
+    email,
+    admin: true,
+    onChange: async () => { await loadAllDossiers(); renderAdminBody(); }
+  });
+}
+
 
 async function handleButtonAction(id, trigger = null) {
   if (!id) return;
@@ -9948,6 +10842,7 @@ async function mount() {
   const auth = getAuth(app);
   const db = getFirestore(app);
   APP_STATE.db = db;
+  APP_STATE.storage = getStorage(app);
   wireTeacherShiftAutoCloseWatchers();
 
   await ensureAuthPersistence(auth);

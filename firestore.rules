@@ -504,6 +504,83 @@ service cloud.firestore {
     }
 
     /* ====================================================================
+       EXPEDIENTE DIGITAL DE CONTRATACIÓN
+       Documentos personales y sensibles. Cada docente solo ve y escribe lo
+       suyo; coordinación revisa. Nada se borra: una corrección genera una
+       versión nueva y la anterior queda en el historial.
+
+       contractRequirements   catálogo global; solo coordinación lo edita.
+       teacherDocFiles        estado por requisito y persona.
+       teacherDocFileVersions cada archivo cargado; inmutable.
+       teacherDocAuditLog     rastro de acciones; inmutable.
+    ==================================================================== */
+
+    function dossierOwner(data) {
+      return isTeacherHubUser() && data.teacherEmail == request.auth.token.email;
+    }
+
+    // Campos que la docente jamás puede escribir: son la decisión de
+    // coordinación y el rastro de quién revisó.
+    function dossierWritesNoAdminFields() {
+      return !request.resource.data.diff(
+        resource == null ? request.resource.data : resource.data
+      ).affectedKeys().hasAny([
+        'adminNotes', 'reviewedBy', 'reviewedAt', 'reviewedAtClient',
+        'expirationDate', 'issueDate', 'applies'
+      ]);
+    }
+
+    match /contractRequirements/{requirementId} {
+      allow get, list: if isTeacherHubUser() || isAdminReader();
+      allow create, update: if isAdminReader();
+      // Un requisito con expedientes asociados se desactiva, no se borra.
+      allow delete: if false;
+    }
+
+    match /teacherDocFiles/{stateId} {
+      allow get: if isAdminReader() || dossierOwner(resource.data);
+      allow list: if isAdminReader() || dossierOwner(resource.data);
+
+      // La docente solo puede dejar un documento como 'cargado'. No puede
+      // aprobarse, ni marcar que algo no aplica, ni tocar la observación.
+      allow create: if isAdminReader() || (
+        dossierOwner(request.resource.data)
+        && stateId == request.resource.data.teacherEmail + '__' + request.resource.data.requirementId
+        && request.resource.data.status == 'cargado'
+        && !request.resource.data.keys().hasAny(['adminNotes', 'reviewedBy', 'reviewedAt', 'expirationDate', 'issueDate'])
+      );
+      allow update: if isAdminReader() || (
+        dossierOwner(resource.data)
+        && request.resource.data.teacherEmail == resource.data.teacherEmail
+        && request.resource.data.requirementId == resource.data.requirementId
+        && request.resource.data.status == 'cargado'
+        && dossierWritesNoAdminFields()
+      );
+      allow delete: if false;
+    }
+
+    match /teacherDocFileVersions/{versionId} {
+      allow get: if isAdminReader() || dossierOwner(resource.data);
+      allow list: if isAdminReader() || dossierOwner(resource.data);
+      allow create: if isAdminReader() || (
+        dossierOwner(request.resource.data)
+        && request.resource.data.uploadedBy == request.auth.token.email
+        && request.resource.data.uploadedByRole == 'teacher'
+        && request.resource.data.storagePath is string
+      );
+      // Una versión cargada es evidencia: no se edita ni se borra, ni
+      // siquiera desde coordinación.
+      allow update, delete: if false;
+    }
+
+    match /teacherDocAuditLog/{eventId} {
+      allow get, list: if isAdminReader();
+      allow create: if (isTeacherHubUser() || isAdminReader())
+        && request.resource.data.performedBy == request.auth.token.email;
+      allow update, delete: if false;
+    }
+
+    /* ====================================================================
        CIERRE GENERAL
        Todo lo que no esté declarado arriba queda bloqueado.
     ==================================================================== */
