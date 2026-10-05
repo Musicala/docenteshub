@@ -190,9 +190,14 @@ export function mergeRequirements(saved = []) {
     const clean = normalizeRequirement(item);
     if (clean) map.set(clean.id, clean);
   });
+  // Lo guardado se mezcla campo por campo sobre el requisito del código. Así
+  // el panel puede guardar solo {active, required} sin borrar el nombre, la
+  // descripción ni el resto de la configuración.
   (Array.isArray(saved) ? saved : []).forEach((item) => {
-    const clean = normalizeRequirement(item);
-    if (clean) map.set(clean.id, clean);
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const clean = normalizeRequirement({ ...(map.get(id) || {}), ...item, id });
+    if (clean) map.set(id, clean);
   });
   return [...map.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "es"));
 }
@@ -263,9 +268,42 @@ export function dossierProgress(requirements, states = {}, today = "", { stages 
   };
 }
 
+/* ---- Qué se exige para firmar ----
+   Un requisito marcado "obligatorio" bloquea la firma, sin importar en qué
+   momento del proceso esté. Lo recurrente (PILA, cuenta de cobro) nunca
+   bloquea: por definición llega después de firmar. Un requisito marcado
+   "no aplica" para esa persona tampoco bloquea. */
+export function signatureBlockers(requirements, states = {}, today = "") {
+  return requirements
+    .filter((req) => req.active && req.required && req.stage !== "recurring")
+    .map((req) => ({ id: req.id, name: req.name, status: effectiveStatus(req, states[req.id] || {}, today) }))
+    .filter((item) => !isSatisfied(item.status));
+}
+
 export function readyToContract(requirements, states = {}, today = "") {
-  const { total, listos } = dossierProgress(requirements, states, today, { stages: ["preContract"] });
-  return total > 0 && listos === total;
+  const exigidos = requirements.filter((req) => req.active && req.required && req.stage !== "recurring");
+  return exigidos.length > 0 && signatureBlockers(requirements, states, today).length === 0;
+}
+
+/* ---- Política de cada requisito ----
+   Tres opciones, que es como lo piensa quien administra: se exige para
+   firmar, se puede subir después, o no se pide. Debajo son solo dos
+   banderas, pero nadie debería tener que razonar en términos de banderas. */
+export const REQUIREMENT_POLICIES = [
+  { id: "obligatorio", label: "Obligatorio para firmar", hint: "Sin este documento aprobado no se puede habilitar la firma." },
+  { id: "despues", label: "Se puede subir después", hint: "Aparece en el expediente, pero no detiene la firma." },
+  { id: "no_se_pide", label: "No se pide", hint: "Se oculta del expediente. No se borra nada de lo ya cargado." }
+];
+
+export function requirementPolicy(requirement = {}) {
+  if (!requirement.active) return "no_se_pide";
+  return requirement.required ? "obligatorio" : "despues";
+}
+
+export function policyFields(policy) {
+  if (policy === "no_se_pide") return { active: false, required: false };
+  if (policy === "despues") return { active: true, required: false };
+  return { active: true, required: true };
 }
 
 /* ---- Alertas de vigencia ---- */
@@ -299,11 +337,15 @@ export function dossierSummary(requirements, states = {}, today = "", { hasSigne
   });
 
   const vencidos = alerts.filter((item) => item.status === "vencido").length;
+  // La misma regla que bloquea la firma decide la etiqueta: si dijeran cosas
+  // distintas, el panel mostraría "listo" y la aprobación lo negaría.
+  const blockers = signatureBlockers(requirements, states, today);
+  const listo = readyToContract(requirements, states, today);
   let estado;
   if (correcciones) estado = "requiere_correccion";
   else if (vencidos) estado = "requiere_actualizacion";
   else if (hasSignedContract) estado = "contrato_vigente";
-  else if (pre.total > 0 && pre.listos === pre.total) estado = "listo_para_contratar";
+  else if (listo) estado = "listo_para_contratar";
   else if (porRevisar) estado = "en_revision";
   else if (!cargadosAlguno) estado = "sin_iniciar";
   else estado = "documentacion_pendiente";
@@ -316,7 +358,8 @@ export function dossierSummary(requirements, states = {}, today = "", { hasSigne
     correcciones,
     alerts,
     vencidos,
-    readyToContract: pre.total > 0 && pre.listos === pre.total
+    blockers,
+    readyToContract: listo
   };
 }
 

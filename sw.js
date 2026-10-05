@@ -8,7 +8,7 @@
    - Limpieza de cachés viejos + mensajes para UI
 */
 
-const BUILD = "2026-10-04.3"; // Sube la versión en cada despliegue para actualizar el service worker.
+const BUILD = "2026-10-05.1"; // Sube la versión en cada despliegue para actualizar el service worker.
 const VERSION = `v5-${BUILD}`;
 
 const CACHE_STATIC  = `musicala-static`;   // sin versión para no acumular basura
@@ -60,6 +60,10 @@ function isCriticalFreshAsset(url) {
   const p = url.pathname;
   return (
     p.endsWith("/app.js") ||
+    // Los módulos ES que importa app.js van en el mismo saco: si app.js se
+    // actualiza y el módulo queda cacheado viejo, el import falla y la app
+    // no abre. Pasa callado y deja pantalla en blanco.
+    (p.includes("/modules/") && p.endsWith(".js")) ||
     p.endsWith("/styles.css") ||
     p.endsWith("/manifest.webmanifest")
   );

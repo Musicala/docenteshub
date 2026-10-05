@@ -2,7 +2,8 @@ import { prepareTeacherContract2026_2, validateTeacherContractFormalization } fr
 import {
   DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
   mergeRequirements, effectiveStatus, dossierSummary,
-  validateDossierFile, safeDossierFileName, teacherMessage, addMonths
+  validateDossierFile, safeDossierFileName, teacherMessage, addMonths,
+  REQUIREMENT_POLICIES, requirementPolicy, policyFields, signatureBlockers
 } from "./modules/contract-dossier.js";
 
 /* Musicala · Docentes Hub
@@ -17,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-04.3";
+const BUILD = "2026-10-05.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -9106,6 +9107,17 @@ function renderAdminContratoTerms(body, email) {
         return;
       }
 
+      // Los documentos marcados como obligatorios se verifican aquí: es el
+      // punto donde coordinación habilita la firma.
+      const expediente = APP_STATE.dossier.cache[email] || { states: {} };
+      const faltantes = signatureBlockers(getDossierRequirements(), expediente.states, dossierToday());
+      if (faltantes.length) {
+        const detalle = faltantes.map((item) => `• ${item.name} (${(DOSSIER_STATUS_META[item.status] || {}).label || item.status})`).join("\n");
+        if (saveFeedback) saveFeedback.textContent = `Faltan ${faltantes.length} documento(s) obligatorio(s) del expediente.`;
+        alert(`No puedo habilitar la firma todavía.\n\nFaltan estos documentos obligatorios:\n${detalle}\n\nSi alguno no debería exigirse, cámbialo en “Qué documentos se exigen para firmar” o márcalo como “No aplica” en el expediente de esta persona.`);
+        return;
+      }
+
       if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) {
         if (saveFeedback) saveFeedback.textContent = "Condiciones guardadas como borrador. La aprobación quedó pendiente.";
         return;
@@ -9781,6 +9793,91 @@ function openDossierReviewDialog({ email, requirement, state, onChange }) {
 }
 
 
+
+/* ---- Qué documentos se exigen para firmar ----
+   Un solo lugar donde coordinación decide, requisito por requisito, si es
+   obligatorio antes de firmar, si puede llegar después o si no se pide.
+   Se guarda solo lo que cambia: el resto de la configuración sigue
+   viniendo del catálogo del código. */
+function renderDossierPolicyPanel() {
+  const requirements = getDossierRequirements();
+  const porCategoria = DOSSIER_CATEGORIES.map((cat) => {
+    const items = requirements.filter((req) => req.category === cat.id);
+    if (!items.length) return "";
+    return `
+      <div class="dossierPolicyGroup">
+        <h4>${cat.icon} ${escapeHtml(cat.label)}</h4>
+        ${items.map((req) => {
+          const policy = requirementPolicy(req);
+          return `
+            <label class="dossierPolicyRow">
+              <span class="dossierPolicyName"><strong>${escapeHtml(req.name)}</strong><small>${escapeHtml(req.description || "")}</small></span>
+              <select data-dossier-policy="${escapeHtml(req.id)}">
+                ${REQUIREMENT_POLICIES.map((option) => `<option value="${option.id}" ${option.id === policy ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>`;
+        }).join("")}
+      </div>`;
+  }).join("");
+
+  const exigidos = requirements.filter((req) => req.active && req.required && req.stage !== "recurring").length;
+  return `
+    <details class="contractPanel dossierPolicy">
+      <summary class="dossierPolicySummary">Qué documentos se exigen para firmar · ${exigidos} obligatorio(s)</summary>
+      <p class="adminNote">Esto aplica a todas las docentes. Si una persona en particular no debe entregar algo, es mejor marcarlo como “No aplica” dentro de su expediente.</p>
+      <ul class="dossierPolicyLegend">
+        ${REQUIREMENT_POLICIES.map((option) => `<li><strong>${escapeHtml(option.label)}:</strong> ${escapeHtml(option.hint)}</li>`).join("")}
+      </ul>
+      <div class="dossierPolicyList">${porCategoria}</div>
+      <div class="adminSubActions">
+        <span class="dossierPolicyFeedback" id="dossierPolicyFeedback"></span>
+        <div><button class="btnGoogle" id="dossierPolicySave" type="button">Guardar qué se exige</button></div>
+      </div>
+    </details>`;
+}
+
+function wireDossierPolicyPanel(body) {
+  const button = $("#dossierPolicySave", body);
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const feedback = $("#dossierPolicyFeedback", body);
+    const cambios = [];
+    getDossierRequirements().forEach((req) => {
+      const select = body.querySelector(`[data-dossier-policy="${req.id}"]`);
+      if (!select) return;
+      if (select.value === requirementPolicy(req)) return;
+      cambios.push({ req, policy: select.value, fields: policyFields(select.value) });
+    });
+    if (!cambios.length) { if (feedback) feedback.textContent = "No hay cambios por guardar."; return; }
+
+    button.disabled = true;
+    button.textContent = "Guardando…";
+    try {
+      for (const cambio of cambios) {
+        await setDoc(doc(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION, cambio.req.id), {
+          ...cambio.fields,
+          updatedAt: serverTimestamp(),
+          updatedBy: emailKey(APP_STATE.activeUser)
+        }, { merge: true });
+        await logDossierEvent("requirement_policy_changed", {
+          requirementId: cambio.req.id,
+          previousState: requirementPolicy(cambio.req),
+          newState: cambio.policy,
+          notes: cambio.req.name
+        });
+      }
+      await loadDossierRequirements(true);
+      toast(`${cambios.length} requisito(s) actualizado(s) ✅`);
+      renderAdminBody();
+    } catch (error) {
+      console.error("No se pudo guardar qué se exige", error);
+      if (feedback) feedback.textContent = error?.message || "No pude guardar. Revisa permisos o conexión.";
+      button.disabled = false;
+      button.textContent = "Guardar qué se exige";
+    }
+  });
+}
+
 /* ---- Expedientes en el panel administrativo ---- */
 const DOSSIER_ADMIN_FILTERS = [
   { id: "todos", label: "Todos" },
@@ -9872,6 +9969,7 @@ function renderAdminDossierTable(body) {
   const sinRevisar = dossierRowsForAdmin().reduce((total, row) => total + row.summary.porRevisar, 0);
 
   return `
+    ${renderDossierPolicyPanel()}
     <h3 class="contractAdminTitle">Expedientes de contratación</h3>
     <p class="adminNote">${rows.length} docente(s) en la vista · ${sinRevisar} documento(s) esperando revisión en todo el equipo.</p>
     <div class="dossierFilters">
@@ -9908,6 +10006,7 @@ function renderAdminDossierTable(body) {
 }
 
 function wireAdminDossierTable(body) {
+  wireDossierPolicyPanel(body);
   body.querySelectorAll("[data-dossier-filter]").forEach((chip) => chip.addEventListener("click", () => {
     ADMIN_STATE.dossier.filter = chip.dataset.dossierFilter;
     renderAdminBody();
