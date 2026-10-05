@@ -2393,6 +2393,9 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
 ========================================================================== */
 .toast{
   position:fixed;
+  /* Por encima del panel admin (9999) y sus subventanas (10000): si no, los
+     avisos de guardado se pintan detrás y parece que no pasó nada. */
+  z-index:10050;
   left:50%;
   bottom:18px;
   transform:translateX(-50%) translateY(12px);

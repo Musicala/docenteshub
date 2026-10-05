@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-05.2";
+const BUILD = "2026-10-05.3";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8285,7 +8285,16 @@ async function openTeacherContract() {
     console.error("No se pudo abrir el contrato", error);
   }
   if (!document.body.contains(overlay)) return;
-  renderTeacherContractView(overlay);
+  try {
+    renderTeacherContractView(overlay);
+  } catch (error) {
+    // Sin esto, cualquier fallo al pintar deja el panel en "Cargando…" para
+    // siempre y la docente no sabe si es su conexión o la app.
+    console.error("No se pudo mostrar el contrato", error);
+    reportClientError("contrato_render", error);
+    const body = $(".contractCardBody", overlay);
+    if (body) body.innerHTML = `<section class="contractPanel"><h3>No pudimos mostrar tu contrato</h3><p>Hubo un problema al armar el documento. Ya avisamos al equipo; vuelve a intentarlo en un momento.</p><p class="adminNote">Detalle técnico: ${escapeHtml(String(error?.message || error))}</p></section>`;
+  }
 }
 
 function renderTeacherContractView(overlay) {
@@ -8397,12 +8406,17 @@ function renderTeacherContractView(overlay) {
 // Administración confirma los datos del Anexo A en un documento distinto al
 // perfil de vinculación. Para el contrato, esas condiciones ya confirmadas son
 // una fuente válida y no deben volver a aparecer como datos pendientes.
-function contractProfileData(profile = {}, terms = APP_STATE.contract.terms || {}) {
+function contractProfileData(profile, terms) {
+  // Ojo: un parámetro por defecto solo cubre undefined, no null. Aquí llega
+  // null siempre que la persona todavía no tiene perfil ni Anexo A, que es
+  // justo el caso de alguien recién habilitado.
+  const datos = profile || {};
+  const anexo = terms || APP_STATE.contract.terms || {};
   return {
-    ...profile,
-    bankAccountType: profile.bankAccountType || terms.bankAccountType || "",
-    bankName: profile.bankName || terms.bankName || "",
-    bankAccount: profile.bankAccount || terms.cuenta || ""
+    ...datos,
+    bankAccountType: datos.bankAccountType || anexo.bankAccountType || "",
+    bankName: datos.bankName || anexo.bankName || "",
+    bankAccount: datos.bankAccount || anexo.cuenta || ""
   };
 }
 
