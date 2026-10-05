@@ -39,8 +39,8 @@ service firebase.storage {
     }
 
     match /contract-files/{teacherEmail}/{requirementId}/{versionId}/{fileName} {
-      allow read: if ownsFolder(teacherEmail) || isAdmin();
-      allow create: if (ownsFolder(teacherEmail) || isAdmin()) && validDossierFile();
+      allow read: if ownsFolder(teacherEmail) || isDossierAdmin();
+      allow create: if (ownsFolder(teacherEmail) || isDossierAdmin()) && validDossierFile();
       allow update, delete: if false;
     }
 
