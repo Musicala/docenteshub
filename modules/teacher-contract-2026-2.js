@@ -165,10 +165,12 @@ export function validateTeacherContractFormalization({ terms = {}, representativ
     errors.push("EL CONTRATANTE y EL CONTRATISTA tienen el mismo documento. Verifica la configuración y registra la confirmación administrativa reforzada y su motivo antes de continuar.");
   }
 
+  // La cuenta de pago debe ser de EL CONTRATISTA, sin excepción: así lo dice
+  // la cláusula 5.4 del contrato. No hay confirmación administrativa que lo
+  // habilite, porque pagar a un tercero desdibuja quién prestó el servicio.
   const accountHolderDocument = String(terms.accountHolderDocument || "").replace(/\D/g, "");
-  if (accountHolderDocument && contractorDoc && accountHolderDocument !== contractorDoc
-    && (!terms.accountExceptionConfirmed || !String(terms.accountExceptionReason || "").trim())) {
-    errors.push("La cuenta bancaria aparece a nombre de otra persona. Registra el tratamiento legal permitido, su soporte y la confirmación administrativa antes de continuar.");
+  if (accountHolderDocument && contractorDoc && accountHolderDocument !== contractorDoc) {
+    errors.push("La cuenta de pago está a nombre de otra persona. Debe ser una cuenta de EL CONTRATISTA: corrígela antes de continuar.");
   }
   return { valid: errors.length === 0, errors, arlRequired, sameIdentity };
 }

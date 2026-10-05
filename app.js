@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-05.1";
+const BUILD = "2026-10-05.2";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -103,9 +103,7 @@ const TEACHER_CONTRACT_2026_2_TERM_FIELDS = [
   { name: "accountHolderName", label: "Titular de la cuenta de pago", group: "Economía" },
   { name: "accountHolderDocument", label: "Documento del titular de la cuenta", group: "Economía" },
   { name: "identityExceptionConfirmed", label: "Confirmación reforzada si coincide el documento del representante", group: "Validaciones", type: "select", options: ["", "Sí"] },
-  { name: "identityExceptionReason", label: "Motivo y verificación de coincidencia de identidad", group: "Validaciones", type: "textarea" },
-  { name: "accountExceptionConfirmed", label: "Tratamiento legal confirmado si la cuenta es de otra persona", group: "Validaciones", type: "select", options: ["", "Sí"] },
-  { name: "accountExceptionReason", label: "Motivo, soporte y base legal de excepción de cuenta", group: "Validaciones", type: "textarea" }
+  { name: "identityExceptionReason", label: "Motivo y verificación de coincidencia de identidad", group: "Validaciones", type: "textarea" }
 ];
 function teacherContractFieldsFor(contract) {
   return String(contract?.version || "") === "2026.2"
@@ -114,7 +112,7 @@ function teacherContractFieldsFor(contract) {
 }
 const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set([
   "contratistaDireccion", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate",
-  "identityExceptionConfirmed", "identityExceptionReason", "accountExceptionConfirmed", "accountExceptionReason"
+  "identityExceptionConfirmed", "identityExceptionReason"
 ]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
 const CONTRACT_MODALITY_OPTIONS = [
@@ -9001,7 +8999,7 @@ function renderAdminContratoTerms(body, email) {
     await setDoc(termsRef, {
       ...values,
       email,
-      ...((values.identityExceptionConfirmed === "Sí" || values.accountExceptionConfirmed === "Sí") ? {
+      ...(values.identityExceptionConfirmed === "Sí" ? {
         identityReviewAt: serverTimestamp(),
         identityReviewBy: emailKey(APP_STATE.activeUser)
       } : {}),
