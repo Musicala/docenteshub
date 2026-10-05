@@ -27,6 +27,7 @@ service cloud.firestore {
         'annitolad@gmail.com',
         'lorenaduarte.404@gmail.com',
         'malego2709@gmail.com',
+        'nancycaballero228@gmail.com',
         'bagutierrezm@gmail.com',
         'tiritiri.riri@gmail.com',
         'darasaxcifuentes@gmail.com'
@@ -87,6 +88,16 @@ service cloud.firestore {
           'catalina.medina.leal@gmail.com',
           'musicalaasesor@gmail.com',
           'adminmusicala@gmail.com'
+        ];
+    }
+
+    // El chat confidencial no usa el rol administrativo general. Solo Alek y
+    // Cata pueden abrir la bandeja institucional o escribir como Coordinación.
+    function isCoordinationUser() {
+      return signedIn()
+        && request.auth.token.email in [
+          'alekcaballeromusic@gmail.com',
+          'catalina.medina.leal@gmail.com'
         ];
     }
 
@@ -217,11 +228,45 @@ service cloud.firestore {
         && resource.data.teacherEmail == request.auth.token.email;
     }
 
+    function teacherCanSetAcademicTaskState() {
+      return request.resource.data.state in [
+        'Pendiente', 'En curso', 'Pendiente de aprobación'
+      ];
+    }
+
     match /academicObjectives/{docId} {
       allow read: if isAdminReader() || academicReadOwn();
-      allow create: if isAdminReader() || academicCreateOwn();
-      allow update: if isAdminReader() || academicUpdateOwn();
+      allow create: if isAdminReader() || (academicCreateOwn() && teacherCanSetAcademicTaskState());
+      allow update: if isAdminReader() || (
+        academicUpdateOwn()
+        && resource.data.state != 'Cumplido'
+        && teacherCanSetAcademicTaskState()
+      );
       allow delete: if isAdminReader();
+    }
+
+    // Propuestas separadas de las tareas oficiales: la docente solo puede
+    // enviar y consultar las suyas; Coordinación decide y conserva el historial.
+    match /academicTaskSuggestions/{docId} {
+      allow read: if isAdminReader() || academicReadOwn();
+      allow create: if isTeacherHubUser()
+        && request.resource.data.teacherEmail == request.auth.token.email
+        && request.resource.data.keys().hasOnly([
+          'id', 'title', 'description', 'category', 'period',
+          'teacherEmail', 'teacherName', 'person', 'status', 'createdAt'
+        ])
+        && request.resource.data.id is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 1800
+        && request.resource.data.category is string
+        && request.resource.data.period is string
+        && request.resource.data.teacherName is string
+        && request.resource.data.person is string
+        && request.resource.data.status == 'Pendiente de revisión';
+      allow update, delete: if isAdminReader();
     }
 
     match /academicTaskBudgets/{docId} {
@@ -233,8 +278,8 @@ service cloud.firestore {
 
     match /academicTaskHourLogs/{docId} {
       allow read: if isAdminReader() || academicReadOwn();
-      allow create: if isAdminReader() || academicCreateOwn();
-      allow update: if isAdminReader() || academicUpdateOwn();
+      allow create: if isAdminReader() || (academicCreateOwn() && teacherCanSetAcademicTaskState());
+      allow update: if isAdminReader() || (academicUpdateOwn() && teacherCanSetAcademicTaskState());
       allow delete: if isAdminReader() || academicDeleteOwn();
     }
 
@@ -332,6 +377,64 @@ service cloud.firestore {
       allow get, list: if isAdminReader()
         || (isTeacherHubUser() && resource.data.reporterEmail == request.auth.token.email);
       allow update, delete: if isAdminReader();
+    }
+
+    /* ====================================================================
+       CANAL PRIVADO CON COORDINACIÓN
+       Un hilo por docente. Ningún docente puede listar, leer o escribir el
+       hilo de otra persona; coordinación conserva la bandeja institucional.
+    ==================================================================== */
+    function ownsCoordinationThread(teacherEmail) {
+      return isTeacherHubUser()
+        && !isAdminReader()
+        && teacherEmail == request.auth.token.email;
+    }
+
+    match /coordination_messages/{teacherEmail} {
+      allow get: if isCoordinationUser() || ownsCoordinationThread(teacherEmail);
+      allow list: if isCoordinationUser();
+      allow create, update: if isCoordinationUser() || (
+        ownsCoordinationThread(teacherEmail)
+        && request.resource.data.teacherEmail == request.auth.token.email
+        && request.resource.data.keys().hasOnly([
+          'teacherEmail', 'teacherName', 'lastMessage', 'updatedAt',
+          'teacherUnread', 'adminUnread'
+        ])
+      );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isCoordinationUser() || ownsCoordinationThread(teacherEmail);
+        allow create: if (
+            isCoordinationUser()
+            && request.resource.data.keys().hasOnly([
+              'text', 'senderRole', 'senderName', 'senderEmail', 'createdAt'
+            ])
+            && request.resource.data.senderRole == 'coordination'
+            && request.resource.data.senderEmail == request.auth.token.email
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 1600
+          ) || (
+            ownsCoordinationThread(teacherEmail)
+            && request.resource.data.keys().hasOnly([
+              'text', 'senderRole', 'senderName', 'senderEmail', 'createdAt'
+            ])
+            && request.resource.data.senderRole == 'teacher'
+            && request.resource.data.senderEmail == request.auth.token.email
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 1600
+          );
+        allow update: if (
+            isCoordinationUser()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByCoordination'])
+          ) || (
+            ownsCoordinationThread(teacherEmail)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByTeacher'])
+          );
+        allow delete: if false;
+      }
     }
 
 
@@ -513,6 +616,9 @@ service cloud.firestore {
        teacherDocFiles        estado por requisito y persona.
        teacherDocFileVersions cada archivo cargado; inmutable.
        teacherDocAuditLog     rastro de acciones; inmutable.
+
+       Ninguna regla de arriba se modifica: esto solo agrega colecciones
+       nuevas que antes caían en el cierre general.
     ==================================================================== */
 
     function dossierOwner(data) {
