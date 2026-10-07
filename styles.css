@@ -2420,7 +2420,7 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   transition:
     opacity 180ms var(--easeSoft),
     transform 180ms var(--easeSoft);
-  z-index:999;
+  z-index:10050;
 }
 
 .toast.show{

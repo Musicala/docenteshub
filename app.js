@@ -3072,6 +3072,7 @@ const ADMIN_STATE = {
     supportProfiles: {},
     signatures: [],
     liveSyncUnsubscribe: null,
+    accessSaveNotice: null,
     editingText: false,
     editingTextReturnEmail: "",
     termsEmail: ""
@@ -8785,6 +8786,7 @@ function renderAdminContrato(body) {
         <button class="btnGoogle" id="contractAllowSave" type="button">Guardar quién lo ve</button>
       </div>
     </div>
+    ${ADMIN_STATE.contract.accessSaveNotice ? `<p class="adminNote contractAccessSaveNotice" role="status" aria-live="polite">${escapeHtml(ADMIN_STATE.contract.accessSaveNotice)}</p>` : ""}
 
     <h3 class="contractAdminTitle">2. Condiciones particulares que completa administración</h3>
     <p class="adminNote">La docente primero envía identidad, teléfono, cuenta y área. Aquí puedes usar esos datos como base y completar lo que solo define Musicala: modalidad, grupos o estudiantes, franjas, fechas y valores. Sin estos datos el contrato individual muestra “${escapeHtml(TEACHER_CONTRACT_PENDING_LABEL)}” y no debe aprobarse ni firmarse.</p>
@@ -8844,27 +8846,52 @@ function renderAdminContrato(body) {
   wireAdminDossierTable(body);
   $("#contractEditText", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = true; renderAdminBody(); });
   $("#contractAllowClear", body)?.addEventListener("click", () => {
+    ADMIN_STATE.contract.accessSaveNotice = null;
+    $(".contractAccessSaveNotice", body)?.remove();
     body.querySelectorAll("[data-contract-allow]").forEach((input) => { input.checked = false; });
   });
+  body.querySelectorAll("[data-contract-allow]").forEach((input) => input.addEventListener("change", () => {
+    ADMIN_STATE.contract.accessSaveNotice = null;
+    $(".contractAccessSaveNotice", body)?.remove();
+  }));
   $("#contractAllowSave", body)?.addEventListener("click", async () => {
-    const allowedEmails = Array.from(body.querySelectorAll("[data-contract-allow]"))
+    const button = $("#contractAllowSave", body);
+    const selected = Array.from(body.querySelectorAll("[data-contract-allow]"))
       .filter((input) => input.checked)
-      .map((input) => input.dataset.contractAllow);
+      .map((input) => String(input.dataset.contractAllow || "").trim().toLowerCase())
+      .filter(Boolean);
+    const allowedEmails = [...new Set(selected)];
+    const selectedNames = allowedEmails.map((email) => teachers.find((item) => String(item.email || "").trim().toLowerCase() === email)?.label || email);
+    setButtonBusy(button, true, "Guardando y verificando…");
     try {
       await setDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID), {
         allowedEmails,
         updatedAt: serverTimestamp(),
         updatedBy: emailKey(APP_STATE.activeUser)
       }, { merge: true });
+      const savedSnap = await getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID));
+      const savedEmails = savedSnap.exists() && Array.isArray(savedSnap.data()?.allowedEmails)
+        ? [...new Set(savedSnap.data().allowedEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean))].sort()
+        : [];
+      if (JSON.stringify(savedEmails) !== JSON.stringify([...allowedEmails].sort())) {
+        throw new Error("La lista guardada no coincide con las docentes seleccionadas.");
+      }
       ADMIN_STATE.contract.allowedEmails = allowedEmails;
       APP_STATE.contract.access = { allowedEmails: [...allowedEmails] };
-      toast(allowedEmails.length ? `Contrato visible para ${allowedEmails.length} docente(s) ✅` : "Contrato oculto para todas las docentes 🔒");
+      ADMIN_STATE.contract.accessSaveNotice = allowedEmails.length
+        ? `Guardado y verificado en Firestore. ${selectedNames.length === 1 ? "Puede verlo" : "Pueden verlo"}: ${selectedNames.join(", ")}. Quienes ya tenían el HUB abierto deben recargarlo.`
+        : "Guardado y verificado en Firestore. Ninguna docente tiene acceso adicional al contrato.";
+      toast(allowedEmails.length ? `Acceso guardado y verificado para ${allowedEmails.length} docente(s) ✅` : "Acceso guardado y verificado: oculto para todas 🔒", { ms: 5000 });
       // El HUB de quien está viendo el panel también refleja el cambio.
       renderButtons(HUB.BUTTONS, APP_STATE.activeLinks, APP_STATE.activeProfile);
       renderAdminBody();
     } catch (error) {
       console.error("No se pudo guardar el acceso al contrato", error);
-      toast("No pude guardar quién lo ve. Revisa permisos/reglas.");
+      ADMIN_STATE.contract.accessSaveNotice = "No pude confirmar el guardado en Firestore. Revisa tu conexión o permisos e inténtalo de nuevo.";
+      toast("No pude confirmar quién lo ve. El guardado requiere revisión.", { ms: 5000 });
+      renderAdminBody();
+    } finally {
+      setButtonBusy(button, false);
     }
   });
   body.querySelectorAll("[data-contract-terms]").forEach((button) => button.addEventListener("click", () => {
