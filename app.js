@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-07.2";
+const BUILD = "2026-10-08.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -64,8 +64,8 @@ const SUPPORT_PROFILE_FIELDS = ["fullName", "documentType", "documentNumber", "d
    docente en teacherContractData y las firmas en teacherContractSignatures,
    una por persona y versión.
 
-   Quién puede VER el botón se controla en app_config/contratoDocenteAcceso.
-   Arranca vacío: el acceso no le aparece a nadie hasta que se elija.
+   Las Docentes de apoyo ven ambos accesos por su tipo de vinculación.
+   app_config/contratoDocenteAcceso permite acceso adicional a otras docentes.
 
    IMPORTANTE: esta es una plantilla operativa, no un concepto jurídico.
    Debe revisarla un abogado antes de usarla como contrato definitivo.
@@ -733,6 +733,7 @@ const APP_STATE = {
   activeProfile: null,
   activeUser: null,
   hubUserDoc: null,    // doc de hubUsers del usuario activo (areas, especialidades…)
+  accessSync: { unsubscribe: null, profileError: false, refreshing: false },
   db: null,
   bibliotecaDb: null,  // Firestore del proyecto biblioteca (solo lectura)
   studentsDb: null,
@@ -764,6 +765,7 @@ const APP_STATE = {
   contract: {
     access: { allowedEmails: [] },
     accessLoaded: false,
+    accessError: false,
     doc: null,
     docLoaded: false,
     terms: null,
@@ -1136,9 +1138,9 @@ async function deleteCustomButton(id) {
 }
 
 function getAssignableButtons() {
-  // El contrato no se asigna aquí: tiene su propia lista en la pestaña
-  // Contrato, y marcarlo dos veces solo confundiría.
-  return HUB.BUTTONS.filter((button) => !button.adminOnly && !button.contractAllowlist);
+  // Vinculación se habilita por tipo; el contrato también admite la lista
+  // adicional de la pestaña Contrato. No se asignan por segunda vez aquí.
+  return HUB.BUTTONS.filter((button) => !button.adminOnly && !button.contractAllowlist && !button.supportOnly);
 }
 
 function getVisibleButtonsForUserDoc(docData = null) {
@@ -5194,9 +5196,12 @@ async function saveHubUser(email, data) {
 
   // Verificación inmediata: si esto falla, el panel lo dice ahí mismo y no queda
   // esa ilusión tan humana de “guardó” cuando Firebase estaba diciendo “pues no”.
-  const check = await getDoc(ref);
+  const check = await getDocFromServer(ref);
   if (!check.exists()) throw new Error("No se pudo verificar el docente guardado en Firestore.");
   const saved = check.data() || {};
+  if (Object.entries(data).some(([key, value]) => JSON.stringify(saved[key]) !== JSON.stringify(value))) {
+    throw new Error("Los datos verificados no coinciden con el docente que intentaste guardar.");
+  }
   await setDoc(doc(APP_STATE.db, "teacherDirectory", email), {
     email,
     name: saved.label || saved.name || email,
@@ -6343,8 +6348,8 @@ function getResolvedButtonState(button, links = {}) {
     button?.id === "bibliotecaRecursos" ||
     button?.id === "supportContract" ||
     button?.id === "contratoDocente";
-  // El contrato tiene su propia lista de acceso y es la única que manda: no
-  // depende de la asignación general de botones ni del rol.
+  // Apoyo tiene acceso automático; para las demás docentes manda la lista
+  // adicional. Ninguno de estos dos accesos depende de asignar botones.
   if (button?.contractAllowlist && !canSeeTeacherContract()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
@@ -6354,7 +6359,7 @@ function getResolvedButtonState(button, links = {}) {
   if (button?.id === "coordinationMessages" && !canUseCoordinationMessages()) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
-  if (button?.supportOnly && APP_STATE.hubUserDoc?.employmentType !== "support_contractor") {
+  if (button?.supportOnly && !teacherContractVisibility(emailKey(APP_STATE.activeUser), APP_STATE.hubUserDoc).support) {
     return { isSpecial: false, url: "", available: false, visible: false };
   }
   const assignedButtons = getVisibleButtonsForUserDoc(APP_STATE.hubUserDoc);
@@ -6436,6 +6441,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       </article>
     </section>
 
+    <div id="slot-contract-access" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderTeacherContractAccessHome()}</div>
     <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
     <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
     <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
@@ -6513,6 +6519,7 @@ function renderButtons(buttons = [], links = {}, profile = null) {
       else if (action === "perfil") applyHubTab("perfil");
       else if (action === "ayuda") applyHubTab("soporte");
       else if (action === "back") applyHubTab("inicio");
+      else if (action === "refreshAccess") refreshSessionContractAccess();
       else if (action === "favEdit") { APP_STATE.favEdit = !APP_STATE.favEdit; refreshHubDataUI(); }
     });
 
@@ -6890,6 +6897,7 @@ function renderPerfilPanelHTML() {
 
     <article class="perfilInfo">
       <div class="perfilInfoRow"><span>Correo</span><strong>${escapeHtml(email)}</strong></div>
+      <div class="perfilInfoRow"><span>Vinculación</span><strong>${APP_STATE.accessSync.profileError ? "Por verificar" : APP_STATE.hubUserDoc?.employmentType === "support_contractor" ? "Docente de apoyo" : "Docente de planta"}</strong></div>
       <div class="perfilInfoRow"><span>Hub</span><strong>Docentes</strong></div>
       <div class="perfilInfoRow"><span>Estado</span><strong class="perfilActive">● Activa</strong></div>
     </article>
@@ -7942,38 +7950,148 @@ function renderSupportContract(profile, acceptance) {
    el Anexo A y aprueba la versión → la docente lee, acepta casilla por casilla
    y firma → queda una copia íntegra (snapshot) y su huella SHA-256.
 
-   El botón solo lo ve quien esté en la lista de acceso (app_config/
-   contratoDocenteAcceso). Mientras esa lista esté vacía, no le aparece a nadie.
+   Docentes de apoyo tienen acceso automático. Para otras docentes se aplica
+   la lista adicional app_config/contratoDocenteAcceso.
 ============================================================================ */
 
 /* ---- Lista de acceso: quién puede ver el contrato ---- */
 async function loadTeacherContractAccess(force = false) {
   if (APP_STATE.contract.accessLoaded && !force) return APP_STATE.contract.access;
   if (!APP_STATE.db) return APP_STATE.contract.access;
+  const user = APP_STATE.activeUser;
   try {
-    const snap = await getDoc(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID));
+    const snap = await getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID));
+    if (APP_STATE.activeUser !== user) return APP_STATE.contract.access;
     const raw = snap.exists() ? snap.data() : {};
     APP_STATE.contract.access = {
       allowedEmails: Array.isArray(raw.allowedEmails)
         ? raw.allowedEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
         : []
     };
-  } catch (_) {
-    // Sin doc, sin reglas o sin permiso: nadie lo ve. El silencio es la opción segura.
+    APP_STATE.contract.accessError = false;
+    APP_STATE.contract.accessLoaded = true;
+  } catch (error) {
+    if (APP_STATE.activeUser !== user) return APP_STATE.contract.access;
+    console.warn("No se pudo verificar el acceso adicional al contrato.", error);
     APP_STATE.contract.access = { allowedEmails: [] };
+    APP_STATE.contract.accessError = true;
+    APP_STATE.contract.accessLoaded = false;
   }
-  APP_STATE.contract.accessLoaded = true;
   return APP_STATE.contract.access;
 }
 
-function canSeeTeacherContract(email = emailKey(APP_STATE.activeUser)) {
-  const allowed = APP_STATE.contract.access?.allowedEmails || [];
+function teacherContractVisibility(email, managed = null, allowedEmails = []) {
   const normalized = String(email || "").trim().toLowerCase();
-  // Una Docente de apoyo siempre conserva lectura del contrato individual
-  // desde su vinculación; la lista manual aplica a las demás docentes.
-  return allowed.includes(normalized)
-    || (normalized === emailKey(APP_STATE.activeUser)
-      && APP_STATE.hubUserDoc?.employmentType === "support_contractor");
+  const support = !!normalized && managed?.employmentType === "support_contractor";
+  const additional = !!normalized && allowedEmails.some((item) => String(item || "").trim().toLowerCase() === normalized);
+  return { support, contract: support || additional, additional };
+}
+
+function canSeeTeacherContract(email = emailKey(APP_STATE.activeUser)) {
+  const normalized = String(email || "").trim().toLowerCase();
+  const managed = normalized === emailKey(APP_STATE.activeUser) ? APP_STATE.hubUserDoc : null;
+  return teacherContractVisibility(normalized, managed, APP_STATE.contract.access?.allowedEmails || []).contract;
+}
+
+function renderTeacherContractAccessHome() {
+  const visibility = teacherContractVisibility(emailKey(APP_STATE.activeUser), APP_STATE.hubUserDoc, APP_STATE.contract.access?.allowedEmails || []);
+  const error = APP_STATE.accessSync.profileError || APP_STATE.contract.accessError;
+  if (!visibility.contract && !error) return "";
+  return `<article class="supCard contractHomeCard" aria-label="Mi vinculación y contrato">
+    <h3>${visibility.support ? "Mi vinculación como Docente de apoyo" : "Mi contrato"}</h3>
+    ${error ? '<p role="status">No pudimos verificar toda tu configuración de acceso. Reintenta para actualizarla.</p>' : '<p>Revisa tus datos, condiciones y contrato individual.</p>'}
+    <div class="contractHomeActions">
+      ${visibility.support ? '<button class="btnGoogle" type="button" data-id="supportContract">Abrir mi vinculación</button>' : ""}
+      ${visibility.contract ? '<button class="btnGhost" type="button" data-id="contratoDocente">Ver mi contrato individual</button>' : ""}
+      <button class="btnGhost" type="button" data-sup="refreshAccess" ${APP_STATE.accessSync.refreshing ? "disabled" : ""}>${APP_STATE.accessSync.refreshing ? "Verificando…" : "Actualizar mis accesos"}</button>
+    </div>
+  </article>`;
+}
+
+function repaintSessionContractAccess() {
+  const search = $("#hubSearchInput")?.value || "";
+  const scrollY = window.scrollY;
+  renderButtons(HUB.BUTTONS, APP_STATE.activeLinks, APP_STATE.activeProfile);
+  const input = $("#hubSearchInput");
+  if (input && search) { input.value = search; input.dispatchEvent(new Event("input")); }
+  window.scrollTo({ top: scrollY, behavior: "instant" });
+}
+
+function stopSessionContractAccessSync() {
+  APP_STATE.accessSync.unsubscribe?.();
+  APP_STATE.accessSync.unsubscribe = null;
+}
+
+function startSessionContractAccessSync() {
+  stopSessionContractAccessSync();
+  const user = APP_STATE.activeUser;
+  const email = emailKey(user);
+  if (!APP_STATE.db || !email) return;
+  let stopped = false;
+  const current = () => !stopped && APP_STATE.activeUser === user;
+  const stopProfile = onSnapshot(doc(APP_STATE.db, "hubUsers", email), { includeMetadataChanges: true }, (snap) => {
+    if (!current() || snap.metadata.fromCache) return;
+    const managed = snap.exists() ? snap.data() : null;
+    if (!isAdminUser(user) && (managed ? managed.enabled === false || isAccessExpired(managed.accessExpiresAt) : !HUB.USERS?.[email])) {
+      handleUnauthorizedUser(getAuth(), managed?.enabled !== false && isAccessExpired(managed?.accessExpiresAt) ? "expired" : "");
+      return;
+    }
+    const changed = APP_STATE.accessSync.profileError || JSON.stringify(APP_STATE.hubUserDoc) !== JSON.stringify(managed);
+    APP_STATE.hubUserDoc = managed;
+    APP_STATE.accessSync.profileError = false;
+    if (changed) repaintSessionContractAccess();
+  }, (error) => {
+    if (!current()) return;
+    console.warn("No se pudo actualizar el tipo de vinculación.", error);
+    APP_STATE.accessSync.profileError = true;
+    repaintSessionContractAccess();
+  });
+  const stopContract = onSnapshot(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID), { includeMetadataChanges: true }, (snap) => {
+    if (!current() || snap.metadata.fromCache) return;
+    const raw = snap.exists() ? snap.data() : {};
+    const allowedEmails = Array.isArray(raw.allowedEmails) ? [...new Set(raw.allowedEmails.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean))] : [];
+    const changed = APP_STATE.contract.accessError || JSON.stringify(APP_STATE.contract.access.allowedEmails) !== JSON.stringify(allowedEmails);
+    APP_STATE.contract.access = { allowedEmails };
+    APP_STATE.contract.accessLoaded = true;
+    APP_STATE.contract.accessError = false;
+    if (changed) repaintSessionContractAccess();
+  }, (error) => {
+    if (!current()) return;
+    console.warn("No se pudo actualizar el acceso adicional al contrato.", error);
+    APP_STATE.contract.access = { allowedEmails: [] };
+    APP_STATE.contract.accessLoaded = false;
+    APP_STATE.contract.accessError = true;
+    repaintSessionContractAccess();
+  });
+  APP_STATE.accessSync.unsubscribe = () => { stopped = true; stopProfile(); stopContract(); };
+}
+
+async function refreshSessionContractAccess() {
+  const user = APP_STATE.activeUser;
+  if (!user || APP_STATE.accessSync.refreshing) return;
+  APP_STATE.accessSync.refreshing = true;
+  repaintSessionContractAccess();
+  try {
+    const access = await resolveHubAccess(user);
+    if (APP_STATE.activeUser !== user) return;
+    if (access.profileReadError && !access.allowed) {
+      APP_STATE.accessSync.profileError = true;
+      toast("No pudimos verificar tu perfil. Revisa la conexión e intenta de nuevo.");
+      return;
+    }
+    if (!access.allowed) { await handleUnauthorizedUser(getAuth(), access.expired ? "expired" : ""); return; }
+    if (!isAdminUser(user)) APP_STATE.hubUserDoc = access.managed;
+    APP_STATE.accessSync.profileError = !!access.profileReadError;
+    await loadTeacherContractAccess(true);
+    if (APP_STATE.activeUser !== user) return;
+    startSessionContractAccessSync();
+    toast(APP_STATE.accessSync.profileError || APP_STATE.contract.accessError ? "No pudimos verificar todos tus accesos. Revisa la conexión e intenta de nuevo." : "Tus accesos están actualizados.");
+  } finally {
+    if (APP_STATE.activeUser === user) {
+      APP_STATE.accessSync.refreshing = false;
+      repaintSessionContractAccess();
+    }
+  }
 }
 
 /* ---- Plantilla del contrato ---- */
@@ -8692,13 +8810,14 @@ function printTeacherContract(documento, signature = null) {
    PESTAÑA ADMIN · CONTRATO
 ============================================================================ */
 async function loadContractAdminData() {
-  const [contract, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap] = await Promise.all([
+  const [contract, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap, hubUsersSnap] = await Promise.all([
     loadTeacherContract(true),
     getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION)),
-    getDocsFromServer(collection(APP_STATE.db, "supportContractProfiles"))
+    getDocsFromServer(collection(APP_STATE.db, "supportContractProfiles")),
+    getDocsFromServer(collection(APP_STATE.db, "hubUsers"))
   ]);
   ADMIN_STATE.contract.doc = contract;
   ADMIN_STATE.contract.allowedEmails = Array.isArray(accessSnap.data()?.allowedEmails)
@@ -8708,12 +8827,34 @@ async function loadContractAdminData() {
   ADMIN_STATE.contract.data = Object.fromEntries(dataSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.supportProfiles = Object.fromEntries(supportProfilesSnap.docs.map((item) => [String(item.id).toLowerCase(), { id: item.id, ...item.data() }]));
   ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  ADMIN_STATE.hubUsers = Object.fromEntries(hubUsersSnap.docs.map((item) => [item.id, item.data() || {}]));
+  ADMIN_STATE.contract.accessVerifiedAt = Date.now();
   await loadDossierRequirements(true);
   await loadAllDossiers();
   // La lista de acceso también manda sobre la sesión actual.
   APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
   APP_STATE.contract.accessLoaded = true;
+  APP_STATE.contract.accessError = false;
   startAdminContractLiveSync();
+}
+
+function renderContractAccessAudit() {
+  const rows = buildDocenteRows();
+  const allowedEmails = ADMIN_STATE.contract.allowedEmails || [];
+  const activeSupport = rows.filter((row) => row.enabled && !isAccessExpired(row.accessExpiresAt) && row.employmentType === "support_contractor");
+  const verified = ADMIN_STATE.contract.accessVerifiedAt;
+  return `<section class="contractAccessAudit">
+    <h3>Quién tiene acceso a vinculación y contrato</h3>
+    <p class="adminNote">${activeSupport.length} docente(s) de apoyo con acceso activo automático. Verificación de configuración guardada${verified ? `: ${escapeHtml(new Date(verified).toLocaleString("es-CO", { timeZone: "America/Bogota" }))}` : " pendiente"}. Esto confirma la configuración; no confirma que cada docente haya abierto la app. Ver el contrato no habilita por sí solo la firma.</p>
+    <button class="btnGhost" id="contractAccessVerify" type="button">Verificar accesos guardados</button>
+    <details><summary>Ver resultado por docente</summary><div class="tableWrap"><table class="adminTable"><thead><tr><th>Docente / correo de ingreso</th><th>Vinculación de apoyo</th><th>Contrato individual</th></tr></thead><tbody>
+      ${rows.map((row) => {
+        const visibility = teacherContractVisibility(row.email, row, allowedEmails);
+        const blocked = !row.enabled ? "Acceso al HUB inhabilitado" : !row.isAdmin && isAccessExpired(row.accessExpiresAt) ? "Acceso al HUB vencido" : "";
+        return `<tr><td>${escapeHtml(row.name)}<br><small>${escapeHtml(row.email)}</small></td><td>${blocked || (visibility.support ? "Disponible automáticamente" : "No corresponde · planta")}</td><td>${blocked || (visibility.support ? "Disponible por Docente de apoyo" : visibility.additional ? "Disponible por lista adicional" : "Sin acceso adicional")}</td></tr>`;
+      }).join("")}
+    </tbody></table></div></details>
+  </section>`;
 }
 
 function refreshAdminContractFromLiveData() {
@@ -8767,6 +8908,7 @@ function renderAdminContrato(body) {
       <div><button class="btnGhost" id="contractEditText" type="button">Editar texto y valores</button></div>
     </div>
 
+    ${renderContractAccessAudit()}
     ${renderAdminDossierTable(body)}
 
     <h3 class="contractAdminTitle">Acceso adicional al contrato</h3>
@@ -8844,6 +8986,18 @@ function renderAdminContrato(body) {
   `;
 
   wireAdminDossierTable(body);
+  $("#contractAccessVerify", body)?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setButtonBusy(button, true, "Verificando en Firestore…");
+    try {
+      await loadContractAdminData();
+      renderAdminBody();
+      toast("Configuración de accesos verificada en Firestore.");
+    } catch (error) {
+      console.error("No se pudo verificar la configuración de accesos.", error);
+      toast("No pudimos verificar los accesos. El resultado anterior no es una confirmación nueva.");
+    } finally { setButtonBusy(button, false); }
+  });
   $("#contractEditText", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = true; renderAdminBody(); });
   $("#contractAllowClear", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.accessSaveNotice = null;
@@ -8879,9 +9033,9 @@ function renderAdminContrato(body) {
       ADMIN_STATE.contract.allowedEmails = allowedEmails;
       APP_STATE.contract.access = { allowedEmails: [...allowedEmails] };
       ADMIN_STATE.contract.accessSaveNotice = allowedEmails.length
-        ? `Guardado y verificado en Firestore. ${selectedNames.length === 1 ? "Puede verlo" : "Pueden verlo"}: ${selectedNames.join(", ")}. Quienes ya tenían el HUB abierto deben recargarlo.`
-        : "Guardado y verificado en Firestore. Ninguna docente tiene acceso adicional al contrato.";
-      toast(allowedEmails.length ? `Acceso guardado y verificado para ${allowedEmails.length} docente(s) ✅` : "Acceso guardado y verificado: oculto para todas 🔒", { ms: 5000 });
+        ? `Acceso adicional guardado y verificado en Firestore: ${selectedNames.join(", ")}. Las Docentes de apoyo conservan acceso automático. Las sesiones con esta versión se actualizan en vivo.`
+        : "Guardado y verificado en Firestore. Sin accesos adicionales; las Docentes de apoyo conservan acceso automático.";
+      toast(allowedEmails.length ? `Acceso adicional verificado para ${allowedEmails.length} docente(s) ✅` : "Sin accesos adicionales. Docentes de apoyo conservan su acceso automático.", { ms: 5000 });
       // El HUB de quien está viendo el panel también refleja el cambio.
       renderButtons(HUB.BUTTONS, APP_STATE.activeLinks, APP_STATE.activeProfile);
       renderAdminBody();
@@ -10877,11 +11031,13 @@ async function resolveHubAccess(user) {
   if (isAdminUser(user)) return { allowed: true, managed: null };
 
   let managed = null;
+  let profileReadError = false;
   try {
-    const snap = await getDoc(doc(APP_STATE.db, "hubUsers", email));
+    const snap = await getDocFromServer(doc(APP_STATE.db, "hubUsers", email));
     if (snap.exists()) managed = snap.data();
-  } catch (_) {
-    // Reglas no publicadas todavía o sin permiso: usamos la lista base.
+  } catch (error) {
+    console.warn("No se pudo verificar el perfil docente en Firestore.", error);
+    profileReadError = true;
   }
 
   if (managed) {
@@ -10889,7 +11045,7 @@ async function resolveHubAccess(user) {
     const expired = isAccessExpired(managed.accessExpiresAt);
     return { allowed: enabled && !expired, managed, expired: enabled && expired };
   }
-  return { allowed: !!HUB.USERS?.[email], managed: null };
+  return { allowed: !!HUB.USERS?.[email], managed: null, profileReadError };
 }
 
 async function handleAuthorizedUser(user, managed = null) {
@@ -10900,6 +11056,7 @@ async function handleAuthorizedUser(user, managed = null) {
     : null);
   // Inyecta los botones personalizados (Firestore) antes de resolver links.
   await loadCustomButtons();
+  if (getAuth().currentUser !== user) return;
   const mergedLinks = buildLinksForUser(email);
 
   APP_STATE.activeUser = user;
@@ -10914,14 +11071,18 @@ async function handleAuthorizedUser(user, managed = null) {
   // aparte por si también tienen áreas configuradas (no es obligatorio).
   if (!managed) {
     try {
-      const snap = await getDoc(doc(APP_STATE.db, "hubUsers", email));
+      const snap = await getDocFromServer(doc(APP_STATE.db, "hubUsers", email));
       if (snap.exists()) APP_STATE.hubUserDoc = snap.data();
-    } catch (_) { /* sin doc o sin permiso: queda null */ }
+    } catch (error) {
+      console.warn("No se pudo verificar el tipo de vinculación.", error);
+      APP_STATE.accessSync.profileError = true;
+    }
   }
 
-  // Quién puede ver el contrato se resuelve antes de pintar los botones: si la
-  // lectura falla, la lista queda vacía y el acceso simplemente no aparece.
+  // Resolvemos la lista adicional antes de pintar. Si falla, mostramos el
+  // aviso para reintentar; el acceso automático de apoyo se conserva.
   await loadTeacherContractAccess(true);
+  if (getAuth().currentUser !== user) return;
 
   setUserLine(profile, user);
   setDrawerProfile(profile, user);
@@ -10931,6 +11092,7 @@ async function handleAuthorizedUser(user, managed = null) {
      blanco al volver a abrir la app. */
   show("app");
   renderButtons(HUB.BUTTONS, mergedLinks, profile);
+  startSessionContractAccessSync();
   startStudentMessagesBadge();
   startCoordinationMessagesBadge();
   const backgroundLoads = [
@@ -10948,6 +11110,7 @@ async function handleAuthorizedUser(user, managed = null) {
 }
 
 async function handleUnauthorizedUser(auth, reason = "") {
+  stopSessionContractAccessSync();
   toast(reason === "expired"
     ? "Tu acceso temporal venció. Pídele a coordinación que lo renueve 🗓️"
     : "Tu correo no está autorizado para este hub 🫠");
@@ -10991,6 +11154,13 @@ async function mount() {
   wireDrawerHandlers(auth);
 
   onAuthStateChanged(auth, async (user) => {
+    stopSessionContractAccessSync();
+    APP_STATE.hubUserDoc = null;
+    APP_STATE.accessSync.profileError = false;
+    APP_STATE.accessSync.refreshing = false;
+    APP_STATE.contract.access = { allowedEmails: [] };
+    APP_STATE.contract.accessLoaded = false;
+    APP_STATE.contract.accessError = false;
     if (!user) {
       APP_STATE.activeUser = null;
       APP_STATE.activeProfile = null;
@@ -11005,7 +11175,14 @@ async function mount() {
 
     try {
       const access = await resolveHubAccess(user);
+      if (auth.currentUser !== user) return;
+      APP_STATE.accessSync.profileError = !!access.profileReadError;
       if (!access.allowed) {
+        if (access.profileReadError) {
+          show("login");
+          toast("No pudimos verificar tu perfil docente. Revisa la conexión y recarga para reintentar.");
+          return;
+        }
         await handleUnauthorizedUser(auth, access.expired ? "expired" : "");
         return;
       }

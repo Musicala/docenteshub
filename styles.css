@@ -4332,6 +4332,14 @@ body{
 }
 
 /* --- Próxima clase --- */
+.contractHomeCard{ width:100%; box-sizing:border-box; }
+.contractHomeActions{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.contractHomeActions button{ max-width:100%; white-space:normal; }
+.contractAccessAudit{ margin:16px 0; }
+.contractAccessAudit details{ margin-top:12px; }
+.contractAccessAudit summary{ cursor:pointer; }
+.contractAccessAudit td small{ overflow-wrap:anywhere; }
+
 .nextClassCard{
   display:flex; align-items:center; gap:14px;
   background:#fff; border:1px solid var(--line);
