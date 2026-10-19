@@ -45,6 +45,7 @@ function harness() {
     ["teacherContractVisibility", "canSeeTeacherContract"],
     ["canSeeTeacherContract", "renderTeacherContractAccessHome"],
     ["renderTeacherContractAccessHome", "repaintSessionContractAccess"],
+    ["renderTeacherAbsenceProtocol", "openContractOverlay"],
     ["stopSessionContractAccessSync", "startSessionContractAccessSync"],
     ["startSessionContractAccessSync", "refreshSessionContractAccess"],
     ["saveHubUser", "deleteHubUser"]
@@ -165,4 +166,27 @@ test("los accesos automáticos no se ofrecen como botones manuales contradictori
   const { context } = harness();
   context.HUB.BUTTONS = [supportButton, contractButton, { id: "library" }];
   assert.deepEqual(Array.from(context.getAssignableButtons(), (button) => button.id), ["library"]);
+});
+
+test("el protocolo usa los plazos y el canal del documento leído sin cambiar el snapshot", () => {
+  const { context } = harness();
+  const document = { version: "anterior", sections: [
+    { id: "CONTRATO", body: "6.3. Informar por el canal oficial.\n6.10. Reemplazo con autorización previa." },
+    { id: "B", body: "## Ausencia prevista de EL CONTRATISTA\nAviso: 72 horas. Si se reprograma, se paga.\n## Ausencia imprevista o emergencia\nAvisar tan pronto sea posible.\n## Reemplazo autorizado\nAutorización previa." },
+    { id: "F", body: "Aplicativo institucional y contacto@example.com." }
+  ] };
+  const before = JSON.stringify(document);
+  const html = context.renderTeacherAbsenceProtocol(document);
+  assert.match(html, /72 horas/);
+  assert.match(html, /contacto@example.com/);
+  assert.match(html, /versión anterior/);
+  assert.equal((html.match(/<li>/g) || []).length, 3);
+  assert.equal(JSON.stringify(document), before);
+  assert.doesNotMatch(html, /48 horas/);
+});
+
+test("el protocolo no inventa condiciones si el documento no contiene la matriz", () => {
+  const { context } = harness();
+  assert.equal(context.renderTeacherAbsenceProtocol({ sections: [] }), "");
+  assert.equal(context.renderTeacherAbsenceProtocol({ sections: [{ id: "B", body: "Otro anexo." }] }), "");
 });

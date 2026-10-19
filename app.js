@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-08.1";
+const BUILD = "2026-10-19.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8344,6 +8344,37 @@ function renderTeacherContractSections(documento) {
   `).join("");
 }
 
+function renderTeacherAbsenceProtocol(documento) {
+  const annex = documento.sections.find((section) => section.id === "B");
+  if (!annex) return "";
+  // El resumen usa el documento que la persona está leyendo, incluido el
+  // snapshot si ya firmó. No añade condiciones ni modifica lo firmado.
+  const blocks = String(annex.body || "").split(/^## /m).slice(1);
+  const items = [
+    ["Ausencia prevista de EL CONTRATISTA", "Si lo sabes con anticipación"],
+    ["Ausencia imprevista o emergencia", "Si es un imprevisto o una emergencia"],
+    ["Reemplazo autorizado", "Si propones un reemplazo"]
+  ].map(([heading, label]) => {
+    const block = blocks.find((item) => item.split("\n")[0].trim() === heading);
+    return block ? `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(block.slice(block.indexOf("\n") + 1).trim())}</li>` : "";
+  }).filter(Boolean);
+  if (!items.length) return "";
+  const main = String(documento.sections.find((section) => section.id === "CONTRATO")?.body || "");
+  const notice = main.split("\n").find((line) => line.startsWith("6.3. "));
+  const replacement = main.split("\n").find((line) => line.startsWith("6.10. "));
+  const channels = String(documento.sections.find((section) => section.id === "F")?.body || "")
+    .split("\n").find((line) => line.includes("Aplicativo institucional y"));
+  return `<section class="contractPanel contractAbsenceProtocol" aria-label="Protocolo si no puedo dictar una clase">
+    <h3>¿Qué hago si no puedo dictar una clase agendada?</h3>
+    <p>Comunica la novedad a coordinación académica por el canal oficial acordado.</p>
+    ${notice ? `<p>${escapeHtml(notice.replace(/^6\.3\.\s*/, ""))}</p>` : ""}
+    <ol>${items.join("")}</ol>
+    ${channels ? `<p><strong>Canal y comunicación:</strong> ${escapeHtml(channels)}</p>` : ""}
+    ${replacement ? `<details><summary>Requisitos para proponer un reemplazo</summary><p>${escapeHtml(replacement.replace(/^6\.10\.\s*/, ""))}</p></details>` : ""}
+    <p class="adminNote">Guía de consulta del contrato que estás leyendo · versión ${escapeHtml(String(documento.version))}. Fuente: cláusulas 6.3 y 6.10 y Anexo B. El texto completo se conserva abajo.</p>
+  </section>`;
+}
+
 // Overlay ancho propio: el modal del menú lateral es demasiado angosto para
 // leer un contrato con anexos.
 function openContractOverlay(title, bodyHtml, overlayId = "contractOverlay") {
@@ -8483,6 +8514,7 @@ function renderTeacherContractView(overlay) {
 
   const body = $(".contractCardBody", overlay);
   body.innerHTML = `
+    ${renderTeacherAbsenceProtocol(documento)}
     ${renderDossierProgressCard(resumenExpediente, { title: "Tu proceso de contratación" })}
     <div class="dossierGroups">${renderDossierGroups(requirements, miExpediente.states, miExpediente.versions, { admin: false, hasSignedContract: Boolean(signature) })}</div>
     <section class="contractPanel">
