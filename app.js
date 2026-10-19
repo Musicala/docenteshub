@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-19.2";
+const BUILD = "2026-10-19.3";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -3067,6 +3067,9 @@ const ADMIN_STATE = {
     openEmail: ""
   },
   contract: {          // pestaña Contrato: plantilla, acceso, Anexo A y firmas
+    ready: false,
+    loadError: "",
+    settingsDirty: false,
     doc: null,
     allowedEmails: [],
     terms: {},
@@ -3292,7 +3295,6 @@ function openAdminPanel() {
   document.body.style.overflow = "hidden";
   autoCloseStaleOpenShifts({ includeAll: true, silent: true });
   setAdminTab(ADMIN_STATE.tab || "marcaciones");
-  loadAdminData();
 }
 
 function closeAdminPanel() {
@@ -3305,6 +3307,10 @@ function closeAdminPanel() {
 function setAdminTab(tabId) {
   if (tabId !== "contrato") stopAdminContractLiveSync();
   ADMIN_STATE.tab = tabId;
+  if (tabId === "contrato") {
+    ADMIN_STATE.contract.ready = false;
+    ADMIN_STATE.contract.loadError = "";
+  }
   if (!adminPanelModal) return;
 
   adminPanelModal.querySelectorAll("[data-admin-tab]").forEach((tab) => {
@@ -3314,7 +3320,7 @@ function setAdminTab(tabId) {
   const filters = $("#adminFilters", adminPanelModal);
   if (filters) filters.style.display = (tabId === "vivo" || tabId === "horarios" || tabId === "docentes" || tabId === "botones" || tabId === "contrato" || tabId === "soporte") ? "none" : "";
 
-  renderAdminBody();
+  loadAdminData();
 }
 
 async function loadAdminData() {
@@ -3322,42 +3328,45 @@ async function loadAdminData() {
   const body = $("#adminBody", adminPanelModal);
   if (body) body.innerHTML = "<p>Cargando registros…</p>";
   ADMIN_STATE.loading = true;
+  const requestId = (ADMIN_STATE.loadRequestId || 0) + 1;
+  ADMIN_STATE.loadRequestId = requestId;
+  const requestedTab = ADMIN_STATE.tab;
 
   try {
     if (!Object.keys(ADMIN_STATE.hubUsers || {}).length) {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
       refreshAdminTeacherFilterOptions();
     }
+    if (requestId !== ADMIN_STATE.loadRequestId) return;
 
-    if (ADMIN_STATE.tab === "vivo") {
+    if (requestedTab === "vivo") {
       ADMIN_STATE.liveSessions = await fetchAdminLiveSessions();
-    } else if (ADMIN_STATE.tab === "horarios") {
+    } else if (requestedTab === "horarios") {
       const [schedules, overrides] = await Promise.all([
         fetchAdminSchedules(),
         fetchScheduleOverridesForYear(ADMIN_STATE.scheduleYear)
       ]);
       ADMIN_STATE.schedules = schedules;
       ADMIN_STATE.overrides = overrides;
-    } else if (ADMIN_STATE.tab === "academica") {
+    } else if (requestedTab === "academica") {
       ADMIN_STATE.academic = await fetchAdminAcademic();
-    } else if (ADMIN_STATE.tab === "docentes") {
+    } else if (requestedTab === "docentes") {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
       await loadSupportAdminData();
       refreshAdminTeacherFilterOptions();
-    } else if (ADMIN_STATE.tab === "botones") {
+    } else if (requestedTab === "botones") {
       ADMIN_STATE.customButtons = await fetchCustomButtons();
       applyCustomButtons(ADMIN_STATE.customButtons);
-    } else if (ADMIN_STATE.tab === "contrato") {
-      ADMIN_STATE.hubUsers = await fetchHubUsers();
-      await loadContractAdminData();
+    } else if (requestedTab === "contrato") {
+      await loadContractAdminData(requestId);
       refreshAdminTeacherFilterOptions();
-    } else if (ADMIN_STATE.tab === "soporte") {
+    } else if (requestedTab === "soporte") {
       ADMIN_STATE.supportReports = await fetchSupportReportsFor();
     } else {
       const [records] = await Promise.all([fetchAdminRecords()]);
       ADMIN_STATE.records = records;
       // Para puntualidad y estadísticas necesitamos horarios + overrides del rango.
-      if (ADMIN_STATE.tab === "puntualidad" || ADMIN_STATE.tab === "mensual") {
+      if (requestedTab === "puntualidad" || requestedTab === "mensual") {
         const [schedules, overrides] = await Promise.all([
           fetchAdminSchedules(),
           fetchAdminOverrides()
@@ -3367,12 +3376,18 @@ async function loadAdminData() {
       }
     }
   } catch (error) {
+    if (requestId !== ADMIN_STATE.loadRequestId) return;
     console.error("Admin load error", error);
-    if (body) body.innerHTML = `<p>No se pudieron cargar los datos. ${escapeHtml(error?.message || "")}</p>`;
     ADMIN_STATE.loading = false;
+    if (requestedTab === "contrato") {
+      ADMIN_STATE.contract.ready = false;
+      ADMIN_STATE.contract.loadError = "No pudimos verificar la configuración guardada. No se han cambiado tus accesos ni requisitos.";
+      renderAdminBody();
+    } else if (body) body.innerHTML = `<p>No se pudieron cargar los datos. ${escapeHtml(error?.message || "")}</p>`;
     return;
   }
 
+  if (requestId !== ADMIN_STATE.loadRequestId) return;
   ADMIN_STATE.loading = false;
   renderAdminBody();
 }
@@ -8449,6 +8464,12 @@ async function openTeacherContract() {
 }
 
 function renderTeacherContractView(overlay) {
+  if (!APP_STATE.dossier.requirementsLoaded) {
+    const body = $(".contractCardBody", overlay);
+    body.innerHTML = '<section class="contractPanel" role="status"><h3>No pudimos verificar los requisitos guardados</h3><p>Reintenta para consultar tu configuración. La firma permanece deshabilitada hasta completar la lectura.</p><button class="btnGhost" id="contractRequirementsRetry" type="button">Reintentar</button></section>';
+    $("#contractRequirementsRetry", body)?.addEventListener("click", () => { overlay.remove(); openTeacherContract(); });
+    return;
+  }
   const contract = getTeacherContract();
   const terms = APP_STATE.contract.terms;
   const submitted = APP_STATE.contract.data;
@@ -8712,6 +8733,7 @@ function wireTeacherContractSignForm(overlay, documento) {
   const button = $("#contractSign", overlay);
   if (!button) return;
   button.addEventListener("click", async () => {
+    if (!APP_STATE.dossier.requirementsLoaded) { toast("No pudimos verificar los requisitos. Recarga el contrato antes de firmar."); return; }
     const contract = getTeacherContract();
     const terms = APP_STATE.contract.terms;
     if (!terms?.approvedForSignature || String(terms.approvedVersion || "") !== String(contract.version)) {
@@ -8842,16 +8864,23 @@ function printTeacherContract(documento, signature = null) {
 /* ============================================================================
    PESTAÑA ADMIN · CONTRATO
 ============================================================================ */
-async function loadContractAdminData() {
-  const [contract, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap, hubUsersSnap] = await Promise.all([
-    loadTeacherContract(true),
+async function loadContractAdminData(requestId = ADMIN_STATE.loadRequestId) {
+  ADMIN_STATE.contract.ready = false;
+  ADMIN_STATE.contract.loadError = "";
+  const [contractSnap, accessSnap, termsSnap, dataSnap, signSnap, supportProfilesSnap, hubUsersSnap] = await Promise.all([
+    getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID)),
     getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_ACCESS_DOC_ID)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_DATA_COLLECTION)),
     getDocsFromServer(collection(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION)),
     getDocsFromServer(collection(APP_STATE.db, "supportContractProfiles")),
-    getDocsFromServer(collection(APP_STATE.db, "hubUsers"))
+    getDocsFromServer(collection(APP_STATE.db, "hubUsers")),
+    loadDossierRequirements(true)
   ]);
+  if (requestId !== ADMIN_STATE.loadRequestId) return;
+  const contract = normalizeTeacherContract(contractSnap.exists() ? contractSnap.data() : TEACHER_CONTRACT_DEFAULT);
+  APP_STATE.contract.doc = contract;
+  APP_STATE.contract.docLoaded = true;
   ADMIN_STATE.contract.doc = contract;
   ADMIN_STATE.contract.allowedEmails = Array.isArray(accessSnap.data()?.allowedEmails)
     ? accessSnap.data().allowedEmails.map((item) => String(item || "").toLowerCase())
@@ -8862,12 +8891,14 @@ async function loadContractAdminData() {
   ADMIN_STATE.contract.signatures = signSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
   ADMIN_STATE.hubUsers = Object.fromEntries(hubUsersSnap.docs.map((item) => [item.id, item.data() || {}]));
   ADMIN_STATE.contract.accessVerifiedAt = Date.now();
-  await loadDossierRequirements(true);
   await loadAllDossiers();
+  if (requestId !== ADMIN_STATE.loadRequestId) return;
   // La lista de acceso también manda sobre la sesión actual.
   APP_STATE.contract.access = { allowedEmails: [...ADMIN_STATE.contract.allowedEmails] };
   APP_STATE.contract.accessLoaded = true;
   APP_STATE.contract.accessError = false;
+  ADMIN_STATE.contract.ready = true;
+  ADMIN_STATE.contract.settingsDirty = false;
   startAdminContractLiveSync();
 }
 
@@ -8891,6 +8922,7 @@ function renderContractAccessAudit() {
 }
 
 function refreshAdminContractFromLiveData() {
+  if (!ADMIN_STATE.contract.ready || ADMIN_STATE.contract.settingsDirty) return;
   if (ADMIN_STATE.tab !== "contrato" || ADMIN_STATE.contract.editingText || ADMIN_STATE.contract.termsEmail) return;
   if (!adminPanelModal || adminPanelModal.hidden) return;
   renderAdminBody();
@@ -8917,6 +8949,11 @@ function startAdminContractLiveSync() {
 }
 
 function renderAdminContrato(body) {
+  if (!ADMIN_STATE.contract.ready) {
+    body.innerHTML = `<section class="contractPanel" role="status"><h3>Configuración del contrato</h3><p>${escapeHtml(ADMIN_STATE.contract.loadError || "Estamos verificando tus accesos y requisitos guardados antes de mostrar las opciones.")}</p><button class="btnGhost" id="contractLoadRetry" type="button">Volver a verificar</button></section>`;
+    $("#contractLoadRetry", body)?.addEventListener("click", () => loadAdminData());
+    return;
+  }
   const contract = ADMIN_STATE.contract.doc || getTeacherContract();
   const teachers = getAdminTeacherOptions({ includeContractHidden: false });
   const allowed = new Set(ADMIN_STATE.contract.allowedEmails || []);
@@ -9028,20 +9065,25 @@ function renderAdminContrato(body) {
       toast("Configuración de accesos verificada en Firestore.");
     } catch (error) {
       console.error("No se pudo verificar la configuración de accesos.", error);
+      ADMIN_STATE.contract.loadError = "No pudimos verificar la configuración guardada. Reintenta antes de editar.";
+      renderAdminBody();
       toast("No pudimos verificar los accesos. El resultado anterior no es una confirmación nueva.");
     } finally { setButtonBusy(button, false); }
   });
   $("#contractEditText", body)?.addEventListener("click", () => { ADMIN_STATE.contract.editingText = true; renderAdminBody(); });
   $("#contractAllowClear", body)?.addEventListener("click", () => {
+    ADMIN_STATE.contract.settingsDirty = true;
     ADMIN_STATE.contract.accessSaveNotice = null;
     $(".contractAccessSaveNotice", body)?.remove();
     body.querySelectorAll("[data-contract-allow]").forEach((input) => { input.checked = false; });
   });
   body.querySelectorAll("[data-contract-allow]").forEach((input) => input.addEventListener("change", () => {
+    ADMIN_STATE.contract.settingsDirty = true;
     ADMIN_STATE.contract.accessSaveNotice = null;
     $(".contractAccessSaveNotice", body)?.remove();
   }));
   $("#contractAllowSave", body)?.addEventListener("click", async () => {
+    if (!ADMIN_STATE.contract.ready) { toast("Primero verifica la configuración guardada."); return; }
     const button = $("#contractAllowSave", body);
     const selected = Array.from(body.querySelectorAll("[data-contract-allow]"))
       .filter((input) => input.checked)
@@ -9064,6 +9106,7 @@ function renderAdminContrato(body) {
         throw new Error("La lista guardada no coincide con las docentes seleccionadas.");
       }
       ADMIN_STATE.contract.allowedEmails = allowedEmails;
+      ADMIN_STATE.contract.settingsDirty = false;
       APP_STATE.contract.access = { allowedEmails: [...allowedEmails] };
       ADMIN_STATE.contract.accessSaveNotice = allowedEmails.length
         ? `Acceso adicional guardado y verificado en Firestore: ${selectedNames.join(", ")}. Las Docentes de apoyo conservan acceso automático. Las sesiones con esta versión se actualizan en vivo.`
@@ -9526,12 +9569,12 @@ function getDossierRequirements() {
 async function loadDossierRequirements(force = false) {
   if (APP_STATE.dossier.requirementsLoaded && !force) return getDossierRequirements();
   try {
-    const snap = await getDocs(collection(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION));
+    const snap = await getDocsFromServer(collection(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION));
     APP_STATE.dossier.requirements = mergeRequirements(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
   } catch (error) {
-    // Sin catálogo guardado o sin permiso: se usa el del código, que ya sirve.
     console.warn("No se pudo leer el catálogo de requisitos:", error);
-    APP_STATE.dossier.requirements = mergeRequirements([]);
+    APP_STATE.dossier.requirementsLoaded = false;
+    throw error;
   }
   APP_STATE.dossier.requirementsLoaded = true;
   return APP_STATE.dossier.requirements;
@@ -10065,7 +10108,14 @@ function renderDossierPolicyPanel() {
 function wireDossierPolicyPanel(body) {
   const button = $("#dossierPolicySave", body);
   if (!button) return;
+  body.querySelectorAll("[data-dossier-policy]").forEach((select) => select.addEventListener("change", () => {
+    ADMIN_STATE.contract.settingsDirty = true;
+  }));
   button.addEventListener("click", async () => {
+    if (!ADMIN_STATE.contract.ready || !APP_STATE.dossier.requirementsLoaded) {
+      toast("Primero verifica la configuración guardada. No se modificó ningún requisito.");
+      return;
+    }
     const feedback = $("#dossierPolicyFeedback", body);
     const cambios = [];
     getDossierRequirements().forEach((req) => {
@@ -10079,12 +10129,20 @@ function wireDossierPolicyPanel(body) {
     button.disabled = true;
     button.textContent = "Guardando…";
     try {
+      const batch = writeBatch(APP_STATE.db);
       for (const cambio of cambios) {
-        await setDoc(doc(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION, cambio.req.id), {
+        batch.set(doc(APP_STATE.db, DOSSIER_REQUIREMENTS_COLLECTION, cambio.req.id), {
           ...cambio.fields,
           updatedAt: serverTimestamp(),
           updatedBy: emailKey(APP_STATE.activeUser)
         }, { merge: true });
+      }
+      await batch.commit();
+      const verified = await loadDossierRequirements(true);
+      if (cambios.some((cambio) => requirementPolicy(verified.find((req) => req.id === cambio.req.id)) !== cambio.policy)) {
+        throw new Error("La configuración leída del servidor no coincide con la selección. Vuelve a verificar.");
+      }
+      for (const cambio of cambios) {
         await logDossierEvent("requirement_policy_changed", {
           requirementId: cambio.req.id,
           previousState: requirementPolicy(cambio.req),
@@ -10092,7 +10150,7 @@ function wireDossierPolicyPanel(body) {
           notes: cambio.req.name
         });
       }
-      await loadDossierRequirements(true);
+      ADMIN_STATE.contract.settingsDirty = false;
       toast(`${cambios.length} requisito(s) actualizado(s) ✅`);
       renderAdminBody();
     } catch (error) {
