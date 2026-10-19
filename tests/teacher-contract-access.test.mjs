@@ -22,6 +22,7 @@ function harness() {
       contract: { access: { allowedEmails: [] }, accessLoaded: false, accessError: false }
     },
     HUB: { USERS: {}, BUTTONS: [] }, TEACHER_CONTRACT_ACCESS_DOC_ID: "contratoDocenteAcceso",
+    ADMIN_STATE: { hubUsers: {} }, ADMIN_EMAILS: ["admin@example.com"],
     console: { warn() {} },
     doc: (_db, collection, id) => `${collection}/${id}`,
     onSnapshot: (path, options, success, error) => {
@@ -38,6 +39,7 @@ function harness() {
     setDoc: async () => {}, serverTimestamp: () => "server-time"
   });
   const functions = [
+    ["getAdminTeacherOptions", "refreshAdminTeacherFilterOptions"],
     ["emailKey", "prettyName"], ["getVisibleButtonsForUserDoc", "assertConfig"],
     ["getAssignableButtons", "getVisibleButtonsForUserDoc"],
     ["getResolvedButtonState", "renderButtons"],
@@ -189,4 +191,17 @@ test("el protocolo no inventa condiciones si el documento no contiene la matriz"
   const { context } = harness();
   assert.equal(context.renderTeacherAbsenceProtocol({ sections: [] }), "");
   assert.equal(context.renderTeacherAbsenceProtocol({ sections: [{ id: "B", body: "Otro anexo." }] }), "");
+});
+
+test("excluir una ficha de contratación conserva su cuenta y los demás docentes", () => {
+  const { context } = harness();
+  context.ADMIN_STATE.hubUsers = {
+    "admin@example.com": { label: "Administración", enabled: true, contractRosterVisible: false },
+    "teacher@example.com": { label: "Docente", enabled: true }
+  };
+  assert.equal(context.getAdminTeacherOptions().length, 2);
+  const contractOptions = context.getAdminTeacherOptions({ includeContractHidden: false });
+  assert.deepEqual(Array.from(contractOptions, (row) => row.email), ["teacher@example.com"]);
+  assert.equal(context.getAdminTeacherOptions().find((row) => row.email === "admin@example.com").isAdmin, true);
+  assert.equal(context.ADMIN_STATE.hubUsers["admin@example.com"].enabled, true);
 });

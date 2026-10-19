@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-19.1";
+const BUILD = "2026-10-19.2";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -3129,7 +3129,7 @@ function adminMonthPresets(count = 6) {
   return out;
 }
 
-function getAdminTeacherOptions({ includeDisabled = true } = {}) {
+function getAdminTeacherOptions({ includeDisabled = true, includeContractHidden = true } = {}) {
   const managed = ADMIN_STATE.hubUsers || {};
   const emails = new Set([
     ...Object.keys(HUB.USERS || {}),
@@ -3149,6 +3149,7 @@ function getAdminTeacherOptions({ includeDisabled = true } = {}) {
     };
   })
     .filter((item) => includeDisabled || item.enabled)
+    .filter((item) => includeContractHidden || managed[item.email]?.contractRosterVisible !== false)
     .sort((a, b) => a.label.localeCompare(b.label, "es"));
 
   return entries;
@@ -8871,7 +8872,7 @@ async function loadContractAdminData() {
 }
 
 function renderContractAccessAudit() {
-  const rows = buildDocenteRows();
+  const rows = buildDocenteRows().filter((row) => ADMIN_STATE.hubUsers[row.email]?.contractRosterVisible !== false);
   const allowedEmails = ADMIN_STATE.contract.allowedEmails || [];
   const activeSupport = rows.filter((row) => row.enabled && !isAccessExpired(row.accessExpiresAt) && row.employmentType === "support_contractor");
   const verified = ADMIN_STATE.contract.accessVerifiedAt;
@@ -8917,7 +8918,7 @@ function startAdminContractLiveSync() {
 
 function renderAdminContrato(body) {
   const contract = ADMIN_STATE.contract.doc || getTeacherContract();
-  const teachers = getAdminTeacherOptions();
+  const teachers = getAdminTeacherOptions({ includeContractHidden: false });
   const allowed = new Set(ADMIN_STATE.contract.allowedEmails || []);
   const terms = ADMIN_STATE.contract.terms || {};
   const submissions = ADMIN_STATE.contract.data || {};
@@ -10161,7 +10162,7 @@ function teacherHasSignedContract(email) {
 function dossierRowsForAdmin() {
   const requirements = getDossierRequirements();
   const today = dossierToday();
-  return getAdminTeacherOptions().map((person) => {
+  return getAdminTeacherOptions({ includeContractHidden: false }).map((person) => {
     const states = ADMIN_STATE.dossier.states[person.email] || {};
     const summary = dossierSummary(requirements, states, today, { hasSignedContract: teacherHasSignedContract(person.email) });
     const versions = ADMIN_STATE.dossier.versions[person.email] || {};
