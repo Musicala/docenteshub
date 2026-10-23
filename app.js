@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-19.3";
+const BUILD = "2026-10-23.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -718,7 +718,6 @@ import {
   getStorage,
   ref as storageRef,
   uploadBytesResumable,
-  getBlob,
   getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
@@ -8398,6 +8397,8 @@ function openContractOverlay(title, bodyHtml, overlayId = "contractOverlay") {
   const overlay = document.createElement("div");
   overlay.id = overlayId;
   overlay.className = "contractOverlay";
+  const layers = Array.from(document.querySelectorAll(".contractOverlay, .adminSubModal, #adminPanelModal, [role='dialog']"));
+  overlay.style.zIndex = String(Math.max(10000, ...layers.map((layer) => Number(getComputedStyle(layer).zIndex) || 0)) + 1);
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", title);
@@ -8413,13 +8414,19 @@ function openContractOverlay(title, bodyHtml, overlayId = "contractOverlay") {
       <div class="contractCardBody">${bodyHtml}</div>
     </div>
   `;
-  const close = () => overlay.remove();
+  const close = () => {
+    window.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay || event.target.closest("[data-contract-close]")) close();
   });
-  window.addEventListener("keydown", function onKey(event) {
-    if (event.key === "Escape") { close(); window.removeEventListener("keydown", onKey); }
-  });
+  function onKey(event) {
+    const top = Array.from(document.querySelectorAll(".contractOverlay"))
+      .sort((a, b) => Number(a.style.zIndex) - Number(b.style.zIndex)).at(-1);
+    if (event.key === "Escape" && top === overlay) { event.stopImmediatePropagation(); close(); }
+  }
+  window.addEventListener("keydown", onKey);
   document.body.appendChild(overlay);
   return overlay;
 }
@@ -9756,19 +9763,42 @@ async function setDossierReview({ email, requirement, status, notes = "", issueD
 }
 
 /* ---- Visor ----
-   Se intenta descargar el archivo autenticado (getBlob respeta las reglas y no
-   deja una URL pública dando vueltas). Si el bucket no tiene CORS para este
-   origen, se cae a getDownloadURL, que sigue exigiendo permiso al generarse y
-   nunca se guarda en Firestore. */
-async function resolveDossierFileUrl(version) {
-  const fileRef = storageRef(APP_STATE.storage, version.storagePath);
+   Solo se solicita el enlace mediante el SDK autenticado. La descarga directa
+   de blobs exige CORS y puede reintentarse durante minutos antes de fallar.
+   El navegador muestra el PDF/imagen sin descargarlo entero antes de abrir el
+   visor. El enlace con token no se persiste ni se registra en los logs. */
+async function withDossierViewerTimeout(operation, milliseconds = 12000) {
+  let timer;
   try {
-    const blob = await getBlob(fileRef);
-    return { url: URL.createObjectURL(blob), revoke: true };
-  } catch (error) {
-    console.warn("Descarga autenticada no disponible, se usa enlace temporal:", error?.code || error);
-    return { url: await getDownloadURL(fileRef), revoke: false };
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error("La consulta del documento tardó demasiado.");
+          error.code = "dossier/timeout";
+          reject(error);
+        }, milliseconds);
+      })
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function resolveDossierFileUrl(version) {
+  if (!APP_STATE.storage || !String(version?.storagePath || "").trim()) {
+    const error = new Error("No se encontró la referencia del archivo.");
+    error.code = "dossier/missing-file";
+    throw error;
   }
+  const fileRef = storageRef(APP_STATE.storage, version.storagePath);
+  return { url: await withDossierViewerTimeout(getDownloadURL(fileRef)), revoke: false };
+}
+
+function dossierViewerErrorMessage(error) {
+  if (error?.code === "storage/unauthorized") return "Tu cuenta no tiene permiso para consultar este archivo. Coordinación debe revisar el acceso; no se ha cambiado ningún permiso.";
+  if (error?.code === "storage/unauthenticated") return "Tu sesión no está disponible para consultar el archivo. Vuelve a iniciar sesión en el HUB.";
+  if (["storage/object-not-found", "dossier/missing-file"].includes(error?.code)) return "No encontramos el archivo de esta versión. Revisa su historial o informa a coordinación.";
+  if (error?.code === "dossier/timeout") return "La consulta tardó demasiado. Revisa tu conexión y vuelve a intentar; tu documento sigue conservado.";
+  return "No pudimos consultar el documento. Revisa tu conexión y vuelve a intentar.";
 }
 
 async function openDossierViewer(version, requirement, state = {}) {
@@ -9778,8 +9808,11 @@ async function openDossierViewer(version, requirement, state = {}) {
   try {
     resolved = await resolveDossierFileUrl(version);
   } catch (error) {
-    console.error("No se pudo abrir el documento", error);
-    $(".contractCardBody", overlay).innerHTML = '<p class="adminNote">No pudimos abrir este documento. Intenta de nuevo.</p>';
+    console.warn("No se pudo abrir el documento:", error?.code || "unknown");
+    if (!document.body.contains(overlay)) return;
+    const body = $(".contractCardBody", overlay);
+    body.innerHTML = `<section class="contractPanel" role="alert"><h3>No pudimos abrir el documento</h3><p>${escapeHtml(dossierViewerErrorMessage(error))}</p><button class="btnGhost" type="button" id="dossierViewerRetry">Reintentar</button></section>`;
+    $("#dossierViewerRetry", body)?.addEventListener("click", () => openDossierViewer(version, requirement, state));
     return;
   }
   if (!document.body.contains(overlay)) {
@@ -9811,10 +9844,12 @@ async function openDossierViewer(version, requirement, state = {}) {
       </div>
       ${state.adminNotes ? `<p class="dossierNote">💬 ${escapeHtml(state.adminNotes)}</p>` : ""}
       <div class="contractActions">
+        <a class="btnGhost" href="${escapeHtml(resolved.url)}" target="_blank" rel="noopener noreferrer">Abrir archivo en otra pestaña</a>
         <a class="btnGoogle" href="${escapeHtml(resolved.url)}" download="${escapeHtml(version.fileName || "documento")}" target="_blank" rel="noopener noreferrer">Descargar</a>
       </div>
     </section>
     <section class="contractPanel dossierPreviewPanel">
+      <p class="adminNote">Si la vista previa no aparece, usa “Abrir archivo en otra pestaña” o “Descargar”.</p>
       ${isPdf
         ? `<iframe class="dossierPreview" src="${escapeHtml(resolved.url)}" title="Vista previa del documento"></iframe>`
         : `<a href="${escapeHtml(resolved.url)}" target="_blank" rel="noopener noreferrer"><img class="dossierPreviewImg" src="${escapeHtml(resolved.url)}" alt="Vista previa de ${escapeHtml(requirement.name)}" /></a>
