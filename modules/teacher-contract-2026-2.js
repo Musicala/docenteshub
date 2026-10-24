@@ -169,7 +169,9 @@ export function validateTeacherContractFormalization({ terms = {}, representativ
   // la cláusula 5.4 del contrato. No hay confirmación administrativa que lo
   // habilite, porque pagar a un tercero desdibuja quién prestó el servicio.
   const accountHolderDocument = String(terms.accountHolderDocument || "").replace(/\D/g, "");
-  if (accountHolderDocument && contractorDoc && accountHolderDocument !== contractorDoc) {
+  if (String(terms.accountHolderIsContractor || "").trim() === "No") {
+    errors.push("La cuenta de pago está a nombre de otra persona. Debe ser una cuenta de EL CONTRATISTA: corrígela antes de continuar.");
+  } else if (accountHolderDocument && contractorDoc && accountHolderDocument !== contractorDoc) {
     errors.push("La cuenta de pago está a nombre de otra persona. Debe ser una cuenta de EL CONTRATISTA: corrígela antes de continuar.");
   }
   return { valid: errors.length === 0, errors, arlRequired, sameIdentity };

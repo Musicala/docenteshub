@@ -101,6 +101,7 @@ const TEACHER_CONTRACT_2026_2_TERM_FIELDS = [
   { name: "arlRiskClass", label: "Clase de riesgo verificada", group: "Seguridad social", type: "select", options: ["1", "2", "3", "4", "5"] },
   { name: "arlAffiliationDate", label: "Fecha de afiliación o novedad ARL", group: "Seguridad social", type: "date" },
   { name: "arlCoverageStartDate", label: "Inicio de cobertura verificado", group: "Seguridad social", type: "date" },
+  { name: "accountHolderIsContractor", label: "¿La cuenta está a nombre de la misma docente?", group: "Economía", type: "select", options: ["Sí", "No"] },
   { name: "accountHolderName", label: "Titular de la cuenta de pago", group: "Economía" },
   { name: "accountHolderDocument", label: "Documento del titular de la cuenta", group: "Economía" },
   { name: "identityExceptionConfirmed", label: "Confirmación reforzada si coincide el documento del representante", group: "Validaciones", type: "select", options: ["", "Sí"] },
@@ -112,7 +113,7 @@ function teacherContractFieldsFor(contract) {
     : TEACHER_CONTRACT_TERM_FIELDS;
 }
 const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set([
-  "contratistaDireccion", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate",
+  "contratistaDireccion", "accountHolderIsContractor", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate",
   "identityExceptionConfirmed", "identityExceptionReason"
 ]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
@@ -9228,7 +9229,7 @@ function renderAdminContratoTerms(body, email) {
         <h4 class="contractAdminTitle">${escapeHtml(grupo)}</h4>
         <div class="supportFields">
           ${fields.map((field) => {
-            const value = String(draft[field.name] || "");
+            const value = field.name === "accountHolderIsContractor" ? String(draft[field.name] || "Sí") : String(draft[field.name] || "");
             if (field.name === "modalidades") return `<div class="contractFieldWide"><label>Valores por modalidad</label><p class="adminNote">Agrega una fila por modalidad. El contrato mostrará cada modalidad con su pago acordado.</p><div data-contract-rate-list>${contractRateRows(draft).map(renderContractRateRow).join("")}</div><button class="btnGhost" type="button" id="contractRateAdd">Agregar modalidad y valor</button></div>`;
             if (field.name === "valorSesion" || field.name === "valorLetras") return "";
             if (field.type === "textarea") return `<label class="contractFieldWide">${escapeHtml(field.label)}<textarea data-contract-term="${escapeHtml(field.name)}" rows="2">${escapeHtml(value)}</textarea></label>`;
@@ -9251,6 +9252,36 @@ function renderAdminContratoTerms(body, email) {
       </div>
     </div>
   `;
+
+  // Titular de la cuenta: si es la misma docente, nombre y documento se copian
+  // de Identificación y quedan bloqueados para que no se desincronicen.
+  const titularSelect = body.querySelector('[data-contract-term="accountHolderIsContractor"]');
+  if (titularSelect) {
+    const campo = (name) => body.querySelector(`[data-contract-term="${name}"]`);
+    let aviso = body.querySelector("#contractHolderNote");
+    if (!aviso) {
+      aviso = document.createElement("p");
+      aviso.id = "contractHolderNote";
+      aviso.className = "adminNote contractFieldWide";
+      titularSelect.closest("label")?.after(aviso);
+    }
+    const syncTitular = () => {
+      const mismo = titularSelect.value !== "No";
+      const nombre = campo("accountHolderName");
+      const documento = campo("accountHolderDocument");
+      [nombre, documento].forEach((input) => { if (input) input.readOnly = mismo; });
+      if (mismo) {
+        if (nombre) nombre.value = campo("contratistaNombre")?.value.trim() || "";
+        if (documento) documento.value = campo("contratistaDocumento")?.value.trim() || "";
+        aviso.textContent = "Nombre y documento del titular se toman de Identificación.";
+      } else {
+        aviso.textContent = "⚠️ La cuenta debe estar a nombre de la docente: no se puede aprobar un contrato con cuenta de otra persona.";
+      }
+    };
+    titularSelect.addEventListener("change", syncTitular);
+    ["contratistaNombre", "contratistaDocumento"].forEach((name) => campo(name)?.addEventListener("input", () => { if (titularSelect.value !== "No") syncTitular(); }));
+    syncTitular();
+  }
 
   const readValues = () => {
     const values = {};
