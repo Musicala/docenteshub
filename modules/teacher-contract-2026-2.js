@@ -161,8 +161,10 @@ export function validateTeacherContractFormalization({ terms = {}, representativ
   const repDoc = String(representativeDocument || "").replace(/\D/g, "");
   const contractorDoc = String(terms.contratistaDocumento || "").replace(/\D/g, "");
   const sameIdentity = Boolean(repDoc && contractorDoc && repDoc === contractorDoc);
-  if (sameIdentity && (!terms.identityExceptionConfirmed || !String(terms.identityExceptionReason || "").trim())) {
-    errors.push("EL CONTRATANTE y EL CONTRATISTA tienen el mismo documento. Verifica la configuración y registra la confirmación administrativa reforzada y su motivo antes de continuar.");
+  // Nunca se contrata al propio representante legal: si coinciden, casi
+  // seguro es un error de digitación en el Anexo A.
+  if (sameIdentity) {
+    errors.push("El documento de EL CONTRATISTA es el mismo del representante legal. Revisa el número de documento en Identificación.");
   }
 
   // La cuenta de pago debe ser de EL CONTRATISTA, sin excepción: así lo dice
