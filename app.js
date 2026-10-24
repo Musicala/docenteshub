@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-23.1";
+const BUILD = "2026-10-24.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -80,7 +80,8 @@ const TEACHER_CONTRACT_SIGNATURES_COLLECTION = "teacherContractSignatures";
 // ni una fecha, ni un valor viven en el código.
 const TEACHER_CONTRACT_TERM_FIELDS = [
   { name: "contratistaNombre", label: "Nombre completo", group: "Identificación" },
-  { name: "contratistaDocumento", label: "Documento de identidad", group: "Identificación" },
+  { name: "contratistaTipoDocumento", label: "Tipo de documento", group: "Identificación", type: "select", options: ["Cédula de ciudadanía", "Cédula de extranjería", "Pasaporte", "Permiso por Protección Temporal", "Tarjeta de identidad", "Otro"] },
+  { name: "contratistaDocumento", label: "Número de documento", group: "Identificación" },
   { name: "contratistaDireccion", label: "Dirección (solo si aplica)", group: "Identificación" },
   { name: "contratistaTelefono", label: "Teléfono", group: "Identificación" },
   { name: "areas", label: "Área(s) o especialidad", group: "Alcance" },
@@ -8174,7 +8175,18 @@ function teacherContractVariableName(field) {
   return String(field || "").replace(/([A-Z])/g, "_$1").toUpperCase();
 }
 
+function contractIdentityFields(terms = {}) {
+  const raw = String(terms?.contratistaDocumento || "").trim();
+  const types = TEACHER_CONTRACT_TERM_FIELDS.find((field) => field.name === "contratistaTipoDocumento").options;
+  const prefix = types.find((type) => raw.toLocaleLowerCase("es").startsWith(`${type.toLocaleLowerCase("es")}:`));
+  return {
+    contratistaTipoDocumento: String(terms?.contratistaTipoDocumento || prefix || "").trim(),
+    contratistaDocumento: prefix ? raw.slice(raw.indexOf(":") + 1).trim() : raw
+  };
+}
+
 function buildTeacherContractVariables(contract, terms) {
+  terms = { ...terms, ...contractIdentityFields(terms) };
   const values = {};
 
   // Un valor vacío o sin definir se muestra como texto visible, no como una
@@ -8713,7 +8725,7 @@ function teacherContractStatements(documento) {
 
 function renderTeacherContractSignForm(documento, terms) {
   const suggestedName = terms?.contratistaNombre || APP_STATE.activeProfile?.label || APP_STATE.activeUser?.displayName || "";
-  const suggestedDoc = terms?.contratistaDocumento || "";
+  const suggestedDoc = contractIdentityFields(terms).contratistaDocumento;
   return `
     <section class="contractPanel contractSignPanel">
       <h3>Firmar el contrato</h3>
@@ -9157,10 +9169,14 @@ function renderAdminContrato(body) {
       // “Usar datos de vinculación” completa lo que la docente envió, pero no
       // puede borrar condiciones que administración ya registró en el Anexo A.
       const existingTerms = ADMIN_STATE.contract.terms?.[email] || {};
+      const identity = contractIdentityFields({
+        contratistaTipoDocumento: source.documentType || existingTerms.contratistaTipoDocumento || "",
+        contratistaDocumento: source.documentId || source.documentNumber || existingTerms.contratistaDocumento || ""
+      });
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email), {
         email,
         contratistaNombre: source.fullName || existingTerms.contratistaNombre || "",
-        contratistaDocumento: source.documentId || [source.documentType, source.documentNumber].filter(Boolean).join(": ") || existingTerms.contratistaDocumento || "",
+        ...identity,
         contratistaDireccion: source.direccion || source.address || existingTerms.contratistaDireccion || "",
         contratistaTelefono: source.telefono || source.phone || existingTerms.contratistaTelefono || "",
         // Nunca se mandan vacíos al usar datos de vinculación: con merge:true,
@@ -9193,7 +9209,8 @@ function renderAdminContrato(body) {
 
 function renderAdminContratoTerms(body, email) {
   const contract = ADMIN_STATE.contract.doc || getTeacherContract();
-  const draft = ADMIN_STATE.contract.terms?.[email] || {};
+  const storedDraft = ADMIN_STATE.contract.terms?.[email] || {};
+  const draft = { ...storedDraft, ...contractIdentityFields(storedDraft) };
   const contractFields = teacherContractFieldsFor(contract);
   const label = getAdminTeacherOptions().find((item) => item.email === email)?.label || email;
   const grupos = new Map();
