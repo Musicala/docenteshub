@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-24.3";
+const BUILD = "2026-10-26.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -6714,8 +6714,19 @@ function renderPendingBannerHTML() {
         <span class="pendingBannerAction">Reintentar</span>
       </button>`;
   }
+  if (!d.expected) {
+    return `
+      <button type="button" class="pendingBanner" data-slot="pendingBitacoras" data-open-pending-bitacoras>
+        <span class="pendingDot" aria-hidden="true">—</span>
+        <span class="pendingTxt">
+          <strong>Aún no hay indicadores disponibles para tu cuenta</strong>
+          <em>Abre Bitácoras pendientes para revisar tus clases. Cumplimiento por verificar.</em>
+        </span>
+        <span class="pendingBannerAction">Revisar ›</span>
+      </button>`;
+  }
   const count = d?.count ?? null;
-  const compliance = Number.isFinite(Number(d?.compliance)) ? `${Number(d.compliance)}%` : "—";
+  const compliance = d?.compliance != null && Number.isFinite(Number(d.compliance)) ? `${Number(d.compliance)}%` : "—";
   const rank = Number(d?.rank) > 0
     ? `#${Number(d.rank)}${Number(d?.totalTeachers) > 0 ? ` de ${Number(d.totalTeachers)}` : ""}`
     : "—";
@@ -6987,7 +6998,9 @@ function refreshHubDataUI() {
 }
 
 function pendingLogStatus(row = {}) {
-  return String(row.reconciliationStatus || "faltante").trim().toLowerCase();
+  const status = String(row.reconciliationStatus || "faltante").trim().toLowerCase();
+  return ["ok", "faltante", "parcial_grupal", "revisar", "duplicada", "profe_distinto", "hora_diferente", "extra", "inasistencia"].includes(status)
+    ? status : "faltante";
 }
 
 function pendingLogSessionKey(row = {}) {
@@ -7009,7 +7022,7 @@ function summarizePendingLogRows(rows = []) {
   });
   const compliance = countable.length
     ? Math.round(((countable.length - missing.length) / countable.length) * 1000) / 10
-    : 100;
+    : null;
   return {
     expected: countable.length,
     missing: missing.length,
@@ -7052,11 +7065,14 @@ function rankPendingTeachers(rows = [], activeEmail = "") {
 async function loadPendingBitacorasForActiveUser() {
   const email = emailKey(APP_STATE.activeUser);
   if (!email) return;
+  const isCurrentUser = () => emailKey(APP_STATE.activeUser) === email
+    && emailKey(APP_STATE.studentsAuth?.currentUser) === email;
   ensureStudentsServices();
   if (emailKey(APP_STATE.studentsAuth?.currentUser) !== email) {
     setHubData("pendingBitacoras", { authRequired: true, email });
     return;
   }
+  setHubData("pendingBitacoras", null);
   try {
     const ownSnapshot = await getDocs(query(
       collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION),
@@ -7071,6 +7087,7 @@ async function loadPendingBitacorasForActiveUser() {
     } catch (rankingError) {
       console.info("El ranking general no está disponible para este perfil.", rankingError?.code || rankingError);
     }
+    if (!isCurrentUser()) return;
     setHubData("pendingBitacoras", {
       ...summary,
       ...ranking,
@@ -7079,6 +7096,7 @@ async function loadPendingBitacorasForActiveUser() {
     });
   } catch (error) {
     console.warn("No se pudieron cargar los indicadores de bitácoras", error);
+    if (!isCurrentUser()) return;
     setHubData("pendingBitacoras", { error: true, email });
   }
 }
