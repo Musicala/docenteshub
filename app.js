@@ -18,7 +18,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-10-26.1";
+const BUILD = "2026-10-28.4";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -1565,6 +1565,11 @@ function wireDrawerHandlers(auth) {
         const id = action.split(":")[1] || "";
         if (!id) return;
         handleButtonAction(id);
+        return;
+      }
+
+      if (action === "messages") {
+        applyHubTab("mensajes");
         return;
       }
 
@@ -6428,7 +6433,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
     .join("");
   const scheduleNudge = renderTeacherScheduleNudge();
 
-  const sections = groupBySection(filteredButtons);
+  const sections = groupBySection(filteredButtons.map((button) =>
+    ["studentMessages", "coordinationMessages"].includes(button.id)
+      ? { ...button, section: "Mensajes" } : button));
   const teacherName = (profile?.label || prettyName(APP_STATE.activeUser) || "Docente").trim();
   const firstName = teacherName.split(/\s+/)[0] || "Docente";
   const avatarInitial = (firstName.charAt(0) || "M").toUpperCase();
@@ -6447,18 +6454,38 @@ function renderButtons(buttons = [], links = {}, profile = null) {
         </div>
       </div>
 
-      <article class="heroShiftCard heroPetite">
+
+    </section>
+
+    <section class="classWorkflow" data-tab-scope="inicio" aria-label="Tu clase paso a paso">
+      <header class="workflowIntro"><h2>Tu clase, paso a paso</h2><p>Empieza por tu agenda y termina registrando lo que trabajaste.</p></header>
+      <article class="workflowStep">
+        <div class="workflowHeading"><span aria-hidden="true">1</span><h2>Antes de clase</h2></div>
+        <p>Revisa tus clases agendadas y prepara tu próxima sesión.</p>
+        <button class="workflowAction" type="button" data-wix-bookings>🗓️ Clases agendadas <span aria-hidden="true">→</span></button>
+        <div id="slot-nextclass" class="slotWrap">${renderNextClassCardHTML()}</div>
+      </article>
+      <article class="workflowStep">
+        <div class="workflowHeading"><span aria-hidden="true">2</span><h2>Durante clase</h2></div>
+        <p>Encuentra materiales y actividades para acompañar tu clase.</p>
+        <button class="workflowAction" type="button" data-id="bibliotecaRecursos">📚 Biblioteca de recursos <span aria-hidden="true">→</span></button>
+      </article>
+      <article class="workflowStep">
+        <div class="workflowHeading"><span aria-hidden="true">3</span><h2>Después de clase</h2></div>
+        <p>Registra lo trabajado y el seguimiento de cada estudiante.</p>
+        <a class="workflowAction" href="${escapeHtml(OFFICIAL_CLASS_LOG_URL)}" target="_blank" rel="noopener">📝 Bitácoras de clase <span aria-hidden="true">↗</span></a>
+        <div id="slot-pending" class="slotWrap">${renderPendingBannerHTML()}</div>
+      </article>
+    </section>
+      <article class="heroShiftCard heroPetite" data-tab-scope="inicio" style="grid-column: 1 / -1;">
         <p>☀️ Jornada de hoy</p>
         <h2>Registro de jornada</h2>
         ${scheduleNudge}
         ${heroActions ? `<div class="heroShiftActions">${heroActions}</div>` : ""}
       </article>
-    </section>
-
-    <div id="slot-contract-access" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderTeacherContractAccessHome()}</div>
-    <div id="slot-nextclass" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderNextClassCardHTML()}</div>
-    <div id="slot-pending" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderPendingBannerHTML()}</div>
-    <div id="slot-kpis" class="slotWrap" data-tab-scope="inicio" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
+    <div id="slot-contract-access" class="slotWrap" data-tab-scope="apps" style="grid-column: 1 / -1;">${renderTeacherContractAccessHome()}</div>
+    <div id="slot-kpis" class="slotWrap" data-tab-scope="apps" style="grid-column: 1 / -1;">${renderKpiRowHTML()}</div>
+    <header class="workflowIntro" data-tab-scope="mensajes" style="grid-column: 1 / -1;"><h1>Mensajes</h1><p>Elige el canal para leer y responder tus conversaciones.</p></header>
     <div id="slot-soporte" class="slotWrap" data-tab-scope="soporte" style="grid-column: 1 / -1;">${renderSoportePanelHTML()}</div>
     <div id="slot-perfil" class="slotWrap" data-tab-scope="perfil" style="grid-column: 1 / -1;">${renderPerfilPanelHTML()}</div>
 
@@ -6514,7 +6541,9 @@ function renderButtons(buttons = [], links = {}, profile = null) {
   }
 
   grid.innerHTML = html;
+  wireCalendarChooser(grid);
   updateStudentMessagesBadge(APP_STATE.unreadStudentMessages);
+  updateCoordinationMessagesBadge(APP_STATE.unreadCoordinationMessages);
   ensureMusiProfeBot();
   setupHubSearch(grid);
   ensureBottomNav();
@@ -6643,7 +6672,7 @@ function renderNextClassCardHTML() {
   const notifications = (agenda?.items || []).slice(0, 3)
     .map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   return `
-    <button type="button" class="nextClassCard" data-slot="calendarUpdates" data-wix-bookings aria-label="Abrir Wix Bookings">
+    <button type="button" class="nextClassCard" data-slot="calendarUpdates" data-wix-bookings aria-label="Ver clases y salones o Calendario Musicala">
       <div class="nextClassIco" aria-hidden="true">📅</div>
       <div class="nextClassTxt">
         <p>Mi agenda</p>
@@ -6666,8 +6695,8 @@ function renderCalendarUpdatesHTML() {
   const detail = updates?.error
     ? "Actualiza la página en unos minutos."
     : count
-      ? "Toca para revisar los cambios en Wix Bookings."
-      : "Abrir Wix Bookings";
+      ? "Toca para elegir clases y salones o Calendario Musicala."
+      : "Ver clases y salones o Calendario Musicala";
   const latest = (updates?.items || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   return `
     <button type="button" class="calendarUpdatesBanner" data-slot="calendarUpdates" data-wix-bookings>
@@ -6684,34 +6713,34 @@ function renderPendingBannerHTML() {
   const d = APP_STATE.hubData.pendingBitacoras;
   if (!d) {
     return `
-      <div class="pendingBanner pendingBannerLoading" data-slot="pendingBitacoras" aria-live="polite">
+      <button type="button" class="pendingBanner pendingBannerLoading" data-open-pending-bitacoras data-slot="pendingBitacoras" aria-live="polite">
         <span class="pendingDot">…</span>
         <span class="pendingTxt">
-          <strong>Consultando tus bitácoras…</strong>
+          <strong>Consultando tus bitácoras pendientes…</strong>
           <em>Estamos conectando tus indicadores.</em>
         </span>
-      </div>`;
+      </button>`;
   }
   if (d.authRequired) {
     return `
-      <button type="button" class="pendingBanner pendingBannerConnect" data-slot="pendingBitacoras" data-connect-pending>
+      <button type="button" class="pendingBanner pendingBannerConnect" data-slot="pendingBitacoras" data-open-pending-bitacoras>
         <span class="pendingDot" aria-hidden="true">↗</span>
         <span class="pendingTxt">
-          <strong>Conecta tus indicadores de bitácoras</strong>
-          <em>Usa la misma cuenta de Google del HUB. Solo tendrás que hacerlo una vez.</em>
+          <strong>Tus bitácoras pendientes: por consultar</strong>
+          <em>Usa la misma cuenta de Google del HUB. Conéctala desde las opciones de bitácoras.</em>
         </span>
-        <span class="pendingBannerAction">Conectar</span>
+        <span class="pendingBannerAction">Ver opciones ›</span>
       </button>`;
   }
   if (d.error) {
     return `
-      <button type="button" class="pendingBanner pendingBannerError" data-slot="pendingBitacoras" data-retry-pending>
+      <button type="button" class="pendingBanner pendingBannerError" data-slot="pendingBitacoras" data-open-pending-bitacoras>
         <span class="pendingDot" aria-hidden="true">!</span>
         <span class="pendingTxt">
-          <strong>No pudimos consultar tus bitácoras</strong>
-          <em>Toca para intentar de nuevo.</em>
+          <strong>Tus bitácoras pendientes: por consultar</strong>
+          <em>Puedes abrir tus bitácoras o reintentar desde las opciones.</em>
         </span>
-        <span class="pendingBannerAction">Reintentar</span>
+        <span class="pendingBannerAction">Ver opciones ›</span>
       </button>`;
   }
   if (!d.expected) {
@@ -6719,7 +6748,7 @@ function renderPendingBannerHTML() {
       <button type="button" class="pendingBanner" data-slot="pendingBitacoras" data-open-pending-bitacoras>
         <span class="pendingDot" aria-hidden="true">—</span>
         <span class="pendingTxt">
-          <strong>Aún no hay indicadores disponibles para tu cuenta</strong>
+          <strong>Tus bitácoras pendientes: por verificar</strong>
           <em>Abre Bitácoras pendientes para revisar tus clases. Cumplimiento por verificar.</em>
         </span>
         <span class="pendingBannerAction">Revisar ›</span>
@@ -6730,15 +6759,14 @@ function renderPendingBannerHTML() {
   const rank = Number(d?.rank) > 0
     ? `#${Number(d.rank)}${Number(d?.totalTeachers) > 0 ? ` de ${Number(d.totalTeachers)}` : ""}`
     : "—";
-  const title = Number(count) === 0
-    ? "¡Tus bitácoras están al día!"
-    : `Tienes ${escapeHtml(slotValue(count))} bitácora${Number(count) === 1 ? "" : "s"} pendiente${Number(count) === 1 ? "" : "s"}`;
+  const title = `Tienes ${escapeHtml(slotValue(count))} bitácora${Number(count) === 1 ? "" : "s"} pendiente${Number(count) === 1 ? "" : "s"}`;
   return `
     <button type="button" class="pendingBanner ${Number(count) === 0 ? "is-complete" : ""}" data-slot="pendingBitacoras" data-open-pending-bitacoras
       aria-label="${escapeHtml(title)}. Puesto ${rank}. Cumplimiento ${compliance}.">
       <span class="pendingDot">${escapeHtml(slotValue(count))}</span>
       <span class="pendingTxt">
         <strong>${title}</strong>
+        ${Number(count) === 0 ? "<em>¡Tus bitácoras están al día!</em>" : ""}
         <em class="pendingBannerStats">
           <span>Puesto <b>${escapeHtml(rank)}</b></span>
           <span>Cumplimiento <b>${escapeHtml(compliance)}</b></span>
@@ -6983,9 +7011,7 @@ function refreshHubDataUI() {
     const el = document.getElementById(id);
     if (el) el.innerHTML = fn();
   }
-  document.querySelectorAll("[data-wix-bookings]").forEach((button) => {
-    button.addEventListener("click", () => { window.location.href = WIX_BOOKINGS_URL; });
-  });
+  wireCalendarChooser();
   document.querySelectorAll("[data-connect-pending]").forEach((button) => {
     button.addEventListener("click", connectPendingBitacorasData);
   });
@@ -6993,8 +7019,34 @@ function refreshHubDataUI() {
     button.addEventListener("click", loadPendingBitacorasForActiveUser);
   });
   document.querySelectorAll("[data-open-pending-bitacoras]").forEach((button) => {
-    button.addEventListener("click", () => openExternal(PENDING_CLASS_LOGS_URL));
+    if (button.dataset.pendingBound) return;
+    button.dataset.pendingBound = "true";
+    button.addEventListener("click", openClassLogsChooser);
   });
+}
+
+function wireCalendarChooser(root = document) {
+  root.querySelectorAll("[data-wix-bookings]").forEach((button) => {
+    if (button.dataset.calendarBound) return;
+    button.dataset.calendarBound = "true";
+    button.addEventListener("click", openCalendarChooser);
+  });
+}
+
+function openCalendarChooser() {
+  const calendarUrl = String(APP_STATE.activeLinks?.calendario || HUB.GENERAL_LINKS.calendario);
+  const modal = openDrawerActionModal("Clases del día", `
+    <p class="classLogsHint">¿Qué quieres consultar?</p>
+    <div class="classLogsChoices">
+      <a class="classLogsChoice" href="${escapeHtml(WIX_BOOKINGS_URL)}" target="_blank" rel="noopener">
+        <span class="classLogsIcon" aria-hidden="true">🏫</span><strong>Clases y salones</strong><span>Consulta tus clases agendadas y los salones asignados.</span>
+      </a>
+      <a class="classLogsChoice" href="${escapeHtml(calendarUrl)}" target="_blank" rel="noopener">
+        <span class="classLogsIcon" aria-hidden="true">🗓️</span><strong>Calendario Musicala</strong><span>Consulta las fechas y actividades de Musicala.</span>
+      </a>
+    </div>
+  `);
+  modal.querySelector(".classLogsChoice")?.focus();
 }
 
 function pendingLogStatus(row = {}) {
@@ -7062,41 +7114,91 @@ function rankPendingTeachers(rows = [], activeEmail = "") {
   return { rank, totalTeachers: ranked.length };
 }
 
+let pendingBitacorasRequest = 0;
+
+function pendingDataWithTimeout(promise, milliseconds = 12000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error("La consulta de bitácoras tardó demasiado.");
+        error.code = "pending/timeout";
+        reject(error);
+      }, milliseconds);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
+function openClassLogsChooser() {
+  const state = APP_STATE.hubData.pendingBitacoras;
+  const modal = openDrawerActionModal("Bitácoras", `
+    <p class="classLogsHint">¿Qué quieres consultar?</p>
+    <div class="classLogsChoices">
+      <a class="classLogsChoice" href="${escapeHtml(PENDING_CLASS_LOGS_URL)}" target="_blank" rel="noopener">
+        <span class="classLogsIcon" aria-hidden="true">📋</span><strong>Bitácoras pendientes</strong><span>Revisa las clases que te faltan por registrar.</span>
+      </a>
+      <a class="classLogsChoice" href="${escapeHtml(OFFICIAL_CLASS_LOG_URL)}" target="_blank" rel="noopener">
+        <span class="classLogsIcon" aria-hidden="true">📝</span><strong>Bitácoras de clase</strong><span>Consulta y registra el proceso de tus estudiantes.</span>
+      </a>
+    </div>
+    <p class="classLogsHint" role="status" data-indicator-status>${state?.authRequired ? "Conecta tu cuenta académica para ver tus indicadores aquí." : state?.error ? "No se pudieron cargar los indicadores. Puedes reintentar o abrir los aplicativos." : !state ? "Los indicadores se están consultando. Puedes abrir cualquiera de las dos opciones." : !state.expected ? "No hay registros sincronizados para tu correo. Coordinación debe verificar la sincronización de pendientes." : "Los indicadores corresponden a los registros sincronizados de tu cuenta."}</p>
+    <button class="btnGhost" type="button" data-refresh-indicators>${state?.authRequired ? "Conectar indicadores" : "Actualizar indicadores"}</button>
+  `);
+  const refresh = modal.querySelector("[data-refresh-indicators]");
+  refresh.addEventListener("click", async () => {
+    refresh.disabled = true;
+    try {
+      await connectStudentsMessages();
+      await loadPendingBitacorasForActiveUser();
+      const updated = APP_STATE.hubData.pendingBitacoras;
+      modal.querySelector("[data-indicator-status]").textContent = updated?.authRequired ? "Conecta la misma cuenta que usas en el HUB." : updated?.error ? "No se pudieron actualizar los indicadores. Revisa tu conexión y los permisos de tu cuenta." : updated?.expected ? "Indicadores actualizados." : "No hay registros sincronizados para tu correo. Coordinación debe verificar la sincronización de pendientes.";
+    } catch (error) {
+      modal.querySelector("[data-indicator-status]").textContent = error?.code === "auth/popup-closed-by-user" ? "Conexión cancelada. Puedes seguir usando las dos opciones." : "No se pudo conectar la cuenta. Intenta nuevamente.";
+    } finally {
+      refresh.disabled = false;
+    }
+  });
+  modal.querySelector(".classLogsChoice")?.focus();
+}
+
 async function loadPendingBitacorasForActiveUser() {
+  const request = ++pendingBitacorasRequest;
   const email = emailKey(APP_STATE.activeUser);
   if (!email) return;
-  const isCurrentUser = () => emailKey(APP_STATE.activeUser) === email
+  const isCurrentUser = () => request === pendingBitacorasRequest
+    && emailKey(APP_STATE.activeUser) === email
     && emailKey(APP_STATE.studentsAuth?.currentUser) === email;
   ensureStudentsServices();
-  if (emailKey(APP_STATE.studentsAuth?.currentUser) !== email) {
-    setHubData("pendingBitacoras", { authRequired: true, email });
-    return;
-  }
-  setHubData("pendingBitacoras", null);
   try {
-    const ownSnapshot = await getDocs(query(
+    // Esperar la restauración de Firebase evita pedir otra conexión antes de tiempo.
+    await pendingDataWithTimeout(APP_STATE.studentsAuth.authStateReady());
+    if (request !== pendingBitacorasRequest || emailKey(APP_STATE.activeUser) !== email) return;
+    if (emailKey(APP_STATE.studentsAuth.currentUser) !== email) {
+      setHubData("pendingBitacoras", { authRequired: true, email });
+      return;
+    }
+    setHubData("pendingBitacoras", null);
+    const ownSnapshot = await pendingDataWithTimeout(getDocsFromServer(query(
       collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION),
       where("profesorEmail", "==", email)
-    ));
+    )));
     const ownRows = ownSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-    const summary = summarizePendingLogRows(ownRows);
-    let ranking = { rank: null, totalTeachers: 0 };
+    if (!isCurrentUser()) return;
+    const summary = { ...summarizePendingLogRows(ownRows), rank: null, totalTeachers: 0, email, sourceUrl: PENDING_CLASS_LOGS_URL };
+    // Mostrar primero lo propio. El ranking nunca bloquea el indicador.
+    setHubData("pendingBitacoras", summary);
+    if (!isAdminUser()) return;
     try {
-      const allSnapshot = await getDocs(collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION));
-      ranking = rankPendingTeachers(allSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })), email);
+      const allSnapshot = await pendingDataWithTimeout(getDocsFromServer(collection(APP_STATE.studentsDb, PENDING_CLASS_LOGS_COLLECTION)));
+      if (!isCurrentUser()) return;
+      setHubData("pendingBitacoras", { ...summary, ...rankPendingTeachers(allSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })), email) });
     } catch (rankingError) {
       console.info("El ranking general no está disponible para este perfil.", rankingError?.code || rankingError);
     }
-    if (!isCurrentUser()) return;
-    setHubData("pendingBitacoras", {
-      ...summary,
-      ...ranking,
-      email,
-      sourceUrl: PENDING_CLASS_LOGS_URL
-    });
   } catch (error) {
     console.warn("No se pudieron cargar los indicadores de bitácoras", error);
-    if (!isCurrentUser()) return;
+    if (request !== pendingBitacorasRequest || emailKey(APP_STATE.activeUser) !== email) return;
     setHubData("pendingBitacoras", { error: true, email });
   }
 }
@@ -7175,7 +7277,8 @@ async function loadCalendarUpdatesForActiveUser() {
 // Navegación inferior estilo app (Inicio / Académico / Apps).
 // Cada pestaña muestra un subconjunto de secciones del grid; "apps" muestra todo.
 const HUB_TAB_SECTIONS = {
-  inicio: ["Mi trabajo hoy"],
+  inicio: [],
+  mensajes: ["Mensajes"],
   apps: null,
   soporte: [],
   perfil: []
@@ -7193,6 +7296,9 @@ function ensureBottomNav() {
   nav.innerHTML = `
     <button class="hubNavBtn" type="button" data-tab="inicio" aria-label="Inicio">
       <span class="hubNavIco" aria-hidden="true">🏠</span><span class="hubNavTxt">Inicio</span>
+    </button>
+    <button class="hubNavBtn" type="button" data-tab="mensajes" aria-label="Mensajes">
+      <span class="hubNavIco" aria-hidden="true">💬</span><span class="hubNavTxt">Mensajes</span>
     </button>
     <button class="hubNavBtn" type="button" data-tab="apps" aria-label="Apps">
       <span class="hubNavIco" aria-hidden="true">🔲</span><span class="hubNavTxt">Apps</span>

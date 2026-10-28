@@ -5092,3 +5092,28 @@ body{
   .dossierPolicyRow{ flex-direction:column; align-items:stretch; }
   .dossierPolicyRow select{ width:100%; }
 }
+/* Inicio: una acción clara en cada momento de la clase. */
+.classWorkflow{grid-column:1 / -1;display:grid;gap:16px;min-width:0;}
+.workflowIntro h1,.workflowIntro h2{margin:0 0 6px;font-size:22px;}
+.workflowIntro p{margin:0;color:var(--muted);line-height:1.5;}
+.workflowStep{padding:22px;border:1px solid var(--line);border-radius:var(--r2);background:var(--card2);box-shadow:var(--shadow2);min-width:0;}
+.workflowHeading{display:flex;align-items:center;gap:12px;}
+.workflowHeading>span{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:50%;background:var(--okBg);color:var(--a1);font-weight:800;}
+.workflowHeading h2{margin:0;font-size:19px;}
+.workflowStep>p{color:var(--muted);line-height:1.5;margin:12px 0 18px;}
+.workflowAction{display:flex;align-items:center;gap:10px;width:100%;padding:16px;text-align:left;text-decoration:none;font-weight:700;color:var(--a1);background:var(--okBg);border:1px solid var(--okLine);border-radius:14px;cursor:pointer;min-height:54px;}
+.workflowAction>span{margin-left:auto;}
+.workflowAction:hover{background:rgba(12,65,196,.13);}
+.workflowAction:focus-visible{outline:3px solid var(--a1);outline-offset:3px;}
+.workflowStep .slotWrap{margin-top:14px;}
+.workflowStep .nextClassCard{width:100%;}
+.hubNavBtn{padding:8px 10px;min-width:0;flex:1;}
+@media(max-width:380px){.workflowStep{padding:16px;}.hubNav{gap:2px;}.hubNavBtn{padding:8px 5px;}}
+.classLogsHint{margin:0;color:var(--muted);line-height:1.5;}
+.classLogsChoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.classLogsChoice{display:flex;flex-direction:column;align-items:center;gap:12px;padding:22px 14px;text-align:center;text-decoration:none;color:var(--text);border:1px solid var(--okLine);border-radius:18px;background:var(--okBg);}
+.classLogsIcon{font-size:38px;}
+.classLogsChoice>span:last-child{font-size:13px;color:var(--muted);line-height:1.5;}
+.classLogsChoice:hover{background:rgba(12,65,196,.13);}
+.classLogsChoice:focus-visible{outline:3px solid var(--a1);outline-offset:2px;}
+@media(max-width:360px){.classLogsChoices{grid-template-columns:1fr;}}
