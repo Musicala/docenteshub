@@ -2,7 +2,7 @@ function biblioCatalogLabel(value) {
   const labels = { "por-evaluar": "Por evaluar", todos: "Sin nivel específico", inicial: "Inicial", basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado", tecnica: "Técnica", metodo: "Método", "material-apoyo": "Material de apoyo", planificacion: "Planificación", "lectura-musical": "Lectura musical", "armonia-y-acordes": "Armonía y acordes", "coordinacion-e-independencia": "Coordinación e independencia", "afinacion-y-oido": "Afinación y oído", "interpretacion-y-ensamble": "Interpretación y ensamble", "cuidado-corporal": "Cuidado corporal", "planeacion-docente": "Planeación docente", "expresion-visual": "Expresión visual", "expresion-corporal": "Expresión corporal", "hoja-de-calculo": "Hoja de cálculo", numeros: "Números", presentacion: "Presentación", pdf: "PDF" };
   return labels[value] || String(value || "").replaceAll("-", " ").replace(/^./, c => c.toUpperCase());
 }
-import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.1";
+import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.2";
 import {
   DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
   mergeRequirements, effectiveStatus, dossierSummary,
@@ -22,7 +22,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-11-10.1";
+const BUILD = "2026-11-10.2";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -8259,6 +8259,11 @@ function mergeContractDefaults(saved) {
       if (!clean || clean === "{{PENDIENTE_DEFINIR}}") return;
       merged[key] = clean;
     });
+  }
+  // Las versiones nuevas pueden referirse al manual sin tener todavía sus
+  // valores guardados. Mantener las claves permite editarlas y detectar el pendiente.
+  for (const key of ["MANUAL_VERSION", "MANUAL_FECHA", "MANUAL_CAMBIOS"]) {
+    if (!(key in merged)) merged[key] = "{{PENDIENTE_DEFINIR}}";
   }
   return merged;
 }
