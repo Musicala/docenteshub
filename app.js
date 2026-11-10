@@ -2,7 +2,7 @@ function biblioCatalogLabel(value) {
   const labels = { "por-evaluar": "Por evaluar", todos: "Sin nivel específico", inicial: "Inicial", basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado", tecnica: "Técnica", metodo: "Método", "material-apoyo": "Material de apoyo", planificacion: "Planificación", "lectura-musical": "Lectura musical", "armonia-y-acordes": "Armonía y acordes", "coordinacion-e-independencia": "Coordinación e independencia", "afinacion-y-oido": "Afinación y oído", "interpretacion-y-ensamble": "Interpretación y ensamble", "cuidado-corporal": "Cuidado corporal", "planeacion-docente": "Planeación docente", "expresion-visual": "Expresión visual", "expresion-corporal": "Expresión corporal", "hoja-de-calculo": "Hoja de cálculo", numeros: "Números", presentacion: "Presentación", pdf: "PDF" };
   return labels[value] || String(value || "").replaceAll("-", " ").replace(/^./, c => c.toUpperCase());
 }
-import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.2";
+import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.3";
 import {
   DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
   mergeRequirements, effectiveStatus, dossierSummary,
@@ -22,7 +22,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-11-10.2";
+const BUILD = "2026-11-10.3";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -9113,6 +9113,51 @@ function startAdminContractLiveSync() {
   ADMIN_STATE.contract.liveSyncUnsubscribe = () => { stopProfiles(); stopSubmissions(); };
 }
 
+async function openAdminTeacherContractPreview(email) {
+  const key = String(email || "").trim().toLowerCase();
+  if (!key || !isAdminUser() || !APP_STATE.db) return;
+  const overlay = openContractOverlay("Contrato de la docente", '<p class="adminNote" role="status">Consultando el contrato guardado…</p>', "adminContractPreview");
+  const panel = $(".contractCardBody", overlay);
+  try {
+    const [contractSnap, termsSnap] = await Promise.all([
+      getDocFromServer(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID)),
+      getDocFromServer(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, key))
+    ]);
+    if (!contractSnap.exists() || !termsSnap.exists()) throw new Error("No se encontraron el contrato o las condiciones guardadas.");
+    const contract = normalizeTeacherContract(contractSnap.data());
+    const terms = termsSnap.data();
+    const signatureSnap = await getDocFromServer(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(key, contract.version)));
+    const signature = signatureSnap.exists() ? signatureSnap.data() : null;
+    let documentToShow;
+    if (signature) {
+      if (!signature.snapshot?.sections?.length) throw new Error("La firma existe, pero no contiene una copia completa del documento.");
+      documentToShow = { version: signature.version, title: signature.snapshot.title, intro: signature.snapshot.intro, sections: signature.snapshot.sections };
+      if (signature.contentHash && await computeTeacherContractHash(teacherContractSnapshotText(documentToShow)) !== signature.contentHash) {
+        throw new Error("La huella de la copia firmada no coincide.");
+      }
+    } else {
+      documentToShow = buildTeacherContractDocument(contract, terms);
+    }
+    if (!document.body.contains(overlay)) return;
+    const approved = terms.approvedForSignature && String(terms.approvedVersion || "") === String(contract.version);
+    const state = signature ? "Copia firmada" : approved ? "Aprobado para firma · pendiente de firmar" : "Vista previa · aún no aprobado para firma";
+    panel.innerHTML = `
+      <section class="contractPanel">
+        <p class="adminMeta">${escapeHtml(key)} · ${escapeHtml(state)} · versión ${escapeHtml(documentToShow.version)}</p>
+        <h3>${escapeHtml(documentToShow.title)}</h3>
+        <p class="supportIntro">${escapeHtml(documentToShow.intro)}</p>
+        ${documentToShow.pendingCount ? `<p class="adminNote">Este documento contiene ${documentToShow.pendingCount} dato(s) pendientes.</p>` : ""}
+        <p class="adminNote">${signature ? "Esta es la copia conservada con la firma." : "Vista previa con las condiciones y la plantilla consultadas en este momento."}</p>
+        <div class="contractDoc">${renderTeacherContractSections(documentToShow)}</div>
+        <div class="contractActions"><button class="btnGhost" type="button" id="adminContractPreviewPrint">Descargar o imprimir</button></div>
+      </section>`;
+    $("#adminContractPreviewPrint", panel)?.addEventListener("click", () => printTeacherContract(documentToShow, signature));
+  } catch (error) {
+    console.error("No se pudo consultar el contrato de la docente", error);
+    if (document.body.contains(overlay)) panel.innerHTML = `<p class="adminNote" role="alert">No se pudo consultar el contrato. ${escapeHtml(error?.message || "Revisa la conexión e inténtalo de nuevo.")}</p>`;
+  }
+}
+
 function renderAdminContrato(body) {
   if (!ADMIN_STATE.contract.ready) {
     body.innerHTML = `<section class="contractPanel" role="status"><h3>Configuración del contrato</h3><p>${escapeHtml(ADMIN_STATE.contract.loadError || "Estamos verificando tus accesos y requisitos guardados antes de mostrar las opciones.")}</p><button class="btnGhost" id="contractLoadRetry" type="button">Volver a verificar</button></section>`;
@@ -9201,6 +9246,7 @@ function renderAdminContrato(body) {
             </div>
             <div class="customBtnActions">
               ${!firmo && (source || isSupportTeacher) ? `<button class="btnGhost" type="button" data-contract-use="${escapeHtml(item.email)}">${source ? (term ? "Actualizar desde vinculación" : "Cargar datos de vinculación") : "Consultar y usar datos"}</button>` : ""}
+              ${term ? `<button class="btnGhost" type="button" data-contract-preview="${escapeHtml(item.email)}">Ver contrato</button>` : ""}
               <button class="btnGhost" type="button" data-contract-terms="${escapeHtml(item.email)}">${term ? "Editar" : "Diligenciar"}</button>
             </div>
           </div>`;
@@ -9289,6 +9335,9 @@ function renderAdminContrato(body) {
       setButtonBusy(button, false);
     }
   });
+  body.querySelectorAll("[data-contract-preview]").forEach((button) => button.addEventListener("click", () => {
+    openAdminTeacherContractPreview(button.dataset.contractPreview);
+  }));
   body.querySelectorAll("[data-contract-terms]").forEach((button) => button.addEventListener("click", () => {
     ADMIN_STATE.contract.termsEmail = button.dataset.contractTerms;
     renderAdminBody();
