@@ -2,7 +2,7 @@ function biblioCatalogLabel(value) {
   const labels = { "por-evaluar": "Por evaluar", todos: "Sin nivel específico", inicial: "Inicial", basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado", tecnica: "Técnica", metodo: "Método", "material-apoyo": "Material de apoyo", planificacion: "Planificación", "lectura-musical": "Lectura musical", "armonia-y-acordes": "Armonía y acordes", "coordinacion-e-independencia": "Coordinación e independencia", "afinacion-y-oido": "Afinación y oído", "interpretacion-y-ensamble": "Interpretación y ensamble", "cuidado-corporal": "Cuidado corporal", "planeacion-docente": "Planeación docente", "expresion-visual": "Expresión visual", "expresion-corporal": "Expresión corporal", "hoja-de-calculo": "Hoja de cálculo", numeros: "Números", presentacion: "Presentación", pdf: "PDF" };
   return labels[value] || String(value || "").replaceAll("-", " ").replace(/^./, c => c.toUpperCase());
 }
-import { prepareTeacherContract2026_2, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js";
+import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.1";
 import {
   DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
   mergeRequirements, effectiveStatus, dossierSummary,
@@ -22,7 +22,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-11-01.catalogo2";
+const BUILD = "2026-11-10.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -110,7 +110,7 @@ const TEACHER_CONTRACT_2026_2_TERM_FIELDS = [
   { name: "accountHolderDocument", label: "Documento del titular de la cuenta", group: "Economía" }
 ];
 function teacherContractFieldsFor(contract) {
-  return String(contract?.version || "") === "2026.2"
+  return ["2026.2", "2026.3"].includes(String(contract?.version || ""))
     ? [...TEACHER_CONTRACT_TERM_FIELDS.filter((field) => field.name !== "franjas").map((field) => field.name === "cuenta" ? { ...field, label: "Número de cuenta de EL CONTRATISTA" } : field), ...TEACHER_CONTRACT_2026_2_TERM_FIELDS]
     : TEACHER_CONTRACT_TERM_FIELDS;
 }
@@ -3342,7 +3342,7 @@ async function loadAdminData() {
   const requestedTab = ADMIN_STATE.tab;
 
   try {
-    if (!Object.keys(ADMIN_STATE.hubUsers || {}).length) {
+    if (requestedTab !== "docentes" && requestedTab !== "contrato" && !Object.keys(ADMIN_STATE.hubUsers || {}).length) {
       ADMIN_STATE.hubUsers = await fetchHubUsers();
       refreshAdminTeacherFilterOptions();
     }
@@ -3484,8 +3484,10 @@ function overrideId(email, date) {
 
 /* ---- Estadísticas del módulo Bitácora Académica ---- */
 async function fetchAdminAcademic() {
+  const email = ADMIN_STATE.filters.email;
   const read = async (name) => {
-    const snap = await getDocs(collection(APP_STATE.db, name));
+    const base = collection(APP_STATE.db, name);
+    const snap = await getDocs(email ? query(base, where("teacherEmail", "==", email)) : base);
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
   };
   const [objectives, budgets, hourLogs] = await Promise.all([
@@ -5144,21 +5146,28 @@ async function fetchHubUsers() {
   return map;
 }
 
+let teacherDirectorySyncFingerprint = "";
 async function syncTeacherDirectory(managed = {}) {
   if (!isAdminUser(APP_STATE.activeUser)) return;
   const emails = new Set([...Object.keys(HUB.USERS || {}), ...Object.keys(managed || {})]);
-  await Promise.all(Array.from(emails).map(async (email) => {
+  const entries = Array.from(emails).sort().map((email) => {
     const base = HUB.USERS?.[email] || {};
     const data = managed?.[email] || {};
     const enabled = ADMIN_EMAILS.includes(email)
       || (data.enabled !== false && !isAccessExpired(data.accessExpiresAt));
+    return { email, name: data.label || data.name || base.label || email, enabled };
+  });
+  const fingerprint = JSON.stringify(entries);
+  if (fingerprint === teacherDirectorySyncFingerprint) return;
+  await Promise.all(entries.map(async ({ email, name, enabled }) => {
     await setDoc(doc(APP_STATE.db, "teacherDirectory", email), {
       email,
-      name: data.label || data.name || base.label || email,
+      name,
       enabled,
       updatedAt: serverTimestamp()
     }, { merge: true });
   }));
+  teacherDirectorySyncFingerprint = fingerprint;
 }
 
 // Acceso temporal: convierte una opción de duración en una fecha de corte (epoch ms).
@@ -8327,7 +8336,7 @@ function buildTeacherContractVariables(contract, terms) {
   teacherContractFieldsFor(contract).forEach((field) => {
     const raw = String(terms?.[field.name] ?? "").trim();
     let value = raw;
-    if (!value) value = OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
+    if (!value) value = String(contract?.version) === "2026.3" && field.name.startsWith("arl") ? "Pendiente de confirmación" : OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
     else if (field.type === "date") value = longDateLabel(value);
     values[teacherContractVariableName(field.name)] = value;
   });
@@ -8446,7 +8455,7 @@ async function loadMyTeacherContractSignature(force = false) {
 
 async function loadMyTeacherContractHistory() {
   const email = emailKey(APP_STATE.activeUser);
-  const versions = ["2026.1"];
+  const versions = ["2026.1", "2026.2"].filter((version) => version !== String(getTeacherContract().version));
   const snapshots = await Promise.all(versions.map((version) =>
     getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, version)))
       .then((snap) => snap.exists() ? { id: snap.id, ...snap.data() } : null)
@@ -8593,7 +8602,7 @@ async function openTeacherContract() {
     await loadMyTeacherContractSignature(true);
     await loadDossierRequirements();
     await loadDossierFor(emailKey(APP_STATE.activeUser), { force: true });
-    if (String(getTeacherContract().version) === "2026.2") await loadMyTeacherContractHistory();
+    if (["2026.2", "2026.3"].includes(String(getTeacherContract().version))) await loadMyTeacherContractHistory();
   } catch (error) {
     console.error("No se pudo abrir el contrato", error);
   }
@@ -8845,6 +8854,7 @@ function teacherContractStatements(documento) {
     { id: "TRUTHFUL_INFO", field: "ackTruth", text: "Declaro que la información suministrada es veraz y se encuentra actualizada." },
     { id: "E_SIGNATURE_AGREEMENT_ACCEPTED", field: "ackSignature", text: "Acepto utilizar el mecanismo de firma electrónica definido por Musicala y mantener bajo mi control sus credenciales." },
     { id: "FULL_CONTRACT_ACCEPTED", field: "ackContract", text: "He tenido acceso al contrato completo, sus condiciones particulares y anexos, y acepto obligarme conforme a su contenido." },
+    ...(documento.version === "2026.3" ? [{ id: "PRIOR_START_AND_ARL", field: "ackPriorStartArl", text: "Revisé la fecha de inicio y las condiciones documentadas. Entiendo que la firma se registra hoy y que los datos de ARL pendientes no acreditan afiliación ni cobertura." }] : []),
     ...documento.sections
       .filter((section) => section.declaration)
       .map((section) => ({ id: `ANNEX_${section.id}_ACKNOWLEDGED`, field: `ackAnnex${section.id}`, text: section.declaration }))
@@ -8893,12 +8903,13 @@ function wireTeacherContractSignForm(overlay, documento) {
       toast("Escribe tu nombre completo y tu número de documento.");
       return;
     }
-    if (contract.version === "2026.2") {
+    if (["2026.2", "2026.3"].includes(contract.version)) {
       const formalization = validateTeacherContractFormalization({
         terms,
         representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO,
         today: bogotaParts().date,
-        signatureDate: bogotaParts().date
+        signatureDate: bogotaParts().date,
+        allowPriorStartAndPendingArl: contract.version === "2026.3"
       });
       if (!formalization.valid) {
         toast(formalization.errors[0]);
@@ -8923,8 +8934,10 @@ function wireTeacherContractSignForm(overlay, documento) {
       if (!contentHash) throw new Error("No se pudo calcular la huella SHA-256 del documento.");
       const contractId = crypto.randomUUID();
       let parentContractId = null;
-      if (contract.version === "2026.2") {
-        const parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, "2026.1")));
+      if (["2026.2", "2026.3"].includes(contract.version)) {
+        const previousVersion = contract.version === "2026.3" ? "2026.2" : "2026.1";
+        let parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, previousVersion)));
+        if (!parentSnap.exists() && previousVersion === "2026.2") parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, "2026.1")));
         if (parentSnap.exists()) parentContractId = parentSnap.data()?.contractId || parentSnap.id;
       }
       await setDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, contract.version)), {
@@ -8940,8 +8953,8 @@ function wireTeacherContractSignForm(overlay, documento) {
         documentReadConfirmed: true,
         readConfirmedAt: serverTimestamp(),
         readConfirmedAtClient: Date.now(),
-        manualVersion: contract.version === "2026.2" ? contract.defaults?.MANUAL_VERSION || null : null,
-        manualReadConfirmed: contract.version === "2026.2" ? true : null,
+        manualVersion: ["2026.2", "2026.3"].includes(contract.version) ? contract.defaults?.MANUAL_VERSION || null : null,
+        manualReadConfirmed: ["2026.2", "2026.3"].includes(contract.version) ? true : null,
         acceptedStatements: accepted,
         // Snapshot íntegro de lo que la persona vio y aceptó.
         snapshot: {
@@ -9350,6 +9363,7 @@ function renderAdminContratoTerms(body, email) {
 
   body.innerHTML = `
     <p class="adminMeta">Condiciones particulares (Anexo A) de <strong>${escapeHtml(label)}</strong> · ${escapeHtml(email)}. El valor por sesión vive aquí, no en el texto del contrato: cambiarlo después de firmado exige un otrosí.</p>
+    ${contract.version === "2026.3" ? '<p class="adminNote">La fecha de inicio debe reflejar la prestación real; la firma quedará registrada el día en que se realice. La ARL puede quedar pendiente para firmar, pero eso no acredita cobertura. Musicala y la contratista deben verificar las obligaciones aplicables antes de continuar la ejecución.</p>' : ""}
     ${aprobado ? '<p class="adminNote">✅ Ya está aprobado para firma en la versión vigente.</p>' : ""}
     <div class="contractTermsForm">
       ${[...grupos.entries()].map(([grupo, fields]) => `
@@ -9369,7 +9383,7 @@ function renderAdminContratoTerms(body, email) {
         </div>
       `).join("")}
     </div>
-    <div class="adminSubActions">
+    <div class="adminSubActions contractTermsActions">
       <p class="adminNote" id="contractTermsSaveFeedback" role="status" aria-live="polite">Condiciones cargadas. Guarda solo después de hacer cambios.</p>
       <p class="adminNote" id="contractTermsDefaultsHelp" hidden></p>
       <div>
@@ -9511,10 +9525,10 @@ function renderAdminContratoTerms(body, email) {
       const values = savedValues;
       ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...values };
 
-      const missing = contractFields.filter((field) => !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
+      const missing = contractFields.filter((field) => !(contract.version === "2026.3" && field.name === "arlRiskClass") && !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
       const documento = buildTeacherContractDocument(contract, values);
-      const formalization = contract.version === "2026.2"
-        ? validateTeacherContractFormalization({ terms: values, representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO, today: bogotaParts().date, signatureDate: bogotaParts().date })
+      const formalization = ["2026.2", "2026.3"].includes(contract.version)
+        ? validateTeacherContractFormalization({ terms: values, representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO, today: bogotaParts().date, signatureDate: bogotaParts().date, allowPriorStartAndPendingArl: contract.version === "2026.3" })
         : { valid: true, errors: [] };
       const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
       const pendingInstitutional = Object.entries(contract.defaults || {})
@@ -9558,7 +9572,7 @@ function renderAdminContratoTerms(body, email) {
       // Los documentos marcados como obligatorios se verifican aquí: es el
       // punto donde coordinación habilita la firma.
       const expediente = APP_STATE.dossier.cache[email] || { states: {} };
-      const faltantes = signatureBlockers(getDossierRequirements(), expediente.states, dossierToday());
+      const faltantes = signatureBlockers(getDossierRequirements(), expediente.states, dossierToday()).filter((item) => contract.version !== "2026.3" || item.id !== "arl");
       if (faltantes.length) {
         const detalle = faltantes.map((item) => `• ${item.name} (${(DOSSIER_STATUS_META[item.status] || {}).label || item.status})`).join("\n");
         if (saveFeedback) saveFeedback.textContent = `Faltan ${faltantes.length} documento(s) obligatorio(s) del expediente.`;
@@ -9566,7 +9580,8 @@ function renderAdminContratoTerms(body, email) {
         return;
       }
 
-      if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato. ¿Continuar?`)) {
+      const arlNotice = contract.version === "2026.3" ? "\n\nLa firma no confirma cobertura ARL. Verifica y actualiza la afiliación, clase de riesgo y cobertura antes de continuar la ejecución cuando sean obligatorias." : "";
+      if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato.${arlNotice}\n\n¿Continuar?`)) {
         if (saveFeedback) saveFeedback.textContent = "Condiciones guardadas como borrador. La aprobación quedó pendiente.";
         return;
       }
@@ -9604,7 +9619,7 @@ function renderAdminContratoTerms(body, email) {
 function renderAdminContratoEditor(body, contract) {
   body.innerHTML = `
     <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Los contratos firmados permanecen en su copia y versión originales. Preparar la versión 2026.2 solo carga un borrador en este editor; no lo guarda ni lo activa hasta que coordinación lo revise y guarde expresamente.</p>
-    <div class="adminSubActions"><span></span><button class="btnGhost" id="contractPrepare20262" type="button">Preparar borrador 2026.2</button></div>
+    <div class="adminSubActions"><span></span><div><button class="btnGhost" id="contractPrepare20262" type="button">Preparar borrador 2026.2</button><button class="btnGhost" id="contractPrepare20263" type="button">Preparar borrador 2026.3</button></div></div>
     <div class="supportFields">
       <label>Título<input type="text" id="contractTitle" maxlength="160" value="${escapeHtml(contract.title)}" /></label>
       <label>Versión<input type="text" id="contractVersion" maxlength="20" value="${escapeHtml(contract.version)}" /></label>
@@ -9618,6 +9633,7 @@ function renderAdminContratoEditor(body, contract) {
         <label>${escapeHtml(key)}<input type="text" data-contract-default="${escapeHtml(key)}" value="${escapeHtml(contract.defaults[key])}" /></label>
       `).join("")}
     </div>
+    <p id="contractEditFeedback" class="contractEditFeedback" role="status" aria-live="polite" hidden></p>
     <div class="adminSubActions">
       <span></span>
       <div>
@@ -9627,7 +9643,7 @@ function renderAdminContratoEditor(body, contract) {
     </div>
   `;
 
-  $("#contractPrepare20262", body)?.addEventListener("click", () => {
+  const prepareDraft = (prepare, version) => {
     try {
       const source = {
         ...contract,
@@ -9636,18 +9652,20 @@ function renderAdminContratoEditor(body, contract) {
         body: $("#contractBody", body).value,
         annexes: JSON.parse($("#contractAnnexes", body).value)
       };
-      const draft = prepareTeacherContract2026_2(source);
+      const draft = prepare(source);
       $("#contractVersion", body).value = draft.version;
       $("#contractTitle", body).value = draft.title;
       $("#contractIntro", body).value = draft.intro;
       $("#contractBody", body).value = draft.body;
       $("#contractAnnexes", body).value = JSON.stringify(draft.annexes, null, 2);
-      toast("Borrador 2026.2 cargado en el editor. Revísalo; aún no se ha guardado ni activado.");
+      toast(`Borrador ${version} cargado en el editor. Revísalo; aún no se ha guardado ni activado.`);
     } catch (error) {
       console.error("No se pudo preparar el borrador 2026.2", error);
       toast("No pude preparar el borrador. Revisa que el campo de anexos tenga JSON válido.");
     }
-  });
+  };
+  $("#contractPrepare20262", body)?.addEventListener("click", () => prepareDraft(prepareTeacherContract2026_2, "2026.2"));
+  $("#contractPrepare20263", body)?.addEventListener("click", () => prepareDraft(prepareTeacherContract2026_3, "2026.3"));
 
   $("#contractEditCancel", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.editingText = false;
@@ -9655,26 +9673,48 @@ function renderAdminContratoEditor(body, contract) {
     ADMIN_STATE.contract.editingTextReturnEmail = "";
     renderAdminBody();
   });
-  $("#contractEditSave", body)?.addEventListener("click", async () => {
+  body.querySelectorAll("input, textarea").forEach((field) => field.addEventListener("input", () => {
+    const feedback = $("#contractEditFeedback", body);
+    if (feedback?.dataset.state === "success") {
+      feedback.hidden = false;
+      feedback.dataset.state = "pending";
+      feedback.textContent = "Tienes cambios nuevos sin guardar.";
+    }
+  }));
+  $("#contractEditSave", body)?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const feedback = $("#contractEditFeedback", body);
+    const showFeedback = (message, state) => {
+      feedback.hidden = false;
+      feedback.textContent = message;
+      feedback.dataset.state = state;
+    };
     const version = $("#contractVersion", body).value.trim();
     const title = $("#contractTitle", body).value.trim();
     const text = $("#contractBody", body).value.trim();
     let annexes;
     try { annexes = JSON.parse($("#contractAnnexes", body).value); }
-    catch (_) { toast("Los anexos deben tener formato JSON válido."); return; }
+    catch (_) { showFeedback("No se guardó: los anexos deben tener formato JSON válido.", "error"); return; }
     if (!Array.isArray(annexes) || annexes.some((item) => !item?.id || !item?.title || typeof item?.body !== "string")) {
-      toast("Cada anexo debe tener id, título y cuerpo de texto."); return;
+      showFeedback("No se guardó: cada anexo debe tener id, título y cuerpo de texto.", "error"); return;
     }
-    if (!version || !title || !text) { toast("Completa versión, título y contenido."); return; }
+    if (!version || !title || !text) { showFeedback("No se guardó: completa versión, título y contenido.", "error"); return; }
     // El id de cada firma es "correo__version" y las reglas de Firestore lo
     // verifican. Si la versión trae espacios o signos, el id no coincidiría y
     // Firestore rechazaría la firma: mejor no dejar escribirla así.
     if (!/^[\w.-]+$/.test(version)) {
-      toast("La versión solo admite letras, números, punto, guion y guion bajo. Ej: 2026.1");
+      showFeedback("No se guardó: la versión solo admite letras, números, punto, guion y guion bajo. Ej: 2026.1", "error");
       return;
     }
     const defaults = { ...contract.defaults };
     body.querySelectorAll("[data-contract-default]").forEach((input) => { defaults[input.dataset.contractDefault] = input.value.trim(); });
+    const controls = Array.from(body.querySelectorAll("input, textarea, button"));
+    const disabledBefore = controls.map((control) => control.disabled);
+    controls.forEach((control) => { control.disabled = true; });
+    button.textContent = "Guardando…";
+    showFeedback("Guardando contrato y verificando los datos en el servidor…", "pending");
+    let written = false;
+    const slowTimer = setTimeout(() => showFeedback("La conexión está tardando. El guardado sigue pendiente; no cierres esta pantalla hasta ver la confirmación.", "pending"), 10000);
     try {
       const payload = {
         version,
@@ -9689,22 +9729,26 @@ function renderAdminContratoEditor(body, contract) {
       };
       const contractRef = doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID);
       await setDoc(contractRef, payload);
+      written = true;
       const savedContract = await getDocFromServer(contractRef);
       if (!savedContract.exists()) throw new Error("No encontré el contrato después de guardarlo.");
       const savedData = savedContract.data() || {};
-      if (String(savedData.version || "") !== version || Object.entries(defaults).some(([key, value]) => String(savedData.defaults?.[key] ?? "").trim() !== String(value ?? "").trim())) {
-        throw new Error("Los valores institucionales guardados no coinciden con los enviados.");
+      const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
+      if (["version", "title", "intro", "body", "annexes", "defaults"].some((key) => JSON.stringify(canonical(savedData[key])) !== JSON.stringify(canonical(payload[key])))) {
+        throw new Error("El contenido guardado no coincide con lo enviado.");
       }
       APP_STATE.contract.doc = normalizeTeacherContract(savedData);
-      ADMIN_STATE.contract.editingText = false;
-      ADMIN_STATE.contract.termsEmail = ADMIN_STATE.contract.editingTextReturnEmail || "";
-      ADMIN_STATE.contract.editingTextReturnEmail = "";
-      await loadContractAdminData();
-      toast("Contrato actualizado y verificado. Si se completaron los valores pendientes, vuelve a aprobar las condiciones de la docente.");
-      renderAdminBody();
+      ADMIN_STATE.contract.doc = APP_STATE.contract.doc;
+      $("#contractEditCancel", body).textContent = "Volver";
+      showFeedback("Contrato guardado y verificado correctamente. Si completaste valores pendientes, vuelve a aprobar las condiciones de la docente.", "success");
     } catch (error) {
       console.error("No se pudo guardar el contrato", error);
-      toast("No pude guardar el contrato. Revisa permisos/reglas.");
+      showFeedback(written ? "Se envió el guardado, pero no pudimos verificarlo. Conserva los cambios y vuelve a intentar cuando tengas conexión." : "No se pudo confirmar el guardado. Conserva los cambios, revisa la conexión o los permisos e intenta de nuevo.", "error");
+    } finally {
+      clearTimeout(slowTimer);
+      controls.forEach((control, index) => { control.disabled = disabledBefore[index]; });
+      button.textContent = "Guardar contrato";
     }
   });
 }

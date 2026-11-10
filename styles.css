@@ -3530,6 +3530,31 @@ button[data-id="apuntes"] .ico{ background: rgba(206,0,113,.14); }
   margin-top:8px;
 }
 .adminSubActions > div{ display:flex; gap:8px; }
+.contractTermsActions{
+  flex-wrap:wrap;
+  align-items:flex-start;
+}
+.contractTermsActions > p{ flex:1 1 100%; margin:0; }
+.contractTermsActions > div{
+  display:flex;
+  flex:1 1 100%;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:10px;
+}
+.contractTermsActions button{
+  height:auto;
+  min-height:44px;
+  padding:10px 18px;
+  line-height:1.3;
+  white-space:normal;
+  text-align:center;
+  max-width:100%;
+}
+@media (max-width:480px){
+  .contractTermsActions > div{ flex-direction:column; }
+  .contractTermsActions button{ width:100%; justify-content:center; }
+}
 .adminDanger{ color:#ce0039; }
 
 .schedWeekly{ margin:4px 0 12px; }
@@ -5117,3 +5142,16 @@ body{
 .classLogsChoice:hover{background:rgba(12,65,196,.13);}
 .classLogsChoice:focus-visible{outline:3px solid var(--a1);outline-offset:2px;}
 @media(max-width:360px){.classLogsChoices{grid-template-columns:1fr;}}
+
+.contractEditFeedback {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a5f;
+  font-weight: 650;
+}
+.contractEditFeedback[hidden] { display: none; }
+.contractEditFeedback[data-state="success"] { background: #ecfdf5; border-color: #86efac; color: #166534; }
+.contractEditFeedback[data-state="error"] { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }

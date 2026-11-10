@@ -114,6 +114,14 @@ export function prepareTeacherContract2026_2(source) {
   };
 }
 
+export function prepareTeacherContract2026_3(source) {
+  if (!source || typeof source !== "object") throw new TypeError("Falta la plantilla contractual vigente.");
+  const draft = source.version === "2026.2" || source.version === "2026.3" ? { ...source } : prepareTeacherContract2026_2(source);
+  let body = replaceClause(draft.body, "4.5", clause("4.5", "Inicio y firma. La prestación inició o iniciará el {{FECHA_INICIO}} y finalizará el {{FECHA_FIN}}. Cuando la prestación haya comenzado antes de la firma, las partes dejan constancia de ese hecho y de los acuerdos previos que efectivamente reconocen; la firma se registra en su fecha real. La aceptación de este documento no demuestra por sí sola que todas sus estipulaciones fueran acordadas desde el inicio, ni modifica derechos u obligaciones anteriores."));
+  body = replaceClause(body, "5.6", clause("5.6", "Seguridad social y riesgos laborales. Las partes cumplirán las obligaciones legales de afiliación y aportes que correspondan. Cuando proceda la afiliación obligatoria a riesgos laborales, EL CONTRATANTE tramitará la afiliación y verificará la cobertura; EL CONTRATISTA informará su ARL y las novedades y entregará los soportes aplicables. La cotización se asume y gestiona mensualmente por quien corresponda según la clase de riesgo y las reglas vigentes: riesgos I, II y III a cargo de EL CONTRATISTA y IV y V de EL CONTRATANTE, sin perjuicio de la retención y giro aplicables. Los datos no confirmados se registran como pendientes y se actualizarán cuando se verifiquen. La firma no acredita afiliación, pago ni cobertura y no crea cobertura retroactiva; las partes revisarán con la ARL cualquier periodo sin confirmar. Cuando la cobertura sea obligatoria, debe verificarse antes de continuar la ejecución."));
+  return { ...draft, version: "2026.3", body, draftOnly: true };
+}
+
 function addOneCalendarMonth(isoDate) {
   const [year, month, day] = String(isoDate || "").split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -133,21 +141,23 @@ export function teacherContractNeedsArl({ startDate, endDate, riskClass } = {}) 
   return Boolean(startDate && endDate && oneMonthLater && endDate > oneMonthLater);
 }
 
-export function validateTeacherContractFormalization({ terms = {}, representativeDocument = "", today = "", signatureDate = today } = {}) {
+export function validateTeacherContractFormalization({ terms = {}, representativeDocument = "", today = "", signatureDate = today, allowPriorStartAndPendingArl = false } = {}) {
   const errors = [];
+  const warnings = [];
   const start = String(terms.fechaInicio || "").trim();
   const end = String(terms.fechaFin || "").trim();
   if (!start) errors.push("Falta la fecha de inicio.");
   if (!end) errors.push("Falta la fecha de finalización.");
   if (start && end && end < start) errors.push("La fecha de finalización no puede ser anterior al inicio.");
-  if (start && signatureDate && start < signatureDate) errors.push("La fecha de inicio no puede ser anterior a la fecha real de firma.");
-  if (start && today && start < today) errors.push("La relación ya habría iniciado. Requiere tratamiento administrativo independiente; no generes un contrato retroactivo.");
+  if (start && signatureDate && start < signatureDate) (allowPriorStartAndPendingArl ? warnings : errors).push("La fecha de inicio es anterior a la fecha real de firma; verifica que refleje la prestación y los acuerdos previos.");
+  if (!allowPriorStartAndPendingArl && start && today && start < today) errors.push("La relación ya habría iniciado. Requiere tratamiento administrativo independiente; no generes un contrato retroactivo.");
   const arlRequired = teacherContractNeedsArl({ startDate: start, endDate: end, riskClass: terms.arlRiskClass });
-  if (arlRequired && !String(terms.arlName || terms.arlNombre || "").trim()) errors.push("Registra la ARL informada por el contratista.");
-  if (arlRequired && !String(terms.arlAffiliationDate || "").trim()) errors.push("Registra la fecha de afiliación o novedad ARL.");
-  if (arlRequired && !String(terms.arlCoverageStartDate || "").trim()) errors.push("Confirma la fecha de inicio de cobertura ARL.");
-  if (arlRequired && start && terms.arlCoverageStartDate && String(terms.arlCoverageStartDate) > start) errors.push("La cobertura ARL no estará activa para el primer día de ejecución.");
-  if (arlRequired && start && terms.arlAffiliationDate && String(terms.arlAffiliationDate) >= start) errors.push("La afiliación ARL debe tramitarse con anticipación suficiente para que la cobertura inicie antes de la ejecución.");
+  const arlIssues = allowPriorStartAndPendingArl ? warnings : errors;
+  if (arlRequired && !String(terms.arlName || terms.arlNombre || "").trim()) arlIssues.push("ARL pendiente de confirmación.");
+  if (arlRequired && !String(terms.arlAffiliationDate || "").trim()) arlIssues.push("Fecha de afiliación o novedad ARL pendiente de confirmación.");
+  if (arlRequired && !String(terms.arlCoverageStartDate || "").trim()) arlIssues.push("Inicio de cobertura ARL pendiente de confirmación.");
+  if (arlRequired && start && terms.arlCoverageStartDate && String(terms.arlCoverageStartDate) > start) arlIssues.push("La cobertura ARL no estará activa para el primer día de ejecución.");
+  if (arlRequired && start && terms.arlAffiliationDate && String(terms.arlAffiliationDate) >= start) arlIssues.push("La afiliación ARL debe tramitarse con anticipación suficiente para que la cobertura inicie antes de la ejecución.");
   if (arlRequired && terms.arlAffiliationDate && terms.arlCoverageStartDate) {
     const expectedCoverage = new Date(`${terms.arlAffiliationDate}T00:00:00Z`);
     if (!Number.isNaN(expectedCoverage.getTime())) {
@@ -176,5 +186,5 @@ export function validateTeacherContractFormalization({ terms = {}, representativ
   } else if (accountHolderDocument && contractorDoc && accountHolderDocument !== contractorDoc) {
     errors.push("La cuenta de pago está a nombre de otra persona. Debe ser una cuenta de EL CONTRATISTA: corrígela antes de continuar.");
   }
-  return { valid: errors.length === 0, errors, arlRequired, sameIdentity };
+  return { valid: errors.length === 0, errors, warnings, arlRequired, sameIdentity };
 }
