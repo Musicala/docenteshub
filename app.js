@@ -2,7 +2,9 @@ function biblioCatalogLabel(value) {
   const labels = { "por-evaluar": "Por evaluar", todos: "Sin nivel específico", inicial: "Inicial", basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado", tecnica: "Técnica", metodo: "Método", "material-apoyo": "Material de apoyo", planificacion: "Planificación", "lectura-musical": "Lectura musical", "armonia-y-acordes": "Armonía y acordes", "coordinacion-e-independencia": "Coordinación e independencia", "afinacion-y-oido": "Afinación y oído", "interpretacion-y-ensamble": "Interpretación y ensamble", "cuidado-corporal": "Cuidado corporal", "planeacion-docente": "Planeación docente", "expresion-visual": "Expresión visual", "expresion-corporal": "Expresión corporal", "hoja-de-calculo": "Hoja de cálculo", numeros: "Números", presentacion: "Presentación", pdf: "PDF" };
   return labels[value] || String(value || "").replaceAll("-", " ").replace(/^./, c => c.toUpperCase());
 }
-import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-10.3";
+import { prepareTeacherContract2026_4, V4_DEFAULTS, SESSION_SCOPE, fullContractDate, coverageAtAcceptance, canonicalContractDocument, canonicalAcceptancePackage, validateContractV4 } from "./modules/teacher-contract-2026-4.js?v=2026-11-11.1";
+import { contractPrintHtml } from "./modules/contract-print.js?v=2026-11-11.1";
+import { prepareTeacherContract2026_2, prepareTeacherContract2026_3, validateTeacherContractFormalization } from "./modules/teacher-contract-2026-2.js?v=2026-11-11.1";
 import {
   DOSSIER_CATEGORIES, DOSSIER_STATUS_META, DOSSIER_SUMMARY_META,
   mergeRequirements, effectiveStatus, dossierSummary,
@@ -22,7 +24,7 @@ import {
    - Bitácoras de clase
 */
 
-const BUILD = "2026-11-10.3";
+const BUILD = "2026-11-11.1";
 const PENDING_CLASS_LOGS_URL = "https://bitacoras-pendientes-musicala.web.app/";
 const PENDING_CLASS_LOGS_COLLECTION = "expected_class_logs";
 
@@ -110,12 +112,15 @@ const TEACHER_CONTRACT_2026_2_TERM_FIELDS = [
   { name: "accountHolderDocument", label: "Documento del titular de la cuenta", group: "Economía" }
 ];
 function teacherContractFieldsFor(contract) {
-  return ["2026.2", "2026.3"].includes(String(contract?.version || ""))
-    ? [...TEACHER_CONTRACT_TERM_FIELDS.filter((field) => field.name !== "franjas").map((field) => field.name === "cuenta" ? { ...field, label: "Número de cuenta de EL CONTRATISTA" } : field), ...TEACHER_CONTRACT_2026_2_TERM_FIELDS]
+  return ["2026.2", "2026.3", "2026.4"].includes(String(contract?.version || ""))
+    ? [...TEACHER_CONTRACT_TERM_FIELDS.filter((field) => field.name !== "franjas").map((field) => field.name === "cuenta" ? { ...field, label: "Número de cuenta de EL CONTRATISTA" } : field), ...TEACHER_CONTRACT_2026_2_TERM_FIELDS, ...(contract.version === "2026.4" ? [
+      { name: "arlVerificationStatus", label: "Verificación ARL al aprobar este contrato", type: "select", options: ["Pendiente de verificación", "Confirmada"], group: "Seguridad social" },
+      { name: "arlSupportReference", label: "Referencia del soporte de afiliación de este vínculo (expediente)", group: "Seguridad social" }
+    ] : [])]
     : TEACHER_CONTRACT_TERM_FIELDS;
 }
 const OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS = new Set([
-  "contratistaDireccion", "accountHolderIsContractor", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate"
+  "arlVerificationStatus", "arlSupportReference", "contratistaDireccion", "accountHolderIsContractor", "arlNombre", "arlAffiliationDate", "arlCoverageStartDate"
 ]);
 const TEACHER_CONTRACT_PENDING_LABEL = "pendiente por definir";
 const CONTRACT_MODALITY_OPTIONS = [
@@ -8287,7 +8292,7 @@ function normalizeTeacherContract(raw = {}) {
     // Un valor guardado que quedó vacío o sin definir no debe tapar el valor
     // institucional que trae la app: si así fuera, actualizar la plantilla no
     // serviría de nada en cuanto alguien hubiera guardado una sola vez.
-    defaults: mergeContractDefaults(raw.defaults),
+    defaults: raw.version === "2026.4" ? { ...V4_DEFAULTS, ...(raw.defaults || {}) } : mergeContractDefaults(raw.defaults),
     updatedAtClient: raw.updatedAtClient || 0,
     updatedBy: String(raw.updatedBy || "")
   };
@@ -8341,11 +8346,20 @@ function buildTeacherContractVariables(contract, terms) {
   teacherContractFieldsFor(contract).forEach((field) => {
     const raw = String(terms?.[field.name] ?? "").trim();
     let value = raw;
-    if (!value) value = String(contract?.version) === "2026.3" && field.name.startsWith("arl") ? "Pendiente de confirmación" : OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
-    else if (field.type === "date") value = longDateLabel(value);
+    if (!value) value = ["2026.3", "2026.4"].includes(String(contract?.version)) && field.name.startsWith("arl") ? "Pendiente de confirmación" : OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) ? "No aplica" : TEACHER_CONTRACT_PENDING_LABEL;
+    else if (field.type === "date") value = contract.version === "2026.4" ? fullContractDate(value) : longDateLabel(value);
     values[teacherContractVariableName(field.name)] = value;
   });
 
+  if (contract.version === "2026.4") {
+    const coverage = coverageAtAcceptance(terms);
+    values.ARL_NOMBRE = coverage.declaredArl;
+    values.ARL_RISK_CLASS = coverage.risk;
+    values.ARL_AFFILIATION_DATE = coverage.affiliation;
+    values.ARL_COVERAGE_START_DATE = coverage.start;
+    values.ARL_VERIFICATION_STATUS = coverage.status;
+    values.ARL_SUPPORT_REFERENCE = coverage.reference;
+  }
   return values;
 }
 
@@ -8366,7 +8380,7 @@ function buildTeacherContractAnnexA(values, contract) {
     grupos.get(field.group).push(`${field.label}: ${values[teacherContractVariableName(field.name)]}`);
   });
 
-  lines.push(`Contratante: ${values.RAZON_SOCIAL}, NIT ${values.NIT}`);
+  lines.push(`Contratante: ${values.RAZON_SOCIAL}, NIT ${values.NIT}${contract.version === "2026.4" ? `-${values.NIT_DV}` : ""}`);
   lines.push(`Duración de la sesión: ${values.DURACION_SESION} minutos`);
   lines.push(`Sede de Musicala: ${values.SEDE_DIRECCION}`);
   lines.push(`Responsable contractual: ${values.SUPERVISOR}`);
@@ -8376,8 +8390,12 @@ function buildTeacherContractAnnexA(values, contract) {
     items.forEach((item) => lines.push(item));
   });
 
+  if (contract.version === "2026.4") {
+    lines.push("Tipo de vinculación pactada: independiente por prestación de servicios; prevalece la realidad de su ejecución.");
+    lines.push("La ARL informada es una declaración del contratista. Solo los datos identificados como confirmados corresponden a la verificación de Musicala. Este estado se conserva al aceptar; novedades posteriores van al expediente administrativo. Pendiente de verificación no habilita actividades que requieran cobertura obligatoria.");
+  }
   lines.push("## Qué comprende el valor por sesión");
-  lines.push("Planeación, realización de la sesión, registro de bitácora y asistencia, informe periódico y acompañamiento a muestras de proceso dentro de la franja programada.");
+  lines.push(contract.version === "2026.4" ? SESSION_SCOPE : "Planeación, realización de la sesión, registro de bitácora y asistencia, informe periódico y acompañamiento a muestras de proceso dentro de la franja programada.");
   lines.push("## Qué no comprende");
   lines.push("Cualquier otra actividad, y cualquiera de las anteriores fuera de la franja programada: muestras, ensayos, eventos, presentaciones, reuniones y capacitaciones en horario adicional. Se pagan aparte, con acuerdo previo y escrito.");
   lines.push("## Mínimo garantizado");
@@ -8391,6 +8409,9 @@ function buildTeacherContractAnnexA(values, contract) {
 // Documento completo y resuelto: es lo que se lee, lo que se firma y lo que
 // queda congelado en el snapshot.
 function buildTeacherContractDocument(contract = getTeacherContract(), terms = null) {
+  if (contract.version === "2026.4" && terms?.approvedForSignature && terms.approvedVersion === contract.version && terms.approvedSnapshot) {
+    return { ...terms.approvedSnapshot, pendingCount: 0 };
+  }
   const values = buildTeacherContractVariables(contract, terms);
   const sections = [
     { id: "CONTRATO", title: contract.title, body: resolveTeacherContractText(contract.body, values), declaration: "" },
@@ -8399,7 +8420,7 @@ function buildTeacherContractDocument(contract = getTeacherContract(), terms = n
       id: annex.id,
       title: annex.title,
       body: resolveTeacherContractText(annex.body, values),
-      declaration: annex.declaration || ""
+      declaration: resolveTeacherContractText(annex.declaration || "", values)
     }))
   ];
 
@@ -8408,7 +8429,7 @@ function buildTeacherContractDocument(contract = getTeacherContract(), terms = n
     title: contract.title,
     intro: resolveTeacherContractText(contract.intro, values),
     sections,
-    pendingCount: sections.reduce((total, section) => total + (section.body.split(TEACHER_CONTRACT_PENDING_LABEL).length - 1), 0)
+    pendingCount: [contract.title, resolveTeacherContractText(contract.intro, values), ...sections.flatMap(section => [section.body, section.declaration])].reduce((total, text) => total + (String(text).split(TEACHER_CONTRACT_PENDING_LABEL).length - 1), 0)
   };
 }
 
@@ -8460,7 +8481,7 @@ async function loadMyTeacherContractSignature(force = false) {
 
 async function loadMyTeacherContractHistory() {
   const email = emailKey(APP_STATE.activeUser);
-  const versions = ["2026.1", "2026.2"].filter((version) => version !== String(getTeacherContract().version));
+  const versions = ["2026.1", "2026.2", "2026.3", "2026.4"].filter((version) => version !== String(getTeacherContract().version));
   const snapshots = await Promise.all(versions.map((version) =>
     getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, version)))
       .then((snap) => snap.exists() ? { id: snap.id, ...snap.data() } : null)
@@ -8483,6 +8504,7 @@ async function computeTeacherContractHash(text) {
 }
 
 function teacherContractSnapshotText(documento) {
+  if (documento.version === "2026.4") return canonicalContractDocument(documento);
   return [
     documento.title,
     `Versión ${documento.version}`,
@@ -8607,7 +8629,7 @@ async function openTeacherContract() {
     await loadMyTeacherContractSignature(true);
     await loadDossierRequirements();
     await loadDossierFor(emailKey(APP_STATE.activeUser), { force: true });
-    if (["2026.2", "2026.3"].includes(String(getTeacherContract().version))) await loadMyTeacherContractHistory();
+    if (["2026.2", "2026.3", "2026.4"].includes(String(getTeacherContract().version))) await loadMyTeacherContractHistory();
   } catch (error) {
     console.error("No se pudo abrir el contrato", error);
   }
@@ -8709,9 +8731,11 @@ function renderTeacherContractView(overlay) {
         <span class="supportStatus ${signature ? "supportStatus-accepted" : "supportStatus-pending_acceptance"}">${signature ? "Firmado" : "Sin firmar"}</span>
       </div>
       <p class="adminNote">Versión ${escapeHtml(documento.version)} · ${escapeHtml(String(documento.sections.length))} secciones. Toca cada título para abrirlo.</p>
+      ${documento.version === "2026.4" ? '<p class="adminNote">La firma es una aceptación documental. La habilitación para ejecutar actividades requiere verificar por separado cobertura ARL y los demás requisitos vigentes en el expediente.</p>' : ""}
       <div class="contractDoc">${renderTeacherContractSections(documento)}</div>
       <div class="contractActions">
         <button class="btnGhost" type="button" id="contractPrint">Descargar o imprimir</button>
+        ${signature?.version === "2026.4" ? '<button class="btnGhost" type="button" id="contractEvidenceDownload">Descargar evidencias</button>' : ""}
       </div>
     </section>
     ${actionHtml}
@@ -8725,6 +8749,7 @@ function renderTeacherContractView(overlay) {
     onChange: async () => { await loadDossierFor(emailKey(APP_STATE.activeUser), { force: true }); renderTeacherContractView(overlay); }
   });
   $("#contractPrint", overlay)?.addEventListener("click", () => printTeacherContract(documento, signature));
+  $("#contractEvidenceDownload", overlay)?.addEventListener("click", () => downloadTeacherContractEvidence(signature));
   overlay.querySelectorAll("[data-contract-history-print]").forEach((button) => button.addEventListener("click", async () => {
     const item = APP_STATE.contract.history.find((entry) => entry.id === button.dataset.contractHistoryPrint);
     if (!item?.snapshot?.sections?.length) { toast("No encontré la copia histórica completa."); return; }
@@ -8859,7 +8884,7 @@ function teacherContractStatements(documento) {
     { id: "TRUTHFUL_INFO", field: "ackTruth", text: "Declaro que la información suministrada es veraz y se encuentra actualizada." },
     { id: "E_SIGNATURE_AGREEMENT_ACCEPTED", field: "ackSignature", text: "Acepto utilizar el mecanismo de firma electrónica definido por Musicala y mantener bajo mi control sus credenciales." },
     { id: "FULL_CONTRACT_ACCEPTED", field: "ackContract", text: "He tenido acceso al contrato completo, sus condiciones particulares y anexos, y acepto obligarme conforme a su contenido." },
-    ...(documento.version === "2026.3" ? [{ id: "PRIOR_START_AND_ARL", field: "ackPriorStartArl", text: "Revisé la fecha de inicio y las condiciones documentadas. Entiendo que la firma se registra hoy y que los datos de ARL pendientes no acreditan afiliación ni cobertura." }] : []),
+    ...(["2026.3", "2026.4"].includes(documento.version) ? [{ id: "PRIOR_START_AND_ARL", field: "ackPriorStartArl", text: "Revisé la fecha de inicio y las condiciones documentadas. Entiendo que la firma se registra hoy y que los datos de ARL pendientes no acreditan afiliación ni cobertura." }] : []),
     ...documento.sections
       .filter((section) => section.declaration)
       .map((section) => ({ id: `ANNEX_${section.id}_ACKNOWLEDGED`, field: `ackAnnex${section.id}`, text: section.declaration }))
@@ -8891,7 +8916,96 @@ function renderTeacherContractSignForm(documento, terms) {
     </section>`;
 }
 
+function stableContractJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableContractJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableContractJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+async function approveTeacherContractV4(email, contract, values, documento) {
+  const existing = await getDocFromServer(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, "2026.4")));
+  if (existing.exists()) throw new Error("La docente ya aceptó esta versión. Los cambios contractuales requieren un otrosí o una nueva versión; las novedades ARL van al expediente.");
+  const actorEmail = emailKey(APP_STATE.activeUser);
+  if (actorEmail !== String(contract.defaults.REPRESENTANTE_EMAIL || "").toLowerCase().trim()) throw new Error("La aceptación de Musicala debe hacerse desde la cuenta indicada para el representante autorizado en Valores institucionales.");
+  const statement = `Declaro actuar como ${contract.defaults.REPRESENTANTE_CALIDAD} de ${contract.defaults.RAZON_SOCIAL}, con facultades para aceptar este contrato. He revisado y acepto el texto íntegro 2026.4 y sus siete anexos para ${values.contratistaNombre}. Esta aceptación no certifica cobertura ARL pendiente.`;
+  if (!confirm(`${statement}\n\nCuenta: ${actorEmail}\nRepresentante: ${contract.defaults.REPRESENTANTE_LEGAL}\nDocumento: ${contract.defaults.REPRESENTANTE_DOCUMENTO}\n\n¿Aceptar expresamente por Musicala y habilitar a la docente?`)) throw new Error("La aceptación de Musicala quedó pendiente.");
+  const id = crypto.randomUUID();
+  const contentHash = await computeTeacherContractHash(canonicalContractDocument(documento));
+  const sourceHash = await computeTeacherContractHash(stableContractJson(contract));
+  if (!contentHash || !sourceHash) throw new Error("No se pudo calcular la integridad de la oferta.");
+  const offer = { id, teacherEmail: email, version: "2026.4", uid: APP_STATE.activeUser.uid, email: actorEmail,
+    representativeName: contract.defaults.REPRESENTANTE_LEGAL, representativeDocument: contract.defaults.REPRESENTANTE_DOCUMENTO,
+    representativeCapacity: contract.defaults.REPRESENTANTE_CALIDAD, statement, snapshot: documento, contentHash, sourceHash, sourceUpdatedAtClient: contract.updatedAtClient, requiredStatements: teacherContractStatements(documento).map(s => ({ statementId: s.id, exactText: s.text })) };
+  const offerHash = await computeTeacherContractHash(stableContractJson(offer));
+  await runTransaction(APP_STATE.db, async transaction => {
+    const termsRef = doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email);
+    const templateRef = doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID);
+    const [termsSnap, templateSnap] = await Promise.all([transaction.get(termsRef), transaction.get(templateRef)]);
+    if (!templateSnap.exists() || !termsSnap.exists()) throw new Error("Faltan datos para aceptar la oferta.");
+    const current = normalizeTeacherContract(templateSnap.data());
+    if (await computeTeacherContractHash(stableContractJson(current)) !== sourceHash || await computeTeacherContractHash(canonicalContractDocument(buildTeacherContractDocument(current, { ...termsSnap.data(), approvedForSignature: false }))) !== contentHash) throw new Error("El contrato cambió durante la revisión. Recarga antes de aceptar.");
+    transaction.set(doc(APP_STATE.db, "teacherContractOffers", id), { ...offer, offerHash, acceptedAt: serverTimestamp() });
+    transaction.set(termsRef, { approvalStatus: "approved", approvedForSignature: true, approvedVersion: "2026.4", approvedAt: serverTimestamp(), approvedAtClient: Date.now(), approvedBy: actorEmail, approvedOfferId: id, approvedSnapshot: documento, approvedContentHash: contentHash }, { merge: true });
+  });
+}
+
+function wireTeacherContractV4Sign(overlay, documento) {
+  const button = $("#contractSign", overlay);
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const values = {};
+    overlay.querySelectorAll("[data-contract-sign]").forEach(input => { values[input.dataset.contractSign] = input.value.trim(); });
+    const accepted = teacherContractStatements(documento).map(statement => ({ ...statement, checked: overlay.querySelector(`[data-contract-ack="${statement.field}"]`)?.checked }));
+    if (!values.fullName || !values.documentId || accepted.some(s => !s.checked)) { toast("Completa tu identificación y acepta expresamente cada casilla."); return; }
+    if (!confirm("Aceptas la versión 2026.4 y sus siete anexos. Se conservará el documento que estás viendo con tu cuenta y la fecha real del servidor. Esto no certifica cobertura ARL.")) return;
+    button.disabled = true; button.textContent = "Registrando aceptación…";
+    try {
+      const email = emailKey(APP_STATE.activeUser);
+      const contentHash = await computeTeacherContractHash(canonicalContractDocument(documento));
+      if (!contentHash) throw new Error("No se pudo calcular la huella del documento.");
+      let parentContractId = null;
+      for (const version of ["2026.3", "2026.2", "2026.1"]) {
+        const previous = await getDocFromServer(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, version)));
+        if (previous.exists()) { parentContractId = previous.data().contractId || previous.id; break; }
+      }
+      const id = teacherContractSignatureId(email, "2026.4");
+      const signatureRef = doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, id);
+      const contractId = crypto.randomUUID();
+      await runTransaction(APP_STATE.db, async transaction => {
+        const [termsSnap, templateSnap] = await Promise.all([
+          transaction.get(doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email)),
+          transaction.get(doc(APP_STATE.db, "app_config", TEACHER_CONTRACT_DOC_ID))
+        ]);
+        const terms = termsSnap.data();
+        if (!terms?.approvedForSignature || terms.approvedVersion !== "2026.4" || !terms.approvedOfferId) throw new Error("La aprobación no está vigente. Pide a coordinación que revise el contrato.");
+        const offerSnap = await transaction.get(doc(APP_STATE.db, "teacherContractOffers", terms.approvedOfferId));
+        if (!offerSnap.exists() || !templateSnap.exists()) throw new Error("No fue posible verificar la oferta de Musicala.");
+        const offer = offerSnap.data();
+        const { acceptedAt, offerHash, ...offerContent } = offer;
+        if (!acceptedAt || offer.teacherEmail !== email || offer.version !== "2026.4" || offer.contentHash !== contentHash || await computeTeacherContractHash(stableContractJson(offerContent)) !== offerHash || await computeTeacherContractHash(stableContractJson(normalizeTeacherContract(templateSnap.data()))) !== offer.sourceHash) throw new Error("La oferta cambió o su integridad no coincide. Recarga el contrato antes de firmar.");
+        if (values.documentId.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase() !== String(terms.contratistaDocumento).replace(/[^\p{L}\p{N}]/gu, "").toUpperCase() || values.fullName.normalize("NFKC").toLocaleLowerCase("es").trim() !== String(terms.contratistaNombre).normalize("NFKC").toLocaleLowerCase("es").trim()) throw new Error("La identificación debe coincidir con el Anexo A; pide corregirla si es necesario.");
+        const evidence = { contractId, parentContractId, uid: APP_STATE.activeUser.uid, email, fullName: terms.contratistaNombre, documentId: terms.contratistaDocumento,
+          offerId: terms.approvedOfferId, offerHash, acceptedStatements: accepted.map(s => ({ statementId: s.id, exactText: s.text })) };
+        const acceptanceHash = await computeTeacherContractHash(canonicalAcceptancePackage(documento, evidence));
+        if (!acceptanceHash || stableContractJson(evidence.acceptedStatements) !== stableContractJson(offer.requiredStatements)) throw new Error("Las manifestaciones cambiaron; recarga el contrato antes de aceptar.");
+        transaction.set(signatureRef, { ...evidence, version: "2026.4", contractTitle: documento.title, accepted: true,
+          snapshot: documento, contentHash, acceptanceHash, hashSchema: "musicala.contract-document.v1", acceptanceSchema: "musicala.contract-acceptance.v1",
+          contractorOffer: offer, documentReadConfirmed: true, manualReferenceAcknowledged: true,
+          acceptedAt: serverTimestamp(), signedAt: serverTimestamp(), readConfirmedAt: serverTimestamp(),
+          acceptedByUserId: APP_STATE.activeUser.uid, acceptedByEmail: email, timezone: "America/Bogota",
+          userAgent: String(navigator.userAgent || "").slice(0, 300) });
+      });
+      const saved = await getDocFromServer(signatureRef);
+      if (!saved.exists() || !saved.data().acceptedAt || saved.data().contentHash !== contentHash) throw new Error("No se pudo confirmar el registro en el servidor. Recarga antes de reintentar.");
+      APP_STATE.contract.signature = { id: saved.id, ...saved.data() }; APP_STATE.contract.signatureLoaded = true;
+      toast("Aceptación guardada y verificada en el servidor."); renderTeacherContractView(overlay);
+    } catch (error) { console.error(error); toast(error.message || "No se pudo registrar la aceptación."); button.disabled = false; button.textContent = "Firmar y aceptar"; }
+  });
+}
+
+
 function wireTeacherContractSignForm(overlay, documento) {
+  if (documento.version === "2026.4") return wireTeacherContractV4Sign(overlay, documento);
   const button = $("#contractSign", overlay);
   if (!button) return;
   button.addEventListener("click", async () => {
@@ -8908,13 +9022,13 @@ function wireTeacherContractSignForm(overlay, documento) {
       toast("Escribe tu nombre completo y tu número de documento.");
       return;
     }
-    if (["2026.2", "2026.3"].includes(contract.version)) {
+    if (["2026.2", "2026.3", "2026.4"].includes(contract.version)) {
       const formalization = validateTeacherContractFormalization({
         terms,
         representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO,
         today: bogotaParts().date,
         signatureDate: bogotaParts().date,
-        allowPriorStartAndPendingArl: contract.version === "2026.3"
+        allowPriorStartAndPendingArl: ["2026.3", "2026.4"].includes(contract.version)
       });
       if (!formalization.valid) {
         toast(formalization.errors[0]);
@@ -8939,8 +9053,8 @@ function wireTeacherContractSignForm(overlay, documento) {
       if (!contentHash) throw new Error("No se pudo calcular la huella SHA-256 del documento.");
       const contractId = crypto.randomUUID();
       let parentContractId = null;
-      if (["2026.2", "2026.3"].includes(contract.version)) {
-        const previousVersion = contract.version === "2026.3" ? "2026.2" : "2026.1";
+      if (["2026.2", "2026.3", "2026.4"].includes(contract.version)) {
+        const previousVersion = ["2026.3", "2026.4"].includes(contract.version) ? "2026.2" : "2026.1";
         let parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, previousVersion)));
         if (!parentSnap.exists() && previousVersion === "2026.2") parentSnap = await getDoc(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(email, "2026.1")));
         if (parentSnap.exists()) parentContractId = parentSnap.data()?.contractId || parentSnap.id;
@@ -8958,8 +9072,8 @@ function wireTeacherContractSignForm(overlay, documento) {
         documentReadConfirmed: true,
         readConfirmedAt: serverTimestamp(),
         readConfirmedAtClient: Date.now(),
-        manualVersion: ["2026.2", "2026.3"].includes(contract.version) ? contract.defaults?.MANUAL_VERSION || null : null,
-        manualReadConfirmed: ["2026.2", "2026.3"].includes(contract.version) ? true : null,
+        manualVersion: ["2026.2", "2026.3", "2026.4"].includes(contract.version) ? contract.defaults?.MANUAL_VERSION || null : null,
+        manualReadConfirmed: ["2026.2", "2026.3", "2026.4"].includes(contract.version) ? true : null,
         acceptedStatements: accepted,
         // Snapshot íntegro de lo que la persona vio y aceptó.
         snapshot: {
@@ -8991,39 +9105,31 @@ function wireTeacherContractSignForm(overlay, documento) {
   });
 }
 
-function printTeacherContract(documento, signature = null) {
+function downloadTeacherContractEvidence(signature) {
+  if (!signature?.snapshot || signature.version !== "2026.4") return;
+  const payload = { ...signature, referencePath: `${TEACHER_CONTRACT_SIGNATURES_COLLECTION}/${signature.id || teacherContractSignatureId(signature.email, signature.version)}` };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a"); link.href = url; link.download = `contrato-${signature.version}-${signature.contractId}-evidencias.json`;
+  document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function printTeacherContract(documento, signature = null) {
   const win = window.open("", "_blank");
   if (!win) { toast("Tu navegador bloqueó la ventana de impresión."); return; }
-  win.document.write(`
-    <html><head><meta charset="utf-8"><title>${escapeHtml(documento.title)}</title>
-    <style>
-      @page{size:letter;margin:18mm 17mm 20mm;}
-      body{font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;padding:0;color:#10223a;line-height:1.5;font-size:11pt;}
-      h1{font-size:20px;line-height:1.2;margin:0 0 14px;} h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #ccc;padding-top:14px;page-break-after:avoid;break-after:avoid;}
-      h4{margin:16px 0 4px;font-size:14px;page-break-after:avoid;break-after:avoid;} p{margin:6px 0;orphans:3;widows:3;}
-      .evidence{margin-top:28px;padding:14px 16px;border:1px solid #ccc;border-radius:8px;font-size:13px;page-break-inside:avoid;break-inside:avoid;}
-      code{font-size:11px;word-break:break-all;}
-      @media print{html,body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .contractAnnexRow,.evidence{page-break-inside:avoid;break-inside:avoid;}}
-    </style></head><body>
-    <h1>${escapeHtml(documento.title)}</h1>
-    <p><em>Versión ${escapeHtml(documento.version)}</em></p>
-    <p>${escapeHtml(documento.intro)}</p>
-    ${documento.sections.map((section, index) => `${index === 0 ? "" : `<h2>${escapeHtml(section.title)}</h2>`}${renderTeacherContractBody(section.body)}`).join("")}
-    ${signature ? `<div class="evidence">
-      <strong>Constancia de aceptación</strong>
-      <p>${escapeHtml(signature.fullName || "")} - documento ${escapeHtml(signature.documentId || "")}</p>
-      <p>${escapeHtml(signature.email || "")}</p>
-      <p>Aceptado y firmado el ${escapeHtml(contractTimestampLabel(signature.acceptedAt || signature.signedAt, signature.acceptedAtClient || signature.signedAtClient))} (hora Colombia) - versión ${escapeHtml(String(signature.version))}</p>
-      ${(signature.acceptedStatements || []).map((item) => `<p>· ${escapeHtml(item.exactText)}</p>`).join("")}
-      ${signature.contentHash ? `<p>Huella SHA-256 del documento firmado:<br><code>${escapeHtml(signature.contentHash)}</code></p>` : ""}
-      <p><em>Copia del documento firmado. Generada el ${escapeHtml(longDateLabel(bogotaParts().date))}.</em></p>
-    </div>` : ""}
-    </body></html>
-  `);
-  win.document.close();
-  win.document.title = `${documento.title} - versión ${documento.version}`;
-  win.focus();
-  win.print();
+  try {
+    if (signature) {
+      if (!signature.snapshot?.sections?.length) throw new Error("No existe copia íntegra del contrato firmado.");
+      documento = { ...signature.snapshot, version: signature.version };
+      if (!signature.contentHash || await computeTeacherContractHash(teacherContractSnapshotText(documento)) !== signature.contentHash) throw new Error("La huella del documento no coincide. No se generó una copia firmada.");
+      if (signature.version === "2026.4") {
+        if (await computeTeacherContractHash(canonicalAcceptancePackage(documento, signature)) !== signature.acceptanceHash) throw new Error("La evidencia de aceptación no coincide con su huella.");
+        const { acceptedAt, offerHash, ...offerContent } = signature.contractorOffer || {};
+        if (!acceptedAt || offerHash !== signature.offerHash || await computeTeacherContractHash(stableContractJson(offerContent)) !== offerHash || canonicalContractDocument(offerContent.snapshot) !== canonicalContractDocument(documento)) throw new Error("La aceptación de Musicala no coincide con la evidencia conservada.");
+      }
+    }
+    win.document.write(contractPrintHtml(documento, signature));
+    win.document.close(); win.focus(); win.print();
+  } catch (error) { win.close(); toast(error.message); }
 }
 
 /* ============================================================================
@@ -9127,7 +9233,7 @@ async function openAdminTeacherContractPreview(email) {
     const contract = normalizeTeacherContract(contractSnap.data());
     const terms = termsSnap.data();
     const signatureSnap = await getDocFromServer(doc(APP_STATE.db, TEACHER_CONTRACT_SIGNATURES_COLLECTION, teacherContractSignatureId(key, contract.version)));
-    const signature = signatureSnap.exists() ? signatureSnap.data() : null;
+    const signature = signatureSnap.exists() ? { id: signatureSnap.id, ...signatureSnap.data() } : null;
     let documentToShow;
     if (signature) {
       if (!signature.snapshot?.sections?.length) throw new Error("La firma existe, pero no contiene una copia completa del documento.");
@@ -9149,9 +9255,10 @@ async function openAdminTeacherContractPreview(email) {
         ${documentToShow.pendingCount ? `<p class="adminNote">Este documento contiene ${documentToShow.pendingCount} dato(s) pendientes.</p>` : ""}
         <p class="adminNote">${signature ? "Esta es la copia conservada con la firma." : "Vista previa con las condiciones y la plantilla consultadas en este momento."}</p>
         <div class="contractDoc">${renderTeacherContractSections(documentToShow)}</div>
-        <div class="contractActions"><button class="btnGhost" type="button" id="adminContractPreviewPrint">Descargar o imprimir</button></div>
+        <div class="contractActions"><button class="btnGhost" type="button" id="adminContractPreviewPrint">Descargar o imprimir</button>${signature?.version === "2026.4" ? '<button class="btnGhost" type="button" id="adminContractEvidence">Descargar evidencias</button>' : ""}</div>
       </section>`;
     $("#adminContractPreviewPrint", panel)?.addEventListener("click", () => printTeacherContract(documentToShow, signature));
+    $("#adminContractEvidence", panel)?.addEventListener("click", () => downloadTeacherContractEvidence(signature));
   } catch (error) {
     console.error("No se pudo consultar el contrato de la docente", error);
     if (document.body.contains(overlay)) panel.innerHTML = `<p class="adminNote" role="alert">No se pudo consultar el contrato. ${escapeHtml(error?.message || "Revisa la conexión e inténtalo de nuevo.")}</p>`;
@@ -9417,7 +9524,7 @@ function renderAdminContratoTerms(body, email) {
 
   body.innerHTML = `
     <p class="adminMeta">Condiciones particulares (Anexo A) de <strong>${escapeHtml(label)}</strong> · ${escapeHtml(email)}. El valor por sesión vive aquí, no en el texto del contrato: cambiarlo después de firmado exige un otrosí.</p>
-    ${contract.version === "2026.3" ? '<p class="adminNote">La fecha de inicio debe reflejar la prestación real; la firma quedará registrada el día en que se realice. La ARL puede quedar pendiente para firmar, pero eso no acredita cobertura. Musicala y la contratista deben verificar las obligaciones aplicables antes de continuar la ejecución.</p>' : ""}
+    ${["2026.3", "2026.4"].includes(contract.version) ? '<p class="adminNote">La fecha de inicio debe reflejar la prestación real; la firma quedará registrada el día en que se realice. La ARL puede quedar pendiente para firmar, pero eso no acredita cobertura. Musicala y la contratista deben verificar las obligaciones aplicables antes de continuar la ejecución.</p>' : ""}
     ${aprobado ? '<p class="adminNote">✅ Ya está aprobado para firma en la versión vigente.</p>' : ""}
     <div class="contractTermsForm">
       ${[...grupos.entries()].map(([grupo, fields]) => `
@@ -9579,11 +9686,15 @@ function renderAdminContratoTerms(body, email) {
       const values = savedValues;
       ADMIN_STATE.contract.terms[email] = { ...(ADMIN_STATE.contract.terms[email] || {}), ...persisted, ...values };
 
-      const missing = contractFields.filter((field) => !(contract.version === "2026.3" && field.name === "arlRiskClass") && !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
+      const missing = contractFields.filter((field) => !(["2026.3", "2026.4"].includes(contract.version) && field.name === "arlRiskClass") && !OPTIONAL_TEACHER_CONTRACT_TERM_FIELDS.has(field.name) && !String(values[field.name] || "").trim());
       const documento = buildTeacherContractDocument(contract, values);
-      const formalization = ["2026.2", "2026.3"].includes(contract.version)
-        ? validateTeacherContractFormalization({ terms: values, representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO, today: bogotaParts().date, signatureDate: bogotaParts().date, allowPriorStartAndPendingArl: contract.version === "2026.3" })
+      const formalization = ["2026.2", "2026.3", "2026.4"].includes(contract.version)
+        ? validateTeacherContractFormalization({ terms: values, representativeDocument: contract.defaults?.REPRESENTANTE_DOCUMENTO, today: bogotaParts().date, signatureDate: bogotaParts().date, allowPriorStartAndPendingArl: ["2026.3", "2026.4"].includes(contract.version) })
         : { valid: true, errors: [] };
+      if (contract.version === "2026.4") {
+        formalization.errors.push(...validateContractV4(contract, values));
+        formalization.valid = formalization.errors.length === 0;
+      }
       const invalidRates = !values.modalidadTarifas.length || values.modalidadTarifas.some((item) => !item.modalidad || !item.valor || !item.letras);
       const pendingInstitutional = Object.entries(contract.defaults || {})
         .filter(([, value]) => {
@@ -9626,7 +9737,7 @@ function renderAdminContratoTerms(body, email) {
       // Los documentos marcados como obligatorios se verifican aquí: es el
       // punto donde coordinación habilita la firma.
       const expediente = APP_STATE.dossier.cache[email] || { states: {} };
-      const faltantes = signatureBlockers(getDossierRequirements(), expediente.states, dossierToday()).filter((item) => contract.version !== "2026.3" || item.id !== "arl");
+      const faltantes = signatureBlockers(getDossierRequirements(), expediente.states, dossierToday()).filter((item) => !["2026.3", "2026.4"].includes(contract.version) || item.id !== "arl");
       if (faltantes.length) {
         const detalle = faltantes.map((item) => `• ${item.name} (${(DOSSIER_STATUS_META[item.status] || {}).label || item.status})`).join("\n");
         if (saveFeedback) saveFeedback.textContent = `Faltan ${faltantes.length} documento(s) obligatorio(s) del expediente.`;
@@ -9634,7 +9745,7 @@ function renderAdminContratoTerms(body, email) {
         return;
       }
 
-      const arlNotice = contract.version === "2026.3" ? "\n\nLa firma no confirma cobertura ARL. Verifica y actualiza la afiliación, clase de riesgo y cobertura antes de continuar la ejecución cuando sean obligatorias." : "";
+      const arlNotice = ["2026.3", "2026.4"].includes(contract.version) ? "\n\nLa firma no confirma cobertura ARL. Verifica y actualiza la afiliación, clase de riesgo y cobertura antes de continuar la ejecución cuando sean obligatorias." : "";
       if (!confirm(`Al aprobar, ${label} podrá leer y firmar la versión ${contract.version} de su contrato.${arlNotice}\n\n¿Continuar?`)) {
         if (saveFeedback) saveFeedback.textContent = "Condiciones guardadas como borrador. La aprobación quedó pendiente.";
         return;
@@ -9642,7 +9753,9 @@ function renderAdminContratoTerms(body, email) {
       approveButton.textContent = "Aprobando…";
       if (saveFeedback) saveFeedback.textContent = "Aprobando y verificando la versión para firma…";
       const termsRef = doc(APP_STATE.db, TEACHER_CONTRACT_TERMS_COLLECTION, email);
-      await setDoc(termsRef, {
+      if (contract.version === "2026.4") {
+        await approveTeacherContractV4(email, contract, values, documento);
+      } else await setDoc(termsRef, {
         approvalStatus: "approved",
         approvedForSignature: true,
         approvedVersion: contract.version,
@@ -9672,8 +9785,8 @@ function renderAdminContratoTerms(body, email) {
 
 function renderAdminContratoEditor(body, contract) {
   body.innerHTML = `
-    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Los contratos firmados permanecen en su copia y versión originales. Preparar la versión 2026.2 solo carga un borrador en este editor; no lo guarda ni lo activa hasta que coordinación lo revise y guarde expresamente.</p>
-    <div class="adminSubActions"><span></span><div><button class="btnGhost" id="contractPrepare20262" type="button">Preparar borrador 2026.2</button><button class="btnGhost" id="contractPrepare20263" type="button">Preparar borrador 2026.3</button></div></div>
+    <p class="adminMeta">Usa “## ” al inicio de una línea para crear un título, y {{VARIABLE}} para los datos que se llenan solos. Los contratos firmados permanecen en su copia y versión originales. Preparar una nueva versión solo carga un borrador en este editor; no lo guarda ni lo activa hasta que coordinación lo revise y guarde expresamente.</p>
+    <div class="adminSubActions contractTermsActions"><span></span><div><button class="btnGhost" id="contractPrepare20262" type="button">Preparar borrador 2026.2</button><button class="btnGhost" id="contractPrepare20263" type="button">Preparar borrador 2026.3</button><button class="btnGhost" id="contractPrepare20264" type="button">Preparar borrador 2026.4</button></div></div>
     <div class="supportFields">
       <label>Título<input type="text" id="contractTitle" maxlength="160" value="${escapeHtml(contract.title)}" /></label>
       <label>Versión<input type="text" id="contractVersion" maxlength="20" value="${escapeHtml(contract.version)}" /></label>
@@ -9707,6 +9820,13 @@ function renderAdminContratoEditor(body, contract) {
         annexes: JSON.parse($("#contractAnnexes", body).value)
       };
       const draft = prepare(source);
+      if (version === "2026.4") {
+        const defaults = { ...draft.defaults };
+        body.querySelectorAll("[data-contract-default]").forEach(input => { defaults[input.dataset.contractDefault] = input.value.trim(); });
+        renderAdminContratoEditor(body, { ...draft, defaults });
+        toast("Borrador 2026.4: revisa NIT, representación y decisiones de cancelación. No se ha activado.");
+        return;
+      }
       $("#contractVersion", body).value = draft.version;
       $("#contractTitle", body).value = draft.title;
       $("#contractIntro", body).value = draft.intro;
@@ -9720,6 +9840,7 @@ function renderAdminContratoEditor(body, contract) {
   };
   $("#contractPrepare20262", body)?.addEventListener("click", () => prepareDraft(prepareTeacherContract2026_2, "2026.2"));
   $("#contractPrepare20263", body)?.addEventListener("click", () => prepareDraft(prepareTeacherContract2026_3, "2026.3"));
+  $("#contractPrepare20264", body)?.addEventListener("click", () => prepareDraft(prepareTeacherContract2026_4, "2026.4"));
 
   $("#contractEditCancel", body)?.addEventListener("click", () => {
     ADMIN_STATE.contract.editingText = false;
